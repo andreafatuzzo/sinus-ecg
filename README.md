@@ -66,11 +66,13 @@ This project does **not** claim compliance with any standard. It uses their stru
 |---|---|---|
 | Software development plan | IEC 62304 §5.1 | `docs/regulatory/sdp.md` |
 | Software safety classification (assumed Class B) | IEC 62304 §4.3 | `docs/regulatory/safety-class.md` |
+| Functional analysis (intended use, functional architecture) | IEC 62304 §5.2 (input to requirements) | `docs/regulatory/functional-analysis.md` |
 | Software requirements (IDs `SRS-xxx`) | IEC 62304 §5.2 | `docs/regulatory/srs.md` |
 | Architecture | IEC 62304 §5.3 | `docs/regulatory/architecture.md` |
 | Risk analysis | ISO 14971 | `docs/regulatory/risk-analysis.md` |
 | SOUP list (third-party software) | IEC 62304 §8.1.2 | `docs/regulatory/soup.md` |
 | Traceability matrix (SRS → code → tests) | IEC 62304 §5.1.1 | `docs/regulatory/traceability.md` |
+| Open points (pending decisions, deferred work, IDs `OP-xxx`) | IEC 62304 §9 (problem resolution) | `docs/regulatory/open-points.md` |
 | Verification report | IEC 62304 §5.7 | `docs/validation/` |
 
 Rules followed throughout the project:
@@ -149,4 +151,4 @@ Code (firmware, DSP, app, backend) is licensed under the [Apache License 2.0](LI
 
 ## Status
 
-🚧 Early development: Milestone 0 complete, Milestone 1 (offline algorithms) next.
+🚧 Early development: Milestone 0 documents in review, Milestone 1 (offline algorithms) next.

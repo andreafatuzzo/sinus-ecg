@@ -4,19 +4,22 @@
 
 | Requirement | Title | Implemented in | Verified by | Open points |
 |---|---|---|---|---|
-| SRS-001 | Verified download of the reference database | — | **none** | OP-019 |
-| SRS-002 | Loading a reference record | — | **none** | OP-019 |
-| SRS-003 | Input validation | — | **none** | OP-004, OP-019 |
-| SRS-004 | Baseline wander removal | — | **none** | OP-004, OP-005, OP-019 |
-| SRS-005 | Mains interference removal | — | **none** | OP-004, OP-005, OP-019 |
-| SRS-006 | QRS detection | — | **none** | OP-004, OP-005, OP-019 |
-| SRS-007 | QRS detection performance | — | **none** | OP-010, OP-011, OP-019 |
-| SRS-008 | EC57 beat-by-beat evaluation | — | **none** | OP-019 |
-| SRS-009 | Reproducible validation report | — | **none** | OP-019 |
+| SRS-001 | Verified download of the reference database | — | **none** | — |
+| SRS-002 | Loading a reference record | — | **none** | — |
+| SRS-003 | Input validation | — | **none** | OP-004, OP-020 |
+| SRS-004 | Baseline wander removal | — | **none** | OP-004, OP-005 |
+| SRS-005 | Mains interference removal | — | **none** | OP-004, OP-005, OP-022 |
+| SRS-006 | QRS detection | — | **none** | OP-004, OP-005 |
+| SRS-007 | QRS detection performance | — | **none** | OP-010, OP-011, OP-029 |
+| SRS-008 | EC57 beat-by-beat matching | — | **none** | — |
+| SRS-009 | Reproducible validation report | — | **none** | — |
+| SRS-010 | QRS detection with baseline wander and mains interference | — | **none** | OP-004, OP-005, OP-022 |
+| SRS-011 | Detection statistics | — | **none** | — |
+| SRS-012 | Validation report content | — | **none** | — |
 
 ## Gaps
 
-- Requirements without tests: SRS-001, SRS-002, SRS-003, SRS-004, SRS-005, SRS-006, SRS-007, SRS-008, SRS-009
+- Requirements without tests: SRS-001, SRS-002, SRS-003, SRS-004, SRS-005, SRS-006, SRS-007, SRS-008, SRS-009, SRS-010, SRS-011, SRS-012
 - Unknown IDs referenced in code/tests: none
 - Open points citing undefined IDs: none
-- Open points still open: 19 (see `open-points.md`)
+- Open points still open: 28 (see `open-points.md`)

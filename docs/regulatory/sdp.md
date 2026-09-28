@@ -54,7 +54,7 @@ Roles hand work to each other through the documents above. Every decision reserv
 
 ## 4. Configuration management
 
-- **Version control**: Git, hosted at `github.com/andreafatuzzo/sinus-ecg-af`.
+- **Version control**: Git, hosted at `github.com/andreafatuzzo/sinus-ecg`.
 - **Branches**:
   - `main` holds reviewed, releasable states;
   - `develop` is the integration branch;
