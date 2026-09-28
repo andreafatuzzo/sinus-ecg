@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  dsp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dsp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: dsp/uv.lock
+      # Python version comes from dsp/.python-version; --locked fails if uv.lock is stale
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
+      - name: Traceability matrix is up to date
+        run: uv run python scripts/traceability.py --check

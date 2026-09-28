@@ -1,0 +1,27 @@
+# Datasets are downloaded by script and never committed
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Firmware build output
+firmware/**/build/
+firmware/**/sdkconfig.old
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+

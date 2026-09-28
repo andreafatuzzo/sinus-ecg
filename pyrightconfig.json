@@ -1,0 +1,7 @@
+{
+  "venvPath": "dsp",
+  "venv": ".venv",
+  "executionEnvironments": [
+    { "root": "dsp" }
+  ]
+}

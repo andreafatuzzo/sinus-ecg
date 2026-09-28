@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sinus-dsp"
+version = "0.0.1"
+description = "Sinus ECG reference signal-processing algorithms and EC57-style validation pipeline"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+# Every runtime dependency must also be listed in docs/regulatory/soup.md
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "wfdb>=4.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[tool.setuptools.packages.find]
+include = ["sinus_dsp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "requirement(*ids): SRS requirement IDs verified by this test (e.g. 'SRS-001')",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["sinus_dsp"]
+
+[[tool.mypy.overrides]]
+module = ["wfdb", "wfdb.*", "scipy", "scipy.*"]
+ignore_missing_imports = true
