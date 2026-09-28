@@ -38,7 +38,7 @@ Goals:
 | MCU | ESP32-S3 or nRF52840 | BLE streaming |
 | Firmware | C (ESP-IDF or Zephyr) | Fixed sampling rate, ring buffer, BLE GATT service |
 | DSP & algorithms | Python (NumPy, SciPy, `wfdb`) | Reference implementation, later ported to C |
-| App | TBD (web or mobile) | Live waveform, heart rate, detected beats |
+| App | TBD (web or mobile, OP-006) | Live waveform, heart rate, detected beats |
 | Backend | Python (FastAPI) | Session storage, HL7 FHIR `Observation` export |
 
 ## Algorithms and validation
@@ -94,6 +94,7 @@ sinus-ecg/
 ├── docs/
 │   ├── regulatory/      # IEC 62304 / ISO 14971 style artifacts
 │   └── validation/      # Generated evaluation reports
+├── CONTRIBUTING.md
 ├── LICENSE
 └── README.md
 ```
@@ -101,9 +102,9 @@ sinus-ecg/
 ## Roadmap
 
 **Milestone 0: Foundations**
-- [ ] Repository, CI, license, contribution rules
-- [ ] Software development plan and safety classification
-- [ ] First version of requirements (SRS) and risk analysis
+- [x] Repository, CI, license, contribution rules
+- [x] Software development plan and safety classification
+- [x] First version of requirements (SRS) and risk analysis
 
 **Milestone 1: Offline algorithms**
 - [ ] MIT-BIH download script and data loader
@@ -144,8 +145,8 @@ Datasets are downloaded by script and never committed to the repository.
 
 ## License
 
-Code (firmware, DSP, app, backend) is licensed under the [Apache License 2.0](LICENSE). The license for hardware files (schematics, BOM) is still to be decided; a CERN-OHL variant is planned.
+Code (firmware, DSP, app, backend) is licensed under the [Apache License 2.0](LICENSE). The license for hardware files (schematics, BOM) is still to be decided; a CERN-OHL variant is planned (tracked as OP-001 in [open-points.md](docs/regulatory/open-points.md)).
 
 ## Status
 
-🚧 Early development, Milestone 0.
+🚧 Early development: Milestone 0 complete, Milestone 1 (offline algorithms) next.

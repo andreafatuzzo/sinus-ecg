@@ -8,4 +8,6 @@ _Inspired by IEC 62304 §8.1.2. Every new runtime dependency must be added here 
 | SciPy | dsp | `>=1.11` | Filter design and application | TBD |
 | wfdb | dsp | `>=4.1` | Reading PhysioNet WFDB records and annotations | TBD |
 
+The review of known anomalies (the "TBD" entries) is tracked as OP-009 in [`open-points.md`](open-points.md).
+
 Development-only tools (pytest, ruff, mypy) are not part of the software item and are not listed as SOUP.

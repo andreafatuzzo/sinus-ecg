@@ -4,10 +4,14 @@ Sources of truth:
   - Requirements: headings of the form ``### SRS-001: Title`` in docs/regulatory/srs.md
   - Code:         any ``SRS-xxx`` mention in a comment/docstring under CODE_ROOTS
   - Tests:        ``@pytest.mark.requirement("SRS-xxx", ...)`` on test functions/classes
+  - Open points:  ``| OP-xxx | ... | refs | ...`` rows in docs/regulatory/open-points.md;
+                  refs may cite SRS-, HAZ- and RC- IDs (hazards and risk controls are
+                  defined as table rows in docs/regulatory/risk-analysis.md)
 
 Usage (from the repo root or anywhere):
   python dsp/scripts/traceability.py          # rewrite docs/regulatory/traceability.md
-  python dsp/scripts/traceability.py --check  # exit 1 if the file is stale or IDs are unknown
+  python dsp/scripts/traceability.py --check  # exit 1 if the file is stale, IDs are unknown,
+                                              # or open points cite undefined IDs
 """
 
 from __future__ import annotations
@@ -16,21 +20,39 @@ import argparse
 import ast
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRS_FILE = REPO_ROOT / "docs" / "regulatory" / "srs.md"
+RISK_FILE = REPO_ROOT / "docs" / "regulatory" / "risk-analysis.md"
+OPEN_POINTS_FILE = REPO_ROOT / "docs" / "regulatory" / "open-points.md"
 OUTPUT_FILE = REPO_ROOT / "docs" / "regulatory" / "traceability.md"
 CODE_ROOTS: list[tuple[Path, tuple[str, ...]]] = [
     (REPO_ROOT / "dsp" / "sinus_dsp", ("*.py",)),
     (REPO_ROOT / "firmware", ("*.c", "*.h")),
 ]
 TEST_ROOTS = [REPO_ROOT / "dsp" / "tests"]
+# Only QA (requirements/) and test-engineer (system/) tests may claim to verify a requirement;
+# developer unit tests (unit/) must not, so that no one verifies their own code functionally.
+VERIFICATION_DIRS = [
+    REPO_ROOT / "dsp" / "tests" / "requirements",
+    REPO_ROOT / "dsp" / "tests" / "system",
+]
 
 REQ_ID = re.compile(r"\bSRS-\d{3}\b")
 REQ_HEADING = re.compile(r"^#{2,4}\s+(SRS-\d{3})\b[\s:—-]*(.*)$")
+RISK_ROW = re.compile(r"^\|\s*((?:HAZ|RC)-\d{3})\s*\|")
+OP_ROW = re.compile(r"^\|\s*(OP-\d{3})\s*\|")
+SPEC_ID = re.compile(r"\b(?:SRS|HAZ|RC)-\d{3}\b")
+
+
+@dataclass
+class OpenPoint:
+    id: str
+    is_open: bool
+    refs: list[str]
 
 
 @dataclass
@@ -38,6 +60,9 @@ class Matrix:
     titles: dict[str, str]
     code: dict[str, set[str]]
     tests: dict[str, set[str]]
+    risk_ids: set[str]
+    open_points: list[OpenPoint]
+    misplaced_tests: list[str]
 
 
 def rel(path: Path) -> str:
@@ -53,6 +78,30 @@ def parse_requirements() -> dict[str, str]:
         if m:
             titles[m.group(1)] = m.group(2).strip()
     return titles
+
+
+def parse_risk_ids() -> set[str]:
+    if not RISK_FILE.exists():
+        return set()
+    lines = RISK_FILE.read_text(encoding="utf-8").splitlines()
+    return {m.group(1) for line in lines if (m := RISK_ROW.match(line.strip()))}
+
+
+def parse_open_points() -> list[OpenPoint]:
+    """Rows under the "## Open" heading are open; rows under any other heading are not."""
+    points: list[OpenPoint] = []
+    if not OPEN_POINTS_FILE.exists():
+        return points
+    section = ""
+    for line in OPEN_POINTS_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("## "):
+            section = line[3:].strip().lower()
+        elif m := OP_ROW.match(line):
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            refs = SPEC_ID.findall(cells[2]) if len(cells) > 2 else []
+            points.append(OpenPoint(id=m.group(1), is_open=section == "open", refs=refs))
+    return points
 
 
 def scan_code() -> dict[str, set[str]]:
@@ -85,8 +134,10 @@ def _requirement_ids(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
     return ids
 
 
-def scan_tests() -> dict[str, set[str]]:
+def scan_tests() -> tuple[dict[str, set[str]], list[str]]:
+    """Return requirement -> verifying tests, and tagged tests outside VERIFICATION_DIRS."""
     refs: dict[str, set[str]] = defaultdict(set)
+    misplaced: list[str] = []
 
     def visit(body: list[ast.stmt], path: Path, prefix: str, inherited: list[str]) -> None:
         for node in body:
@@ -95,7 +146,9 @@ def scan_tests() -> dict[str, set[str]]:
                 name = f"{prefix}::{node.name}"
                 if isinstance(node, ast.ClassDef):
                     visit(node.body, path, name, ids)
-                elif node.name.startswith("test"):
+                elif node.name.startswith("test") and ids:
+                    if not any(path.is_relative_to(d) for d in VERIFICATION_DIRS):
+                        misplaced.append(name)
                     for req in ids:
                         refs[req].add(f"`{name}`")
 
@@ -103,34 +156,53 @@ def scan_tests() -> dict[str, set[str]]:
         for path in sorted(root.rglob("test_*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             visit(tree.body, path, rel(path), [])
-    return refs
+    return refs, sorted(misplaced)
 
 
 def build() -> Matrix:
-    return Matrix(titles=parse_requirements(), code=scan_code(), tests=scan_tests())
+    tests, misplaced = scan_tests()
+    return Matrix(
+        titles=parse_requirements(),
+        code=scan_code(),
+        tests=tests,
+        risk_ids=parse_risk_ids(),
+        open_points=parse_open_points(),
+        misplaced_tests=misplaced,
+    )
 
 
 def render(m: Matrix) -> str:
+    open_by_req: dict[str, list[str]] = defaultdict(list)
+    for op in m.open_points:
+        if op.is_open:
+            for ref in dict.fromkeys(op.refs):
+                open_by_req[ref].append(op.id)
+
     lines = [
         "# Traceability matrix",
         "",
         "<!-- Generated by dsp/scripts/traceability.py. Do not edit by hand. -->",
         "",
-        "| Requirement | Title | Implemented in | Verified by |",
-        "|---|---|---|---|",
+        "| Requirement | Title | Implemented in | Verified by | Open points |",
+        "|---|---|---|---|---|",
     ]
     for req in sorted(m.titles):
         code = "<br>".join(sorted(m.code.get(req, ()))) or "—"
         tests = "<br>".join(sorted(m.tests.get(req, ()))) or "**none**"
-        lines.append(f"| {req} | {m.titles[req]} | {code} | {tests} |")
+        ops = ", ".join(sorted(open_by_req.get(req, ()))) or "—"
+        lines.append(f"| {req} | {m.titles[req]} | {code} | {tests} | {ops} |")
     if not m.titles:
-        lines.append("| — | _No requirements defined yet in `srs.md`_ | — | — |")
+        lines.append("| — | _No requirements defined yet in `srs.md`_ | — | — | — |")
 
     untested = sorted(r for r in m.titles if not m.tests.get(r))
     unknown = unknown_ids(m)
+    dangling = dangling_refs(m)
+    open_count = sum(op.is_open for op in m.open_points)
     lines += ["", "## Gaps", ""]
     lines.append(f"- Requirements without tests: {', '.join(untested) or 'none'}")
     lines.append(f"- Unknown IDs referenced in code/tests: {', '.join(unknown) or 'none'}")
+    lines.append(f"- Open points citing undefined IDs: {', '.join(dangling) or 'none'}")
+    lines.append(f"- Open points still open: {open_count} (see `open-points.md`)")
     return "\n".join(lines) + "\n"
 
 
@@ -138,8 +210,19 @@ def unknown_ids(m: Matrix) -> list[str]:
     return sorted((set(m.code) | set(m.tests)) - set(m.titles))
 
 
+def dangling_refs(m: Matrix) -> list[str]:
+    """Open-point references (open or closed) to SRS/HAZ/RC IDs that are not defined."""
+    defined = set(m.titles) | m.risk_ids
+    return sorted(f"{op.id}→{ref}" for op in m.open_points for ref in op.refs if ref not in defined)
+
+
+def duplicate_open_points(m: Matrix) -> list[str]:
+    counts = Counter(op.id for op in m.open_points)
+    return sorted(op_id for op_id, n in counts.items() if n > 1)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument(
         "--check",
         action="store_true",
@@ -158,6 +241,18 @@ def main() -> int:
             ok = False
         if unknown := unknown_ids(matrix):
             print(f"Unknown requirement IDs referenced: {', '.join(unknown)}")
+            ok = False
+        if dangling := dangling_refs(matrix):
+            print(f"Open points cite undefined IDs: {', '.join(dangling)}")
+            ok = False
+        if matrix.misplaced_tests:
+            print(
+                "Requirement markers outside tests/requirements or tests/system: "
+                + ", ".join(matrix.misplaced_tests)
+            )
+            ok = False
+        if duplicates := duplicate_open_points(matrix):
+            print(f"Duplicate open point IDs: {', '.join(duplicates)}")
             ok = False
         return 0 if ok else 1
 

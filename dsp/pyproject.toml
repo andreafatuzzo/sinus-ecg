@@ -27,9 +27,12 @@ include = ["sinus_dsp*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers"
+# tests/unit: developer unit tests (no requirement marker)
+# tests/requirements: QA functional tests; tests/system: test-engineer system tests
+addopts = "--strict-markers --import-mode=importlib"
 markers = [
-    "requirement(*ids): SRS requirement IDs verified by this test (e.g. 'SRS-001')",
+    "requirement(*ids): SRS requirement IDs verified by this test (e.g. 'SRS-001'); only in tests/requirements and tests/system",
+    "needs_data: requires the local MIT-BIH database in data/; skipped when it is absent (e.g. in CI)",
 ]
 
 [tool.ruff]
