@@ -118,44 +118,70 @@ def scan_code() -> dict[str, set[str]]:
     return refs
 
 
-def _requirement_ids(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> list[str]:
+def _is_requirement_mark(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "requirement"
+    )
+
+
+def _mark_ids(expr: ast.expr) -> list[str]:
+    """IDs from a requirement mark, or from a list/tuple of marks (as in ``pytestmark``)."""
+    marks = expr.elts if isinstance(expr, ast.List | ast.Tuple) else [expr]
+    return [
+        a.value
+        for m in marks
+        if isinstance(m, ast.Call) and _is_requirement_mark(m)
+        for a in m.args
+        if isinstance(a, ast.Constant) and isinstance(a.value, str)
+    ]
+
+
+def _pytestmark_ids(body: list[ast.stmt]) -> list[str]:
+    """IDs from ``pytestmark = ...`` assignments at module or class level."""
     ids: list[str] = []
-    for deco in node.decorator_list:
-        if (
-            isinstance(deco, ast.Call)
-            and isinstance(deco.func, ast.Attribute)
-            and deco.func.attr == "requirement"
+    for stmt in body:
+        if isinstance(stmt, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "pytestmark" for t in stmt.targets
         ):
-            ids.extend(
-                a.value
-                for a in deco.args
-                if isinstance(a, ast.Constant) and isinstance(a.value, str)
-            )
+            ids.extend(_mark_ids(stmt.value))
     return ids
 
 
 def scan_tests() -> tuple[dict[str, set[str]], list[str]]:
-    """Return requirement -> verifying tests, and tagged tests outside VERIFICATION_DIRS."""
+    """Return requirement -> verifying tests, and requirement marks outside VERIFICATION_DIRS."""
     refs: dict[str, set[str]] = defaultdict(set)
     misplaced: list[str] = []
 
-    def visit(body: list[ast.stmt], path: Path, prefix: str, inherited: list[str]) -> None:
+    def visit(body: list[ast.stmt], prefix: str, inherited: list[str]) -> None:
+        inherited = inherited + _pytestmark_ids(body)
         for node in body:
             if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
-                ids = inherited + _requirement_ids(node)
+                ids = inherited + [i for d in node.decorator_list for i in _mark_ids(d)]
                 name = f"{prefix}::{node.name}"
                 if isinstance(node, ast.ClassDef):
-                    visit(node.body, path, name, ids)
-                elif node.name.startswith("test") and ids:
-                    if not any(path.is_relative_to(d) for d in VERIFICATION_DIRS):
-                        misplaced.append(name)
+                    visit(node.body, name, ids)
+                elif node.name.startswith("test"):
                     for req in ids:
                         refs[req].add(f"`{name}`")
 
     for root in TEST_ROOTS:
-        for path in sorted(root.rglob("test_*.py")):
+        # pytest's default discovery patterns
+        paths = sorted({*root.rglob("test_*.py"), *root.rglob("*_test.py")})
+        for path in paths:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            visit(tree.body, path, rel(path), [])
+            allowed = any(path.is_relative_to(d) for d in VERIFICATION_DIRS)
+            # Any requirement mark outside the verification folders is rejected, however it
+            # is applied (decorator, pytestmark, pytest.param(marks=...)), and is not counted.
+            if not allowed:
+                misplaced += [
+                    f"{rel(path)}:{n.lineno}"
+                    for n in ast.walk(tree)
+                    if isinstance(n, ast.Call) and _is_requirement_mark(n)
+                ]
+                continue
+            visit(tree.body, rel(path), [])
     return refs, sorted(misplaced)
 
 
@@ -226,7 +252,11 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="do not write; fail if the committed matrix is stale or unknown IDs are referenced",
+        help=(
+            "do not write; fail if the committed matrix is stale, code/tests cite unknown IDs, "
+            "open points cite undefined IDs or repeat an ID, or requirement marks appear "
+            "outside tests/requirements and tests/system"
+        ),
     )
     args = parser.parse_args()
 

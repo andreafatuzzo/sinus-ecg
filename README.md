@@ -76,10 +76,10 @@ This project does **not** claim compliance with any standard. It uses their stru
 | Verification report | IEC 62304 §5.7 | `docs/validation/` |
 
 Rules followed throughout the project:
-- Every requirement has an ID; every test references the requirement(s) it verifies.
+- Every requirement has an ID and is verified by at least one test in `tests/requirements/` or `tests/system/` that cites it; whoever implements a requirement does not write its verifying tests.
 - Every change that affects behavior updates the risk analysis if needed.
 - Every new dependency is added to the SOUP list.
-- CI runs tests and regenerates the traceability matrix on every push.
+- CI runs the tests and checks that the traceability matrix is up to date on every push.
 
 ## Repository structure
 

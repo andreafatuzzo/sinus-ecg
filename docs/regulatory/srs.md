@@ -44,7 +44,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 - the reference beat annotations, as sample index and label, restricted to the PhysioNet beat annotation codes N, L, R, B, A, a, J, S, V, r, F, e, j, n, E, /, f, Q and ?;
 - all other annotations (e.g. rhythm changes, signal-quality marks, ventricular flutter episodes), separately from the beat annotations.
 
-**Rationale:** Every algorithm and evaluation consumes records the same way, so all of them see the same data. Non-beat annotations are kept because the evaluation may need them (SRS-008).
+**Rationale:** Every algorithm and evaluation consumes records the same way, so all of them see the same data. Non-beat annotations are kept because the EC57 evaluation may need them to exclude segments from scoring (to be decided with OP-030).
 **Verification level:** Requirement (QA)
 **Verification:** Test on a synthetic WFDB record written by the test, with beat annotations of several codes and non-beat annotations (a rhythm change and a signal-quality mark). The returned signal equals the written one within one quantization step of the record; the sampling frequency is equal; the beat annotations are equal and contain no non-beat annotation; every non-beat annotation is returned in the separate list.
 **Risk controls:** none.
@@ -83,7 +83,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-006: QRS detection
 
 **Software item:** dsp
-**Statement:** For an input accepted by SRS-003, the software shall output the sample indices of the detected QRS complexes, in the time base of the input (index 0 = first input sample), such that each index lies within 150 ms of the QRS complex it represents, indices are strictly increasing, and no two indices are closer than 200 ms.
+**Statement:** For an input accepted by SRS-003, the software shall output the sample indices of the detected QRS complexes, in the time base of the input (index 0 = first input sample), such that each index lies within 150 ms of the QRS complex it represents, indices are strictly increasing, and no two indices are closer than 200 ms. For a noise-free input, the output shall contain exactly one index for each QRS complex and no other indices.
 **Rationale:** Beat positions are the basis of heart rate, HRV and beat classification, and are scored against reference annotations on the input time base (SRS-008). 200 ms is the physiological refractory period (at most 300 bpm).
 **Verification level:** Requirement (QA)
 **Verification:** Test on synthetic ECGs with known QRS positions, at 360 Hz and at 250 Hz, at 40, 75 and 180 bpm. Every known QRS has exactly one detection within 150 ms, there are no other detections, and the order and minimum spacing hold. A flat input of 10 s produces no detections and no error.
