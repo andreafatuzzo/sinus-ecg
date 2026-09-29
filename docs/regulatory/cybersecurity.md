@@ -24,7 +24,7 @@ _Inspired by IEC 81001-5-1:2021. Version 0.1, 2026-09-29. Status: draft (Milesto
   - the desktop application, with its test inputs (IF-5) and files (IF-6);
   - the backend, with its API (IF-7) and export (IF-8);
   - the development and build pipeline (supply chain).
-- **The offline pipeline** (`dsp`) processes public data only. It is in scope for the integrity of reference data, golden vectors and reports.
+- **The offline pipeline** (`dsp`) processes public data and, from Milestone 4, recorded sessions (A-1). It is in scope for the integrity of reference data, golden vectors and reports.
 - **Operational context.** Sinus is a personal demonstration project:
   - one owner, or a few users;
   - the device is worn only in demonstration sessions;
@@ -125,7 +125,7 @@ A cable connected to a worn device is an electrical safety hazard, not a securit
 | ID | Control | Threats | Milestone | Status |
 |---|---|---|---|---|
 | SC-1 | `main` changes only through pull requests with green CI; force pushes and deletion are blocked (`sdp.md` §4) | TH-20 | M0 | In place |
-| SC-2 | Dependencies pinned by lock file and installed with `uv sync --locked`; third-party CI actions pinned to exact versions | TH-19, TH-20 | M0 | In place |
+| SC-2 | Dependencies pinned by lock file and installed with `uv sync --locked`; CI actions pinned to exact versions | TH-19, TH-20 | M0 | In place |
 | SC-3 | An SBOM of each software item is generated in CI (§6) | TH-19 | M0 (`dsp`); later items: OP-046 | In place for `dsp` |
 | SC-4 | Security policy with private vulnerability reporting, dependency alerts, a vulnerability scan of the SBOMs, least-privilege CI token permissions, and the triage of §7 | TH-19, TH-20 | M1 | OP-045 |
 | SC-5 | Reference data verified against published checksums (RC-004: SRS-001, SRS-013, SRS-016); golden vectors regenerated in the same CI run as the checks that use them (`architecture.md` §7.5) | TH-21 | M1 | Specified |
@@ -191,7 +191,7 @@ Beat classification (Milestone 6) adds no new interface. Its datasets are verifi
 | TH-17 (exported data taken as clinical) | HAZ-010 | RC-011 | OP-027 |
 | TH-21 (altered reference data) | HAZ-004 | RC-004 | — |
 
-The privacy threats (TH-1, TH-3, TH-6, TH-9 to TH-16) do not lead to physical harm to the wearer, and are handled in this document and with the analysis of stored personal data and privacy (OP-016). The security causes of the hazards above are added to [`risk-analysis.md`](risk-analysis.md) when the wireless link is analysed (OP-012, Milestone 4).
+The privacy threats (TH-1, TH-3, TH-6, TH-9 to TH-16) do not lead to physical harm to the wearer, and are handled in this document and with the analysis of stored personal data and privacy (OP-016). The security causes of the hazards above were added in [`risk-analysis.md`](risk-analysis.md) v0.3.1 (TH-2, TH-4, TH-7, TH-18); the remaining threats to the wireless link are analysed with OP-012 (Milestone 4).
 
 ## 9. Open points referenced
 

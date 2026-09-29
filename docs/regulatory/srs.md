@@ -7,10 +7,10 @@ _Inspired by IEC 62304 §5.2. Version 0.3, 2026-09-29. Status: confirmed by the 
 - Each requirement is a heading of the form `### SRS-001: Short title`, followed by its text, rationale, and related risk-control IDs (see `risk-analysis.md`).
 - IDs are never reused or renumbered. A removed requirement keeps its heading, marked as _Deleted_.
 - Code that implements a requirement cites its ID in a comment or docstring.
-- Tests that verify a requirement are marked with `@pytest.mark.requirement("SRS-001")`.
+- Tests that verify a requirement are marked with `@pytest.mark.requirement("SRS-001")` (Python) or preceded by a `// Verifies: SRS-001` line directly above the GoogleTest macro (C++), as set out in ADR 0004.
 - `docs/regulatory/traceability.md` is generated from these sources by `dsp/scripts/traceability.py`.
 - "Software item" names which item implements the requirement (see `sdp.md` §1).
-- "Verification level" assigns the functional verification: `Requirement` tests are written by QA in `dsp/tests/requirements/`, `System` tests by the test engineer in `dsp/tests/system/` (see `sdp.md` §6). The implementer never verifies their own code functionally.
+- "Verification level" assigns the functional verification: `Requirement` tests are written by QA in `<item>/tests/requirements/`, `System` tests by the test engineer in `<item>/tests/system/` (for example `dsp/tests/…`, `libs/sinus-dsp/tests/…`) (see `sdp.md` §6). The implementer never verifies their own code functionally.
 - "Milestone" names the roadmap milestone (`README.md`) that delivers the requirement. A pull request into `main` fails CI unless every requirement of a milestone that is in progress or released (see [`milestones.md`](milestones.md)) has a verifying test ([ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md)).
 - Requirements are derived from the features in [`functional-analysis.md`](functional-analysis.md).
 

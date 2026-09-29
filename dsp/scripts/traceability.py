@@ -78,7 +78,8 @@ OP_ROW = re.compile(r"^\|\s*(OP-\d{3})\s*\|")
 SPEC_ID = re.compile(r"\b(?:SRS|HAZ|RC)-\d{3}\b")
 
 CPP_TAG = re.compile(r"^\s*//\s*Verifies:(.*)$")
-CPP_TAG_KEYWORD = re.compile(r"\bVerifies\s*:")
+# Case-insensitive on purpose: "// verifies: ..." must fail as a malformed tag, not be ignored.
+CPP_TAG_KEYWORD = re.compile(r"\bVerifies\s*:", re.IGNORECASE)
 _CPP_MACRO = r"(?:TYPED_TEST_P|TYPED_TEST|TEST_F|TEST_P|TEST)"
 CPP_TEST_START = re.compile(rf"^\s*{_CPP_MACRO}\s*\(")
 CPP_TEST_NAME = re.compile(rf"^\s*{_CPP_MACRO}\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)")

@@ -2,7 +2,7 @@
 
 _Status: living document. Last updated 2026-09-29._
 
-Sinus is developed with the help of an AI coding assistant, Claude Code, as disclosed in the software development plan ([`sdp.md`](../regulatory/sdp.md) §5). This page states:
+Sinus is developed with the help of an AI coding assistant, as disclosed in the software development plan ([`sdp.md`](../regulatory/sdp.md) §5.3). This page states:
 - what the assistant is used for;
 - which decisions stay with people;
 - how AI-assisted work is checked.

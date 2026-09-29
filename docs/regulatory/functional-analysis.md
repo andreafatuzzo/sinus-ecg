@@ -1,6 +1,6 @@
 # Functional analysis
 
-_Version 0.2, 2026-09-29. Status: confirmed by the project owner (Milestone 0)._
+_Version 0.2.1, 2026-09-29. Status: confirmed by the project owner (Milestone 0)._
 
 This document describes **what** Sinus does, from the point of view of its users: intended use, use scenarios, functional architecture and features per milestone. It is the input to the software requirements in [`srs.md`](srs.md) and to the user-level hazards in [`risk-analysis.md`](risk-analysis.md). How the functions are built is described in [`architecture.md`](architecture.md).
 
@@ -18,6 +18,7 @@ This document describes **what** Sinus does, from the point of view of its users
 |---|---|---|
 | 0.1 | 2026-09-28 | First version, confirmed by the project owner: US-1 to US-8, FB-01 to FB-14, D1 to D12, features F1.1 to F5.4 |
 | 0.2 | 2026-09-29 | New roadmap in seven milestones (M0 to M6): a portable real-time implementation of the signal processing (M2) and a desktop application with replay (M3) come before the device (M4), the backend (M5) and classification (M6). The receiving application is a desktop application. Added US-9 to US-11; FB-15 (replay), FB-16 (signal quality index), FB-17 (reference outputs for equivalence), FB-18 (device state supervision); D13 to D15; features F1.10 to F1.12, F2.5 to F2.9, F3.8 to F3.11, F4.5 to F4.9, F6.1 and F6.2. Features F2.1 to F5.4 moved to their new milestones, with their IDs unchanged. Abstention added to beat classification. Confirmed by the project owner on 2026-09-29 |
+| 0.2.1 | 2026-09-29 | Process review: F4.9 (second front end) moved after Milestone 6 as decided for OP-042; F2.10 and US-10 cite OP-051; wording of the reader example |
 
 ## 1. Purpose
 
@@ -45,7 +46,7 @@ Any function that interprets the ECG for the user (e.g. beat classification) or 
 |---|---|---|
 | Developer | The project owner or a contributor: technically trained, familiar with ECG basics and with the documentation in this repository | Reproduce and trust the validation results; process reference and recorded signals offline; check the real-time processing against the reference; demonstrate the system by replay without hardware; measure real-time performance |
 | Wearer | An adult volunteer, usually the developer, who wears the device for a demonstration session. No medical training is assumed. Not a patient using Sinus for their health | Attach the device safely, see the live waveform and heart rate, know when the signal is not usable or the device is not working, and never mistake replayed data for their own signal |
-| Reader | Anyone reading the published results and documentation (e.g. reviewers of the portfolio) | Understand what was measured, how, and what the results do and do not mean |
+| Reader | Anyone reading the published results and documentation (e.g. reviewers of the project) | Understand what was measured, how, and what the results do and do not mean |
 
 Wearer exclusions and use-environment limits (e.g. age, implanted cardiac devices, exposure to water) are to be defined before the first worn session (OP-028). The use specification and the user interface are described in [`usability.md`](usability.md).
 
@@ -76,7 +77,7 @@ Wearer exclusions and use-environment limits (e.g. age, implanted cardiac device
 | US-7 | **Export.** The developer exports the measurements of a stored session as HL7 FHIR R4 `Observation` resources to demonstrate interoperability. The exported data states that it does not come from a medical device (OP-027). | Developer | FB-12, FB-13 | M5 |
 | US-8 | **Rhythm analysis demonstration.** The developer computes heart-rate variability for a session, and runs beat classification offline, with results validated on reference data using an inter-patient split. Beats whose signal quality or classification confidence is too low are left unclassified, and the results state how many. | Developer, Reader | FB-09, FB-10, FB-14, FB-16 | M6 |
 | US-9 | **Demonstration by replay.** Without hardware, the developer selects a reference record or a recorded session in the desktop application and replays it as if it came from the device. The live view (US-4) works as with the device, and the screen shows at all times that the data is replayed and from which record. | Developer, Reader | FB-15, FB-05 to FB-08, FB-11, FB-16 | M3 |
-| US-10 | **Checking the real-time processing against the reference.** The developer runs the real-time signal conditioning and beat detection on the reference outputs exported by the offline functions (golden vectors), on a computer and on the device, and confirms that the results agree within a defined tolerance. | Developer | FB-06, FB-07, FB-14, FB-17 | M2 (computer); M4 (device) |
+| US-10 | **Checking the real-time processing against the reference.** The developer runs the real-time signal conditioning and beat detection on the reference outputs exported by the offline functions (golden vectors), on a computer and on the device, and confirms that the results agree within a defined tolerance. | Developer | FB-06, FB-07, FB-14, FB-17 | M2 (computer); M4 (device), see OP-051 |
 | US-11 | **Device fault during a session.** During a worn session the battery runs low, the device detects a fault, or it restarts after a watchdog reset. The desktop application shows the device state, stops presenting the signal as valid, and the recording keeps the data acquired before the event, with the gap marked. | Wearer, Developer | FB-02, FB-03, FB-11, FB-18 | M4 |
 
 ## 4. Functional architecture
@@ -211,7 +212,7 @@ Scope: FB-06, FB-07, FB-08 (tracking) and FB-16 in real time; FB-14 (equivalence
 | F2.8 | Heart-rate tracking | The heart rate is tracked from beat intervals. An isolated missed or extra beat changes the reported heart rate by less than a defined amount, and the estimate is never reported as current beyond a defined time without new beats (OP-021). |
 | F2.9 | Signal quality index | Every window of the signal gets a signal quality index. Windows of clean ECG are marked usable; windows of noise only, flat line or saturated signal are marked not usable. On the noise stress records of F1.10 the index decreases as the SNR decreases (OP-032). |
 | F3.4 | Real-time detection equivalent to the reference (moved from Milestone 3) | On the reference outputs of F1.11, the real-time conditioning outputs and beat positions agree with the offline reference within a defined tolerance (OP-005). The check runs on every change. |
-| F2.10 | Same implementation on computer and device | The real-time functions pass the same equivalence checks when built for a computer and for the device processor, so that the desktop application and the device use one implementation. |
+| F2.10 | Same implementation on computer and device | The real-time functions pass the same equivalence checks when built for a computer and for the device processor, so that the desktop application and the device use one implementation (where and when the device build is checked: OP-051). |
 
 ### 5.3 Milestone 3: Desktop application and replay
 
@@ -244,7 +245,6 @@ Scope: FB-01, FB-02, FB-03 (device), FB-05 (electrode contact, device state), FB
 | F4.7 | Recovery from a watchdog reset | After a watchdog reset the device restarts in a defined state and reports the restart; the desktop application marks the gap in the recording and does not compute beat intervals across it (OP-036). |
 | F3.5 | Sampling jitter, latency and lost samples (moved from Milestone 3) | Sampling-time jitter on the device, end-to-end latency from acquisition to display and lost samples are measured over a session and reported against targets (OP-014). |
 | F4.8 | End-to-end integration | A worn session is shown live and recorded by the desktop application, and the recording loads in the offline functions (F1.2). Integration is verified by replaying reference records through the device and the desktop application (OP-007). |
-| F4.9 | Second front end | A multi-channel, higher-resolution front end can replace the first one, still used as a single lead, with the same stream (D1) to the desktop application (OP-042). |
 
 ### 5.5 Milestone 5: Backend and interoperability
 
@@ -270,6 +270,14 @@ Scope: FB-09, FB-10, FB-14 (classification, HRV, final report). Scenario US-8.
 | F5.3 | Independent performance evidence (moved from Milestone 5) | Detection performance is also reported on a reference database not used during development (OP-029). Noise stress moved to F1.10. |
 | F5.4 | Final verification report (moved from Milestone 5) | A final report summarises the verification of every requirement and the validation results of all milestones. |
 
+### 5.7 After Milestone 6
+
+Planned after the six milestones; listed so that the functional architecture stays complete.
+
+| ID | Feature | Acceptance criteria |
+|---|---|---|
+| F4.9 | Second front end | A multi-channel, higher-resolution front end can replace the first one, still used as a single lead, with the same stream (D1) to the desktop application (OP-042). |
+
 ## 6. Open points referenced
 
-OP-005, OP-007, OP-012 to OP-017, OP-020 to OP-029, OP-031, OP-032, OP-034 to OP-039, OP-041, OP-042. See [`open-points.md`](open-points.md). The review of the requirements against this document (OP-019) and the device sampling rate (OP-004, 360 Hz) are closed.
+OP-005, OP-007, OP-012 to OP-017, OP-020 to OP-029, OP-031, OP-032, OP-034 to OP-039, OP-041, OP-042, OP-051. See [`open-points.md`](open-points.md). The review of the requirements against this document (OP-019) and the device sampling rate (OP-004, 360 Hz) are closed.

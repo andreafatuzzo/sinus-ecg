@@ -1,6 +1,13 @@
 # Software safety classification
 
-_Inspired by IEC 62304:2006+A1:2015 §4.3. Version 0.1, 2026-09-28. Status: draft (Milestone 0)._
+_Inspired by IEC 62304:2006+A1:2015 §4.3. Version 0.2, 2026-09-29. Status: draft (Milestone 0)._
+
+## Revision history
+
+| Version | Date | Changes |
+|---|---|---|
+| 0.1 | 2026-09-28 | First draft |
+| 0.2 | 2026-09-29 | Review trigger: beat classification with abstention at Milestone 6 |
 
 ## Result
 

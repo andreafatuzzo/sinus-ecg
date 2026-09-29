@@ -170,7 +170,6 @@ sinus-ecg/
 - [ ] Watchdog, explicit error state, low-battery handling
 - [ ] Fixed sampling rate, with jitter and latency measurements
 - [ ] Integration with the desktop application
-- [ ] ADS1293 front end with a register-level SPI driver (later step)
 
 **Milestone 5: Backend and interoperability**
 - [ ] Session upload and storage (FastAPI)
@@ -183,6 +182,9 @@ sinus-ecg/
 - [ ] Dataset card and model card
 - [ ] HRV analysis
 - [ ] Final verification report and project write-up
+
+**After Milestone 6**
+- [ ] ADS1293 front end with a register-level SPI driver (OP-042)
 
 ## Getting started
 

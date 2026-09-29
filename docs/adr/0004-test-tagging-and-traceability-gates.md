@@ -111,7 +111,7 @@ Citing a requirement ID in production code claims that the requirement is implem
 - every requirement (not deleted) of every milestone that is `In progress` or `Released` has at least one verifying test;
 - every requirement (not deleted) names a milestone listed in the register.
 
-CI runs the gate when the pull request's base branch is `main`, and on `main` after the merge. It is a step of the CI job `dsp`, which the ruleset on `main` already requires, so no ruleset change is needed.
+CI runs the gate in a separate workflow (`.github/workflows/release-gate.yml`, job `release-gate`) that is triggered only by pull requests into `main`. A push never produces the `release-gate` check, so a push-event run cannot satisfy it, and the ruleset on `main` requires both `dsp` and `release-gate`.
 
 - **Why `In progress` is gated too.** `main` receives `develop` only at the end of a milestone. If the milestone is not verified, the pull request must fail even if its status was not yet changed to `Released`, so a forgotten status change does not open the gate.
 - **Why a register file.** It is a table parsed with one pattern, and it changes in the pull request diff like any reviewed document. It also serves as the release record (IEC 62304 §5.8). Rejected alternatives:

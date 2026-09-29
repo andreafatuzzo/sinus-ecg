@@ -1,6 +1,6 @@
 # Risk analysis
 
-_Inspired by ISO 14971:2019. Version 0.3, 2026-09-29. Status: draft (Milestone 0)._
+_Inspired by ISO 14971:2019. Version 0.3.2, 2026-09-29. Status: draft (Milestone 0)._
 
 ## Conventions
 
@@ -19,6 +19,7 @@ _Inspired by ISO 14971:2019. Version 0.3, 2026-09-29. Status: draft (Milestone 0
 | 0.2 | 2026-09-28 | Review against the functional analysis (OP-019): acceptability rule for S4; HAZ-005 rated S4; causes added to HAZ-001 and HAZ-002; HAZ-010 and RC-011 added; "Implemented by" updated for SRS v0.2 (SRS-010 to SRS-012) |
 | 0.3 | 2026-09-29 | Aligned with functional analysis v0.2 (new roadmap: portable real-time library, desktop application with replay, ESP32-S3 device). Added HAZ-006 (contact loss and low signal quality), HAZ-007 (stale data), HAZ-011 (low battery), HAZ-012 (device fault, watchdog reset, data gaps), HAZ-013 (replayed or test data taken for the live signal), HAZ-014 (beat class shown where the system should abstain); RC-007, RC-008, RC-012 to RC-016. Causes added to HAZ-001, HAZ-002 (real-time implementation differs from the reference), HAZ-004 (performance known only on clean data) and HAZ-005 (wired test link). RC-004 extended to SRS-013, SRS-014 and SRS-016. Milestone references renumbered |
 | 0.3.1 | 2026-09-29 | Security causes added to HAZ-001, HAZ-002 and HAZ-013, from the threat model in cybersecurity.md (TH-2, TH-4, TH-7, TH-18) |
+| 0.3.2 | 2026-09-29 | Process review: header version; HAZ-007 acceptability now cites Milestones 2 to 4 (heart-rate tracking at Milestone 2) |
 
 ## Scope
 
@@ -62,7 +63,7 @@ _Inspired by ISO 14971:2019. Version 0.3, 2026-09-29. Status: draft (Milestone 0
 | HAZ-004 | Validation results do not represent real performance (corrupted data, non-standard scoring, results that cannot be reproduced, performance known only on clean recordings), so the algorithm is trusted more than it deserves | Increases the probability of HAZ-001 and HAZ-002 | S2 | P2 | RC-004 | P1 | Yes |
 | HAZ-005 | Current flows through the electrodes when the worn device is connected to mains-powered equipment (USB, charger, or a wired test or debug link to a computer) | Electric shock; current across the chest can cause ventricular fibrillation | S4 | P2 | RC-006 | P1 | Yes, pending verification of RC-006 (OP-013, OP-024, OP-038); S4 rule: RC-006 is inherent safety by design, verified by inspection |
 | HAZ-006 | Electrode contact lost or poor, or signal quality too low (motion artefact, noise): beats and a heart rate computed from noise, or a flat line, are shown as if valid | As HAZ-001 or HAZ-002 | S2 | P3 | RC-007, RC-005 | P2 | Yes, once the requirements of RC-007 are written and verified (Milestones 2 to 4, OP-020, OP-032) |
-| HAZ-007 | Data stop arriving (wireless link lost, device in error state or restarting, desktop application stalled, replay ended) and the last waveform and heart rate stay on screen as if current, or a heart rate is carried forward or predicted across the missing beats | As HAZ-001 | S2 | P3 | RC-008, RC-014 | P2 | Yes, once the requirements of RC-008 and RC-014 are written and verified (Milestones 3 and 4, OP-021, OP-036) |
+| HAZ-007 | Data stop arriving (wireless link lost, device in error state or restarting, desktop application stalled, replay ended) and the last waveform and heart rate stay on screen as if current, or a heart rate is carried forward or predicted across the missing beats | As HAZ-001 | S2 | P3 | RC-008, RC-014 | P2 | Yes, once the requirements of RC-008 and RC-014 are written and verified (Milestones 2 to 4, OP-021, OP-036) |
 | HAZ-010 | Published or exported results (validation report, later the FHIR export) are taken by a reader, a clinician or another system as clinical-grade data | Overtrust in the algorithm, or a wrong decision about the wearer | S2 | P2 | RC-005, RC-011 | P1 | Yes |
 | HAZ-011 | Battery runs low during a session: the device stops without notice, or its front end acquires a degraded signal (clipping, added noise) that is processed and shown as valid; the session recording is lost or truncated | As HAZ-001 or HAZ-002; loss of the session | S2 | P3 | RC-013, RC-007 | P2 | Yes, once the requirements of RC-013 are written and verified (Milestone 4, OP-035) |
 | HAZ-012 | Device fault or watchdog restart during a session, or samples lost on the wireless link: if the gap is not detected and marked, the recording and the derived beat intervals join samples across it, so a spurious pause or wrong heart rate is shown or stored; the recording made before the fault is lost | As HAZ-001 or HAZ-002; loss of the session | S2 | P3 | RC-014 | P2 | Yes, once the requirements of RC-014 are written and verified (Milestone 4, OP-036) |

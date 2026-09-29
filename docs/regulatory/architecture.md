@@ -329,8 +329,8 @@ mains_frequency_hz=60
 software_version=0.1.0
 stages=baseline,mains
 n_samples=10800
-n_beats=38
-n_reference_beats=38
+n_beats=37
+n_reference_beats=37
 [coefficients]
 stage,section,b0,b1,b2,a1,a2
 baseline,0,…
@@ -476,4 +476,4 @@ Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, Google
 
 ## 12. Open points referenced
 
-OP-005, OP-008, OP-014, OP-016, OP-018, OP-020, OP-021, OP-026, OP-027, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-051. See [`open-points.md`](open-points.md).
+OP-005, OP-007, OP-008, OP-014, OP-016, OP-018, OP-020, OP-021, OP-026, OP-027, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-051. See [`open-points.md`](open-points.md).
