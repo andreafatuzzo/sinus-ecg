@@ -29,7 +29,8 @@ Usage (from the repository root or anywhere):
   python dsp/scripts/traceability.py --check         # exit 1 if any check fails (every push)
   python dsp/scripts/traceability.py --release-gate  # exit 1 unless every requirement of a
                                                      # milestone in progress or released has a
-                                                     # verifying test (pull requests into main)
+                                                     # verifying test and no open point targets
+                                                     # it (pull requests into main)
 """
 
 from __future__ import annotations
@@ -159,6 +160,7 @@ class OpenPoint:
     id: str
     is_open: bool
     refs: list[str]
+    target: str = ""  # the Target column of an open row (e.g. "M1"); empty for closed rows
 
 
 @dataclass
@@ -286,7 +288,9 @@ def parse_open_points(layout: Layout) -> list[OpenPoint]:
         elif m := OP_ROW.match(line):
             cells = [c.strip() for c in line.strip("|").split("|")]
             refs = SPEC_ID.findall(cells[2]) if len(cells) > 2 else []
-            points.append(OpenPoint(id=m.group(1), is_open=section == "open", refs=refs))
+            is_open = section == "open"
+            target = cells[4] if is_open and len(cells) > 4 else ""
+            points.append(OpenPoint(id=m.group(1), is_open=is_open, refs=refs, target=target))
     return points
 
 
@@ -531,7 +535,8 @@ def gated_milestones(m: Matrix) -> list[str]:
 
 
 def release_gate_failures(m: Matrix) -> list[str]:
-    """Requirements of gated milestones without a verifying test, or without a valid milestone."""
+    """Requirements of gated milestones without a verifying test or without a valid milestone,
+    and open points that still target a gated milestone."""
     gated = set(gated_milestones(m))
     out: list[str] = []
     for req in sorted(m.requirements.values(), key=lambda r: r.id):
@@ -542,6 +547,9 @@ def release_gate_failures(m: Matrix) -> list[str]:
         elif req.milestone in gated and not m.tests.get(req.id):
             status = m.milestones[req.milestone].status
             out.append(f"{req.id} ({req.milestone}, {status}): no verifying test")
+    for op in sorted(m.open_points, key=lambda o: o.id):
+        if op.is_open and op.target in gated:
+            out.append(f"{op.id}: open point still targets {op.target}; close or retarget it")
     return out
 
 
@@ -644,8 +652,8 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "do not write; fail unless every requirement of a milestone that is In progress or "
-            "Released in docs/regulatory/milestones.md has a verifying test "
-            "(run on pull requests into main)"
+            "Released in docs/regulatory/milestones.md has a verifying test and no open point "
+            "still targets such a milestone (run on pull requests into main)"
         ),
     )
     args = parser.parse_args(argv)
@@ -664,7 +672,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         failures += check_failures(matrix, layout, content)
     if args.release_gate:
-        failures.append((gate.capitalize(), release_gate_failures(matrix)))
+        failures.append((gate[:1].upper() + gate[1:], release_gate_failures(matrix)))
     failed = [(rule, items) for rule, items in failures if items]
     for rule, items in failed:
         print(f"FAIL: {rule}")

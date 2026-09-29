@@ -77,7 +77,7 @@ Wearer exclusions and use-environment limits (e.g. age, implanted cardiac device
 | US-7 | **Export.** The developer exports the measurements of a stored session as HL7 FHIR R4 `Observation` resources to demonstrate interoperability. The exported data states that it does not come from a medical device (OP-027). | Developer | FB-12, FB-13 | M5 |
 | US-8 | **Rhythm analysis demonstration.** The developer computes heart-rate variability for a session, and runs beat classification offline, with results validated on reference data using an inter-patient split. Beats whose signal quality or classification confidence is too low are left unclassified, and the results state how many. | Developer, Reader | FB-09, FB-10, FB-14, FB-16 | M6 |
 | US-9 | **Demonstration by replay.** Without hardware, the developer selects a reference record or a recorded session in the desktop application and replays it as if it came from the device. The live view (US-4) works as with the device, and the screen shows at all times that the data is replayed and from which record. | Developer, Reader | FB-15, FB-05 to FB-08, FB-11, FB-16 | M3 |
-| US-10 | **Checking the real-time processing against the reference.** The developer runs the real-time signal conditioning and beat detection on the reference outputs exported by the offline functions (golden vectors), on a computer and on the device, and confirms that the results agree within a defined tolerance. | Developer | FB-06, FB-07, FB-14, FB-17 | M2 (computer); M4 (device), see OP-051 |
+| US-10 | **Checking the real-time processing against the reference.** The developer runs the real-time signal conditioning and beat detection on the reference outputs exported by the offline functions (golden vectors), on a computer and on the device, and confirms that the results agree within a defined tolerance. | Developer | FB-06, FB-07, FB-14, FB-17 | M2 (computer, and the device processor in emulation, OP-051 closed); M4 (device) |
 | US-11 | **Device fault during a session.** During a worn session the battery runs low, the device detects a fault, or it restarts after a watchdog reset. The desktop application shows the device state, stops presenting the signal as valid, and the recording keeps the data acquired before the event, with the gap marked. | Wearer, Developer | FB-02, FB-03, FB-11, FB-18 | M4 |
 
 ## 4. Functional architecture
@@ -212,7 +212,7 @@ Scope: FB-06, FB-07, FB-08 (tracking) and FB-16 in real time; FB-14 (equivalence
 | F2.8 | Heart-rate tracking | The heart rate is tracked from beat intervals. An isolated missed or extra beat changes the reported heart rate by less than a defined amount, and the estimate is never reported as current beyond a defined time without new beats (OP-021). |
 | F2.9 | Signal quality index | Every window of the signal gets a signal quality index. Windows of clean ECG are marked usable; windows of noise only, flat line or saturated signal are marked not usable. On the noise stress records of F1.10 the index decreases as the SNR decreases (OP-032). |
 | F3.4 | Real-time detection equivalent to the reference (moved from Milestone 3) | On the reference outputs of F1.11, the real-time conditioning outputs and beat positions agree with the offline reference within a defined tolerance (OP-005). The check runs on every change. |
-| F2.10 | Same implementation on computer and device | The real-time functions pass the same equivalence checks when built for a computer and for the device processor, so that the desktop application and the device use one implementation (where and when the device build is checked: OP-051). |
+| F2.10 | Same implementation on computer and device | The real-time functions pass the same equivalence checks when built for a computer and for the device processor, so that the desktop application and the device use one implementation (the device build is checked at Milestone 2 in the device processor's emulator in CI, OP-051 closed). |
 
 ### 5.3 Milestone 3: Desktop application and replay
 
@@ -280,4 +280,4 @@ Planned after the six milestones; listed so that the functional architecture sta
 
 ## 6. Open points referenced
 
-OP-005, OP-007, OP-012 to OP-017, OP-020 to OP-029, OP-031, OP-032, OP-034 to OP-039, OP-041, OP-042, OP-051. See [`open-points.md`](open-points.md). The review of the requirements against this document (OP-019) and the device sampling rate (OP-004, 360 Hz) are closed.
+OP-005, OP-007, OP-012 to OP-017, OP-020 to OP-029, OP-031, OP-032, OP-034 to OP-039, OP-041, OP-042. See [`open-points.md`](open-points.md). The review of the requirements against this document (OP-019) and the device sampling rate (OP-004, 360 Hz) are closed.

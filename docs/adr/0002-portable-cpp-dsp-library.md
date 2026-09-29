@@ -43,7 +43,7 @@ Option 2: `libs/sinus-dsp`, a C++17 library built with CMake for the host and fo
   - values are written so that reading them back gives exactly the computed values;
   - the files are deterministic and contain no timestamps;
   - they are regenerated in CI from the same commit and are not stored in the repository.
-- **Where the equivalence runs.** The library passes the equivalence checks on the host in CI on every change, and on the ESP32-S3 (OP-051). The tolerances are defined in OP-005.
+- **Where the equivalence runs.** The library passes the equivalence checks on the host in CI on every change, and on the ESP32-S3 in Espressif's QEMU emulator in CI (OP-051, decided by the project owner on 2026-09-29). The tolerances are defined in OP-005.
 
 ## Consequences
 

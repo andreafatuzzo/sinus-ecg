@@ -174,7 +174,7 @@ Beat classification (Milestone 6) adds no new interface. Its datasets are verifi
 
   The outcome is one of: update the component, mitigate, or accept with a recorded rationale.
 - **Records.** A GitHub issue labelled `security`. The "Known anomalies reviewed" column of [`soup.md`](soup.md). [`risk-analysis.md`](risk-analysis.md), when the vulnerability affects safety. Fixes follow the normal problem-resolution flow (`sdp.md` §8).
-- **Timing** (to be confirmed with OP-045):
+- **Timing** (Milestone 1, as decided for OP-045):
   - triage within 30 days of an alert;
   - a reachable vulnerability with an effect on safety is fixed before the next worn session;
   - other fixes land with the next milestone at the latest.

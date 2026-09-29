@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.1, 2026-09-29. Status: draft (Milestone 0), for approval by the project owner._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.1, 2026-09-29. Status: approved by the project owner on 2026-09-29 (Milestone 0)._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;
@@ -118,7 +118,7 @@ A discrepancy is counted and recorded with the session. It is not shown as a res
 
 **Alternatives considered.**
 - *Processing on the device only, with the desktop as a display.* Replay would then bypass the processing path, or need a second one, and recordings would hold processed data. Rejected.
-- *Acquisition only on the device, with the library run on the ESP32-S3 only in a test image fed with golden vectors.* The firmware would be simpler. This remains the fallback if the device-side chain does not fit the budget; the test image is needed anyway (OP-051).
+- *Acquisition only on the device, with the library run on the ESP32-S3 only in a test image fed with golden vectors.* The firmware would be simpler. This remains the fallback if the device-side chain does not fit the budget; the test image is needed anyway (run in Espressif's QEMU emulator in CI, OP-051 closed).
 
 ## 4. Interfaces and data flows
 
@@ -176,7 +176,7 @@ The byte layout of IF-4 and IF-5 frames and the REST resources of IF-7 are desig
 | The real-time path computes in `float`; `double` is used only at configuration time (filter design). Implicit promotion to `double` is a compile error | `-Wdouble-promotion -Wfloat-conversion` treated as errors |
 | Bounded work per sample, independent of the signal content. A bounded delay per stage, reported by the object | Worst-case timing on the ESP32-S3 against the budget (OP-049) |
 | One object per signal, used from one thread; no internal locking; objects are independent of each other | Review |
-| The same source code and the same results on every target: no target-specific code paths. A target-optimised kernel would need its own equivalence tests | Equivalence tests on the host and on the ESP32-S3 (§7, OP-051) |
+| The same source code and the same results on every target: no target-specific code paths. A target-optimised kernel would need its own equivalence tests | Equivalence tests on the host and on the ESP32-S3 in Espressif's QEMU emulator in CI (§7, OP-051 closed) |
 | Coding standard, formatting and static analysis rules: OP-043 | CI |
 
 ### 5.2 Interface style
@@ -211,7 +211,7 @@ Planned content for Milestone 2 (functional-analysis.md §5.2):
   - folders `libs/sinus-dsp/tests/{unit,requirements,system}/`;
   - a verifying test carries the comment `// Verifies: SRS-nnn` directly above its `TEST` macro, and only in `requirements/` or `system/`.
   - An equivalence test verifies a Milestone 2 equivalence requirement, and sits in the folder of that requirement's Verification level.
-- **On-target tests.** On the ESP32-S3, a test image runs the same equivalence checks (OP-051).
+- **On-target tests.** On the ESP32-S3, a test image runs the same equivalence checks, in Espressif's QEMU emulator in CI (OP-051 closed).
 
 ## 6. Firmware, desktop application and backend (outline)
 
@@ -397,7 +397,7 @@ sample_index
   - Synthetic vectors are regenerated deterministically on demand.
   - Vectors of record segments are derived from the database, which is never committed (SRS-015).
 - **In CI (from Milestone 2).** The Python build generates the vectors and passes them to the C++ equivalence tests as a build artifact of the same commit. The C++ library is therefore always compared with the current reference, and any change to the reference that the C++ library does not follow fails CI.
-- **On the ESP32-S3.** The on-target test image receives the same vectors (OP-051).
+- **On the ESP32-S3.** The on-target test image receives the same vectors, in Espressif's QEMU emulator in CI (OP-051 closed).
 
 ## 8. Milestone 1 module structure of `dsp`
 
@@ -476,4 +476,4 @@ Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, Google
 
 ## 12. Open points referenced
 
-OP-005, OP-007, OP-008, OP-014, OP-016, OP-018, OP-020, OP-021, OP-026, OP-027, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-051. See [`open-points.md`](open-points.md).
+OP-005, OP-007, OP-008, OP-014, OP-016, OP-018, OP-020, OP-021, OP-026, OP-027, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050. See [`open-points.md`](open-points.md).

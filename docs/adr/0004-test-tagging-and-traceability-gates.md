@@ -107,9 +107,10 @@ Citing a requirement ID in production code claims that the requirement is implem
   - a milestone becomes `In progress` when its work starts on `develop`;
   - the pull request that merges it into `main` sets it to `Released`.
 
-**Gate:** `traceability.py --release-gate` fails unless both hold:
+**Gate:** `traceability.py --release-gate` fails unless all of these hold:
 - every requirement (not deleted) of every milestone that is `In progress` or `Released` has at least one verifying test;
-- every requirement (not deleted) names a milestone listed in the register.
+- every requirement (not deleted) names a milestone listed in the register;
+- no open point in the Open section of `open-points.md` has one of those milestones as its Target (decided by the project owner, 2026-09-29): anything still pending is closed or explicitly moved to a later milestone before the release.
 
 CI runs the gate in a separate workflow (`.github/workflows/release-gate.yml`, job `release-gate`) that is triggered only by pull requests into `main`. A push never produces the `release-gate` check, so a push-event run cannot satisfy it, and the ruleset on `main` requires both `dsp` and `release-gate`.
 
@@ -123,7 +124,6 @@ CI runs the gate in a separate workflow (`.github/workflows/release-gate.yml`, j
 The gate does not check the following:
 - **That tests pass.** pytest checks that in the same job.
 - **That tests needing the reference database ran.** They are skipped in CI, and their results are in the milestone validation report (`sdp.md` §6).
-- **That no open point still targets the milestone.** The process review checks that (`sdp.md` §3).
 
 ### 8. Requirement and register fields (every push)
 
