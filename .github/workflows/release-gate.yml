@@ -1,0 +1,26 @@
+name: Release gate
+
+# A pull request into main releases a milestone: every requirement of a milestone that is in
+# progress or released (docs/regulatory/milestones.md) must have a verifying test
+# (docs/adr/0004-test-tagging-and-traceability-gates.md).
+# This workflow runs only on pull requests into main, so its check "release-gate" is never
+# produced by a push, and the ruleset on main requires it.
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dsp
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: dsp/uv.lock
+      - run: uv sync --locked
+      - name: Traceability checks and release gate
+        run: uv run python scripts/traceability.py --check --release-gate

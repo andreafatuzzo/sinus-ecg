@@ -11,7 +11,7 @@ jobs:
       run:
         working-directory: dsp
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
@@ -22,5 +22,24 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy
       - run: uv run pytest
-      - name: Traceability matrix is up to date
+      # Matrix up to date, requirement and milestone fields, test tag placement and verification
+      # level, implemented => tested (docs/adr/0004-test-tagging-and-traceability-gates.md)
+      - name: Traceability checks
         run: uv run python scripts/traceability.py --check
+      # The release gate for pull requests into main is a separate workflow (release-gate.yml).
+      # SBOM of the runtime dependencies only: a separate environment without the dev group,
+      # described by cyclonedx-py (a dev-group tool) and published as a workflow artifact.
+      - name: Runtime environment for the SBOM
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/dsp-runtime
+        run: uv sync --locked --no-dev --no-install-project
+      - name: SBOM (CycloneDX)
+        run: >-
+          uv run cyclonedx-py environment "${{ runner.temp }}/dsp-runtime"
+          --pyproject pyproject.toml --output-reproducible
+          --output-file "${{ runner.temp }}/sbom-dsp.cdx.json"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sbom-dsp
+          path: ${{ runner.temp }}/sbom-dsp.cdx.json
+          if-no-files-found: error
