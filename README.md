@@ -137,7 +137,7 @@ sinus-ecg/
 - [x] Software development plan and safety classification
 - [x] Functional analysis, first version of requirements (SRS) and risk analysis
 - [x] Usability draft (use specification, use-related hazards)
-- [ ] Architecture decision records, cybersecurity and development-process documents
+- [x] Architecture decision records, cybersecurity and development-process documents
 
 **Milestone 1: Python reference**
 - [ ] MIT-BIH download script and data loader
@@ -204,4 +204,4 @@ Code (firmware, DSP library and reference, desktop application, backend) is lice
 
 ## Status
 
-🚧 Early development: Milestone 0 documents in review (roadmap realigned to seven milestones, M0 to M6), Milestone 1 (Python reference) next.
+🚧 Early development: Milestone 0 (foundations) released; Milestone 1 (Python reference) next.
