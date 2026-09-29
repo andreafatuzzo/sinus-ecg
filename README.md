@@ -1,6 +1,6 @@
 # Sinus
 
-**Open-source wearable ECG: firmware, real-time signal processing, and arrhythmia detection validated per ANSI/AAMI EC57, documented following IEC 62304.**
+**Open-source wearable ECG: firmware, real-time signal processing, and arrhythmia detection to be validated per ANSI/AAMI EC57, documented following IEC 62304.**
 
 > ⚠️ **Not a medical device.** Sinus is a personal engineering and portfolio project. It is not certified, not intended for diagnosis or monitoring of any medical condition, and must not be used to make health decisions.
 >
@@ -14,7 +14,7 @@ Most hobby ECG projects stop at "the waveform shows up on screen". Sinus aims to
 
 Goals:
 
-1. Build a complete, working end-to-end system (hardware → firmware → app → backend).
+1. Build a complete, working end-to-end system (hardware → firmware → desktop application → backend).
 2. Validate the signal-processing algorithms on public reference databases using industry-standard metrics.
 3. Develop the software following a lightweight version of the processes required for medical device software (IEC 62304, ISO 14971).
 4. Keep everything reproducible: anyone can clone the repo, download the data, and re-run every result.
@@ -23,23 +23,29 @@ Goals:
 
 ```
 ┌──────────────┐    ┌──────────────┐  BLE   ┌──────────────┐  HTTPS  ┌──────────────┐
-│ Analog front │ →  │   Firmware   │ ─────→ │     App      │ ──────→ │   Backend    │
+│ Analog front │ →  │   Firmware   │ ─────→ │ Desktop app  │ ──────→ │   Backend    │
 │ end + MCU    │    │ sampling,    │        │ live plot,   │         │ storage,     │
-│ (electrodes) │    │ filtering,   │        │ R-peaks, HR  │         │ FHIR export  │
-└──────────────┘    │ BLE stream   │        └──────────────┘         └──────────────┘
-                    └──────────────┘
-                           ▲
-              Offline validation pipeline (Python) on MIT-BIH / PhysioNet
+│ (electrodes) │    │ processing,  │        │ R-peaks, HR, │         │ FHIR export  │
+└──────────────┘    │ BLE stream   │        │ quality,     │         └──────────────┘
+                    └──────────────┘        │ replay       │
+                           ▲                └──────────────┘
+                           │                       ▲
+                           └──── C++ DSP library ──┘
+                                        ▲  golden vectors (equivalence within tolerance)
+              Python reference + offline validation on MIT-BIH / PhysioNet
 ```
 
-| Component | Planned technology | Notes |
+One portable C++ signal-processing library runs on the device and in the desktop application, so there is a single real-time implementation. The Python implementation is the validated reference: it exports golden vectors, and the C++ library must reproduce them within a defined tolerance. The desktop application can replay reference records as if they came from the device, so the whole chain can be demonstrated and tested without hardware.
+
+| Component | Technology | Notes |
 |---|---|---|
-| Analog front end | AD8232 (MVP, single lead) → ADS1293 (multi-lead, later) | Battery-powered only |
-| MCU | ESP32-S3 or nRF52840 | BLE streaming |
-| Firmware | C (ESP-IDF or Zephyr) | Fixed sampling rate, ring buffer, BLE GATT service |
-| DSP & algorithms | Python (NumPy, SciPy, `wfdb`) | Reference implementation, later ported to C |
-| App | TBD (web or mobile, OP-006) | Live waveform, heart rate, detected beats |
-| Backend | Python (FastAPI) | Session storage, HL7 FHIR `Observation` export |
+| Analog front end | AD8232 via the MCU ADC (first prototype, single lead) → ADS1293 with a register-level SPI driver (later) | Battery-powered only |
+| MCU | ESP32-S3 | BLE streaming |
+| Firmware | C++17 on ESP-IDF with FreeRTOS | Tasks with explicit priorities for acquisition, processing and BLE; fixed sampling rate with jitter and latency measured; BLE GATT service with packet sequence numbers; watchdog, explicit error state, low-battery handling |
+| Real-time DSP library (`libs/sinus-dsp`) | C++17, no dynamic allocation in the real-time path; builds for host and ESP32 | FIR/IIR filters, adaptive (LMS) interference reduction, streaming Pan–Tompkins QRS detection, Kalman heart-rate tracking, per-window signal quality index |
+| Reference and validation (`dsp/`) | Python (NumPy, SciPy, `wfdb`) | Reference implementation, EC57 evaluation, noise stress test, golden-vector export |
+| Desktop application | C++17 with Qt 6 | Live waveform, R-peaks, heart rate, signal quality, recording, replay mode; BLE, plus serial or UDP test input for tests without hardware |
+| Backend | Python (FastAPI) | Session storage, HL7 FHIR R4 `Observation` export |
 
 ## Algorithms and validation
 
@@ -47,6 +53,12 @@ Goals:
 - Baseline: Pan–Tompkins.
 - Evaluated on the MIT-BIH Arrhythmia Database with beat-by-beat matching as specified by ANSI/AAMI EC57.
 - Reported metrics: sensitivity (Se) and positive predictive value (+P), per record and aggregate.
+- Noise stress test on the MIT-BIH Noise Stress Test Database: Se and +P versus signal-to-noise ratio.
+- A subset report is regenerated in CI on every push, so any change in detection results shows up in review.
+
+**Real-time implementation**
+- The C++ library is checked against golden vectors exported by the Python reference, within a defined tolerance.
+- A per-window signal quality index marks the signal as not usable, so that no heart rate is shown from noise.
 
 **Heart-rate variability**
 - Time-domain (SDNN, RMSSD) and frequency-domain (LF/HF) metrics from detected RR intervals.
@@ -55,6 +67,8 @@ Goals:
 - AAMI beat classes (N, SVEB, VEB, F, Q).
 - Classical feature-based model vs. a small neural network.
 - **Inter-patient split** (no beats from the same patient in both train and test) to avoid the data leakage common in published results.
+- **Abstention:** no class is given when signal quality or model confidence is too low. Metrics are reported on all beats and on accepted beats, together with the abstention rate.
+- Dataset card and model card.
 
 All results are regenerated by a single script and published in `docs/validation/`.
 
@@ -69,33 +83,42 @@ This project does **not** claim compliance with any standard. It uses their stru
 | Functional analysis (intended use, functional architecture) | IEC 62304 §5.2 (input to requirements) | `docs/regulatory/functional-analysis.md` |
 | Software requirements (IDs `SRS-xxx`) | IEC 62304 §5.2 | `docs/regulatory/srs.md` |
 | Architecture | IEC 62304 §5.3 | `docs/regulatory/architecture.md` |
+| Architecture decision records | IEC 62304 §5.3 | `docs/adr/` |
 | Risk analysis | ISO 14971 | `docs/regulatory/risk-analysis.md` |
+| Usability (use specification, use-related hazards) | IEC 62366-1 | `docs/regulatory/usability.md` |
+| Cybersecurity (BLE, backend) | IEC 81001-5-1 | `docs/regulatory/cybersecurity.md` |
 | SOUP list (third-party software) | IEC 62304 §8.1.2 | `docs/regulatory/soup.md` |
+| Software bill of materials (SBOM) | FDA and EU cybersecurity practice | Generated in CI (CycloneDX) |
 | Traceability matrix (SRS → code → tests) | IEC 62304 §5.1.1 | `docs/regulatory/traceability.md` |
 | Open points (pending decisions, deferred work, IDs `OP-xxx`) | IEC 62304 §9 (problem resolution) | `docs/regulatory/open-points.md` |
 | Verification report | IEC 62304 §5.7 | `docs/validation/` |
+| Development process with AI assistance | — | `docs/process/ai-assisted-development.md` |
 
 Rules followed throughout the project:
 - Every requirement has an ID and is verified by at least one test in `tests/requirements/` or `tests/system/` that cites it; whoever implements a requirement does not write its verifying tests.
 - Every change that affects behavior updates the risk analysis if needed.
 - Every new dependency is added to the SOUP list.
-- CI runs the tests and checks that the traceability matrix is up to date on every push.
+- CI runs the tests and checks that the traceability matrix is up to date on every push. During Milestone 1 it will also regenerate the subset validation report, and fail when an implemented requirement has no verifying test.
 
 ## Repository structure
 
 ```
 sinus-ecg/
-├── firmware/            # MCU firmware (C)
-├── dsp/                 # Python reference algorithms + validation pipeline
+├── firmware/            # ESP32-S3 firmware: C++17 on ESP-IDF + FreeRTOS
+├── libs/
+│   └── sinus-dsp/       # Portable C++17 real-time DSP library (host and ESP32)
+├── dsp/                 # Python reference implementation + validation pipeline
 │   ├── sinus_dsp/
-│   ├── scripts/         # download data, run EC57 evaluation
+│   ├── scripts/         # download data, EC57 and noise stress evaluation, golden vectors
 │   └── tests/
-├── app/                 # Client application
-├── backend/             # API server + FHIR export
-├── hardware/            # Schematics, BOM, wiring notes
+├── desktop/             # Qt 6 desktop application (live view, recording, replay)
+├── backend/             # FastAPI server: session storage, FHIR R4 export
+├── hardware/            # Schematics, BOM, wiring and safety notes
 ├── docs/
-│   ├── regulatory/      # IEC 62304 / ISO 14971 style artifacts
-│   └── validation/      # Generated evaluation reports
+│   ├── regulatory/      # IEC 62304 / ISO 14971 / IEC 62366-1 / IEC 81001-5-1 style artifacts
+│   ├── adr/             # Architecture decision records
+│   ├── process/         # Development process
+│   └── validation/      # Generated evaluation and verification reports
 ├── CONTRIBUTING.md
 ├── LICENSE
 └── README.md
@@ -106,31 +129,52 @@ sinus-ecg/
 **Milestone 0: Foundations**
 - [x] Repository, CI, license, contribution rules
 - [x] Software development plan and safety classification
-- [x] First version of requirements (SRS) and risk analysis
+- [x] Functional analysis, first version of requirements (SRS) and risk analysis
+- [x] Usability draft (use specification, use-related hazards)
+- [ ] Architecture decision records, cybersecurity and development-process documents
 
-**Milestone 1: Offline algorithms**
+**Milestone 1: Python reference**
 - [ ] MIT-BIH download script and data loader
 - [ ] Filtering (baseline wander, powerline noise)
 - [ ] Pan–Tompkins QRS detector
 - [ ] EC57-style evaluation with Se / +P report
+- [ ] Noise stress test (MIT-BIH Noise Stress Test Database): performance versus SNR
+- [ ] Golden-vector export for the C++ library
+- [ ] EC57 subset report regenerated in CI
 
-**Milestone 2: Hardware and firmware**
-- [ ] AD8232 + MCU prototype, battery-powered
-- [ ] Firmware: stable sampling, buffering, BLE streaming
-- [ ] Recorded real signals saved in WFDB format
+**Milestone 2: Portable C++ DSP library**
+- [ ] `libs/sinus-dsp`: C++17, no dynamic allocation in the real-time path, builds for host and ESP32
+- [ ] FIR/IIR biquad filters: baseline high-pass, 50/60 Hz notch, low-pass
+- [ ] LMS adaptive filter for mains and motion artefacts (accelerometer reference if present)
+- [ ] Streaming Pan–Tompkins QRS detector
+- [ ] Kalman filter for heart rate from RR intervals
+- [ ] Per-window signal quality index (SQI)
+- [ ] Equivalence with the Python reference on golden vectors, within a defined tolerance
 
-**Milestone 3: Real-time pipeline**
-- [ ] App with live waveform and heart rate
-- [ ] QRS detection running in real time (Python first, then C port)
-- [ ] Latency and dropped-sample measurements
+**Milestone 3: Qt desktop application with replay**
+- [ ] Live plot with R-peak marks, heart rate and SQI indicator
+- [ ] Recording in WFDB format
+- [ ] Replay of MIT-BIH records as if they came from the device
+- [ ] Serial or UDP test input for tests without hardware (BLE comes with Milestone 4)
 
-**Milestone 4: Backend and interoperability**
-- [ ] Session upload and storage
-- [ ] HL7 FHIR `Observation` export
-- [ ] Basic security review (authentication, data at rest, GDPR notes)
+**Milestone 4: Hardware, firmware and integration**
+- [ ] AD8232 + ESP32-S3 prototype, battery-powered
+- [ ] ESP-IDF / FreeRTOS firmware: acquisition, processing and BLE tasks with explicit priorities, queues and ring buffers
+- [ ] BLE GATT streaming with packet sequence numbers
+- [ ] Watchdog, explicit error state, low-battery handling
+- [ ] Fixed sampling rate, with jitter and latency measurements
+- [ ] Integration with the desktop application
+- [ ] ADS1293 front end with a register-level SPI driver (later step)
 
-**Milestone 5: Classification and polish**
-- [ ] AAMI beat classification with inter-patient validation
+**Milestone 5: Backend and interoperability**
+- [ ] Session upload and storage (FastAPI)
+- [ ] HL7 FHIR R4 `Observation` export: heart rate, with a reference to the recording
+- [ ] Minimal authentication, encryption at rest, GDPR notes
+
+**Milestone 6: Classification, HRV and final report**
+- [ ] AAMI beat classification: classical model vs. small neural network, inter-patient split
+- [ ] Abstention on low signal quality or low confidence, with metrics on all beats, on accepted beats and the abstention rate
+- [ ] Dataset card and model card
 - [ ] HRV analysis
 - [ ] Final verification report and project write-up
 
@@ -141,14 +185,15 @@ _Setup instructions will be added as each component lands._
 ## Data sources
 
 - [MIT-BIH Arrhythmia Database](https://physionet.org/content/mitdb/) (PhysioNet)
-- Additional PhysioNet databases may be added for noise-stress testing.
+- [MIT-BIH Noise Stress Test Database](https://physionet.org/content/nstdb/) (PhysioNet), for noise stress testing
+- A further database, not used during development, is planned for independent evidence (OP-029 in [open-points.md](docs/regulatory/open-points.md)).
 
 Datasets are downloaded by script and never committed to the repository.
 
 ## License
 
-Code (firmware, DSP, app, backend) is licensed under the [Apache License 2.0](LICENSE). The license for hardware files (schematics, BOM) is still to be decided; a CERN-OHL variant is planned (tracked as OP-001 in [open-points.md](docs/regulatory/open-points.md)).
+Code (firmware, DSP library and reference, desktop application, backend) is licensed under the [Apache License 2.0](LICENSE). The license for hardware files (schematics, BOM) is still to be decided; a CERN-OHL variant is planned (tracked as OP-001 in [open-points.md](docs/regulatory/open-points.md)).
 
 ## Status
 
-🚧 Early development: Milestone 0 documents in review, Milestone 1 (offline algorithms) next.
+🚧 Early development: Milestone 0 documents in review (roadmap realigned to seven milestones, M0 to M6), Milestone 1 (Python reference) next.

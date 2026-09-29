@@ -1,6 +1,6 @@
 # Software Requirements Specification
 
-_Inspired by IEC 62304 §5.2. Version 0.2, 2026-09-28. Status: draft (Milestone 0)._
+_Inspired by IEC 62304 §5.2. Version 0.3, 2026-09-29. Status: confirmed by the project owner (Milestone 0)._
 
 ## Conventions
 
@@ -15,7 +15,7 @@ _Inspired by IEC 62304 §5.2. Version 0.2, 2026-09-28. Status: draft (Milestone 
 
 ## Scope of this version
 
-This version covers the Milestone 1 software item only: the offline DSP reference implementation and its validation pipeline (`dsp/`), features F1.1 to F1.9 of the functional analysis. Requirements for firmware, app and backend are added at the milestones that introduce them.
+This version covers the Milestone 1 software item only: the offline DSP reference implementation and its validation pipeline (`dsp/`), features F1.1 to F1.12 of the functional analysis. Requirements for the portable real-time signal-processing library (Milestone 2), the desktop application (Milestone 3), the firmware (Milestone 4), the backend (Milestone 5) and beat classification (Milestone 6) are added at the milestones that introduce them, from the features listed for them in [`functional-analysis.md`](functional-analysis.md) §5.
 
 ## Revision history
 
@@ -23,6 +23,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 |---|---|---|
 | 0.1 | 2026-09-28 | First draft: SRS-001 to SRS-009 |
 | 0.2 | 2026-09-28 | Review against the functional analysis (OP-019). Changed SRS-001 to SRS-004 and SRS-006 to SRS-009; SRS-005 verification extended to 250 Hz; SRS-003 lower sampling-frequency bound raised to 125 Hz. Added SRS-010 (detection with interference), SRS-011 (detection statistics, split from SRS-008) and SRS-012 (validation report content, split from SRS-009) |
+| 0.3 | 2026-09-29 | Scope aligned with functional analysis v0.2 (new roadmap, features F1.10 to F1.12). Added SRS-013 (verified download of the noise stress test database), SRS-014 (detection performance versus signal-to-noise ratio), SRS-015 (golden-vector export) and SRS-016 (subset validation report in continuous integration). SRS-001 to SRS-012 unchanged. Confirmed by the project owner on 2026-09-29 |
 
 ## Requirements
 
@@ -57,7 +58,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 - is shorter than 10 s;
 - or has a sampling frequency that is not finite or lies outside 125–1000 Hz (bounds included).
 
-**Rationale:** Meaningless input must not produce output that looks valid. 10 s holds at least five beats at 30 bpm, the minimum for detection to establish its signal level. 125 Hz keeps the 60 Hz mains frequency below the Nyquist limit; 1000 Hz covers common ECG front ends. The device sampling rate is still open (OP-004).
+**Rationale:** Meaningless input must not produce output that looks valid. 10 s holds at least five beats at 30 bpm, the minimum for detection to establish its signal level. 125 Hz keeps the 60 Hz mains frequency below the Nyquist limit; 1000 Hz covers common ECG front ends. The device samples at 360 Hz (OP-004, closed), inside this range.
 **Verification level:** Requirement (QA)
 **Verification:** Test, for the filters of SRS-004 and SRS-005 and the detection of SRS-006. Rejected with an error and no output: an empty input; an input with one NaN, one with +infinity and one with −infinity; 9.99 s; 124.9 Hz; 1000.1 Hz; a non-finite sampling frequency. Accepted: 10 s at 125 Hz and at 1000 Hz.
 **Risk controls:** RC-003.
@@ -155,3 +156,49 @@ The report shall not be written if the SRS-001 verification fails.
 **Verification level:** Requirement (QA)
 **Verification:** Test with fixture records. The report contains each listed item, with values matching the fixture and the worst records in the expected order. With a fixture database that fails verification, no report is written and an error is raised.
 **Risk controls:** RC-004, RC-005, RC-011.
+
+### SRS-013: Verified download of the noise stress test database
+
+**Software item:** dsp (scripts)
+**Statement:** The software shall obtain version 1.0.0 of the MIT-BIH Noise Stress Test Database from PhysioNet into the local data directory, and verify every file listed in the SHA-256 checksum list that PhysioNet publishes for that version. If any listed file is missing or its checksum does not match, the software shall report the database as not verified, with an error naming each such file.
+**Rationale:** Noise stress results (SRS-014) are only meaningful on intact, known reference data, as for SRS-001.
+**Verification level:** Requirement (QA)
+**Verification:** Test, without network. With a local fixture of files and a checksum list for this database, an intact set is reported as verified; a set with one altered and one missing file is reported as not verified, with an error naming both files. The download from PhysioNet itself is exercised when the Milestone 1 validation report is generated (SRS-007).
+**Risk controls:** RC-004.
+
+### SRS-014: Detection performance versus signal-to-noise ratio
+
+**Software item:** dsp (scripts)
+**Statement:** The command of SRS-009 shall also run QRS detection, with the channel and mains setting of SRS-007, on the 12 ECG records of the MIT-BIH Noise Stress Test Database (records 118 and 119 with electrode motion noise added at signal-to-noise ratios (SNR) of 24, 18, 12, 6, 0 and −6 dB), evaluate them as specified in SRS-008 and SRS-011, and add to the report of SRS-012 a noise stress section that contains:
+- for each record, its SNR and the statistics of SRS-011;
+- for each SNR, the gross Se and +P computed from the summed counts of the two records at that SNR;
+- the gross Se and +P of records 118 and 119 of the MIT-BIH Arrhythmia Database, without added noise, as the reference for comparison;
+- the database name and version, and the outcome of its SRS-013 verification.
+
+The report shall not be written if the SRS-013 verification fails.
+**Rationale:** ANSI/AAMI EC57 includes a noise stress test for QRS detectors, and results on clean records alone overstate real performance (HAZ-004). Electrode motion noise is the artefact that most resembles a QRS complex. Performance versus SNR shows where detection degrades, which is input to the signal quality index (Milestone 2) and to the abstention of beat classification (Milestone 6). The first 5 minutes of each record carry no added noise and are not scored (SRS-008). No pass threshold is set for now (OP-031).
+**Verification level:** Requirement (QA)
+**Verification:** Test with fixture records that have the names, SNR levels and annotations structure of the noise stress records, and known detection counts. The noise stress section contains every listed item, with values matching the fixture, ordered by record and by decreasing SNR. With a fixture database that fails verification, no report is written and an error is raised.
+**Risk controls:** RC-004.
+
+### SRS-015: Golden-vector export
+
+**Software item:** dsp (scripts)
+**Statement:** A single command shall write one golden-vector file for each input of the following set:
+- synthetic ECGs generated deterministically by the software from documented parameters: sampling frequencies of 250 Hz and 360 Hz; heart rates of 40, 75 and 180 bpm; each without interference, and with the baseline wander and mains interference of SRS-010 at 50 Hz and at 60 Hz;
+- the first 60 s of each record of the subset of SRS-016, first stored signal, where the verified database is available.
+
+Each file shall contain: an identifier of the input; its sampling frequency in Hz; the settings used (mains frequency); the software version; the input samples in mV; the output of each signal conditioning stage of SRS-004 and SRS-005, in the order in which the stages are applied; and the detected QRS sample indices of SRS-006. The file format shall be documented in `architecture.md`. Numeric values shall be written so that reading them back gives exactly the values computed. Two runs on the same inputs and software version shall produce byte-identical files.
+**Rationale:** Every other implementation of signal conditioning and beat detection (the real-time library of Milestone 2, used by the desktop application and the device) is checked against this validated reference on the same inputs, within a tolerance to be defined (OP-005). Synthetic inputs give exact, license-free cases; record segments add real morphology and noise. Files derived from database records are regenerated where the data is available and are not stored in the repository.
+**Verification level:** Requirement (QA)
+**Verification:** Test. The command is run twice on the synthetic set and on a fixture record: the two outputs are byte-identical; every file contains each listed item; the set of files matches the list above; and the values read back from each file are equal to the outputs of the conditioning and detection functions called directly on the same input.
+**Risk controls:** RC-012.
+
+### SRS-016: Subset validation report in continuous integration
+
+**Software item:** dsp (scripts); CI workflow
+**Statement:** On every push, the automated build shall obtain records 100, 105, 108, 119, 203 and 207 of version 1.0.0 of the MIT-BIH Arrhythmia Database (a cached copy is allowed), verify each of their files against the SHA-256 checksum list of SRS-001, run QRS detection with the settings of SRS-007 and the evaluation of SRS-008 and SRS-011 on them, and regenerate a subset report. The subset report shall contain the items of SRS-012 for these records, except the pass or fail of the SRS-007 thresholds, and shall state that it covers a subset of records for regression checking and is not the performance evaluation of SRS-007. The build shall fail if the verification fails or if the regenerated subset report differs from the subset report stored in the repository.
+**Rationale:** Every change is checked against real reference data, and any change in detection results becomes visible in review instead of only when the full evaluation (SRS-007) is run locally. The records cover a clean recording (100), heavy noise (105), large P and T waves with noise (108), ventricular bigeminy (119, also the basis of the noise stress records), multiform ventricular ectopy with noise (203), and ventricular flutter with bundle branch block (207, relevant to OP-030): about 3 hours of ECG.
+**Verification level:** Requirement (QA)
+**Verification:** Test with fixture records and a fixture checksum list. When the stored subset report equals the regenerated one, the check passes; when one value in the stored report differs, the check fails and names the difference; when a record file fails verification, the check fails and no report is written. Inspection of the CI configuration confirms that the check runs on every push.
+**Risk controls:** RC-004.
