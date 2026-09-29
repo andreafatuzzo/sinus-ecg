@@ -146,7 +146,7 @@ CI generates a CycloneDX (1.6, JSON) SBOM of the `dsp` runtime environment and u
 - The SBOM also lists transitive dependencies (e.g. those of wfdb), whereas [`soup.md`](../regulatory/soup.md) lists the direct runtime dependencies.
 - The SBOM is not committed: it is regenerated for every build.
 - **Why not `uv export --format cyclonedx1.5`.** That export is a uv preview feature that may change between uv releases, and CI installs the latest uv. `cyclonedx-py` is pinned by the lock file, and reads package metadata such as licenses from the installed environment.
-- **C++ components.** The C++ library (M2), the desktop application (M3) and the firmware (M4) add their SBOM parts when they land, from their own dependency manifests.
+- **C++ components.** The C++ library (M2), the desktop application (M3) and the firmware (M4) add their SBOM parts when they land, from their own dependency manifests. Their generator and content are tracked as OP-046.
 
 ## Consequences
 

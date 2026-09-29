@@ -41,4 +41,4 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 - Implemented requirements without tests: none
 - Unknown IDs referenced in code/tests: none
 - Open points citing undefined IDs: none
-- Open points still open: 37 (see `open-points.md`)
+- Open points still open: 45 (see `open-points.md`)

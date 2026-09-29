@@ -44,4 +44,4 @@ Following IEC 62304 §4.3 a, the classification assumes that the software **fail
 
 ## Review triggers
 
-Revisit this document when any of the following changes: the intended use, the addition of alarms or notifications, the features that interpret the ECG (e.g. beat classification at Milestone 5), or the external risk controls.
+Revisit this document when any of the following changes: the intended use, the addition of alarms or notifications, the features that interpret the ECG (e.g. beat classification with abstention at Milestone 6), or the external risk controls.
