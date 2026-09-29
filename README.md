@@ -88,17 +88,23 @@ This project does **not** claim compliance with any standard. It uses their stru
 | Usability (use specification, use-related hazards) | IEC 62366-1 | `docs/regulatory/usability.md` |
 | Cybersecurity (BLE, backend) | IEC 81001-5-1 | `docs/regulatory/cybersecurity.md` |
 | SOUP list (third-party software) | IEC 62304 §8.1.2 | `docs/regulatory/soup.md` |
-| Software bill of materials (SBOM) | FDA and EU cybersecurity practice | Generated in CI (CycloneDX) |
+| Software bill of materials (SBOM) | FDA and EU cybersecurity practice | Generated in CI (CycloneDX), workflow artifact `sbom-dsp` |
 | Traceability matrix (SRS → code → tests) | IEC 62304 §5.1.1 | `docs/regulatory/traceability.md` |
+| Milestone register (release status) | IEC 62304 §5.8 | `docs/regulatory/milestones.md` |
 | Open points (pending decisions, deferred work, IDs `OP-xxx`) | IEC 62304 §9 (problem resolution) | `docs/regulatory/open-points.md` |
 | Verification report | IEC 62304 §5.7 | `docs/validation/` |
 | Development process with AI assistance | — | `docs/process/ai-assisted-development.md` |
 
 Rules followed throughout the project:
-- Every requirement has an ID and is verified by at least one test in `tests/requirements/` or `tests/system/` that cites it; whoever implements a requirement does not write its verifying tests.
+- Every requirement has an ID and a milestone. It is verified by at least one test that cites it, in `tests/requirements/` or `tests/system/` according to its verification level. Whoever implements a requirement does not write its verifying tests.
 - Every change that affects behavior updates the risk analysis if needed.
 - Every new dependency is added to the SOUP list.
-- CI runs the tests and checks that the traceability matrix is up to date on every push. During Milestone 1 it will also regenerate the subset validation report, and fail when an implemented requirement has no verifying test.
+- On every push, CI runs the tests and the traceability checks, and publishes an SBOM of the Python reference. The checks fail when:
+  - the traceability matrix is out of date;
+  - a requirement cited in the code has no verifying test;
+  - a test cites a requirement from the wrong folder.
+- A milestone is merged into `main` only when every one of its requirements has a verifying test: CI enforces this on pull requests into `main` ([ADR 0004](docs/adr/0004-test-tagging-and-traceability-gates.md)).
+- During Milestone 1, CI will also regenerate the subset validation report.
 
 ## Repository structure
 

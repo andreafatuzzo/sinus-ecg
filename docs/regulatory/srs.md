@@ -11,6 +11,7 @@ _Inspired by IEC 62304 §5.2. Version 0.3, 2026-09-29. Status: confirmed by the 
 - `docs/regulatory/traceability.md` is generated from these sources by `dsp/scripts/traceability.py`.
 - "Software item" names which item implements the requirement (see `sdp.md` §1).
 - "Verification level" assigns the functional verification: `Requirement` tests are written by QA in `dsp/tests/requirements/`, `System` tests by the test engineer in `dsp/tests/system/` (see `sdp.md` §6). The implementer never verifies their own code functionally.
+- "Milestone" names the roadmap milestone (`README.md`) that delivers the requirement. A pull request into `main` fails CI unless every requirement of a milestone that is in progress or released (see [`milestones.md`](milestones.md)) has a verifying test ([ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md)).
 - Requirements are derived from the features in [`functional-analysis.md`](functional-analysis.md).
 
 ## Scope of this version
@@ -30,6 +31,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-001: Verified download of the reference database
 
 **Software item:** dsp (scripts)
+**Milestone:** M1
 **Statement:** The software shall obtain version 1.0.0 of the MIT-BIH Arrhythmia Database from PhysioNet into a local data directory, and verify every file listed in the SHA-256 checksum list that PhysioNet publishes for that version. If any listed file is missing or its checksum does not match, the software shall report the database as not verified, with an error naming each such file.
 **Rationale:** Validation results are only meaningful on intact, known reference data (README goal 4: reproducibility).
 **Verification level:** Requirement (QA)
@@ -39,6 +41,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-002: Loading a reference record
 
 **Software item:** dsp
+**Milestone:** M1
 **Statement:** For a given record and channel, the software shall provide:
 - the ECG signal of that channel in millivolts;
 - its sampling frequency in Hz;
@@ -53,6 +56,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-003: Input validation
 
 **Software item:** dsp
+**Milestone:** M1
 **Statement:** Before filtering or detection, the software shall reject, with an explicit error and without producing a filtered signal or detections, an input that:
 - is empty or contains non-finite values (NaN or ±infinity);
 - is shorter than 10 s;
@@ -66,6 +70,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-004: Baseline wander removal
 
 **Software item:** dsp
+**Milestone:** M1
 **Statement:** The software shall provide a baseline wander filter that attenuates a constant offset and sinusoidal components at 0.1 Hz and below by at least 20 dB, while components between 1 Hz and 40 Hz change in amplitude by no more than ±0.5 dB.
 **Rationale:** Baseline wander (respiration, electrode motion) and electrode offset distort the waveform and cause false detections.
 **Verification level:** Requirement (QA)
@@ -75,6 +80,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-005: Mains interference removal
 
 **Software item:** dsp
+**Milestone:** M1
 **Statement:** The software shall provide a mains interference filter configurable for 50 Hz or 60 Hz. It shall attenuate a sinusoid at the configured frequency by at least 30 dB. Components between 1 Hz and 40 Hz shall change in amplitude by no more than ±0.5 dB.
 **Rationale:** Mains interference is common in ECG recordings. MIT-BIH was recorded on 60 Hz mains, while the Sinus device will be used on 50 Hz mains. Tolerance to deviations of the mains frequency is left to the live-use analysis (OP-022).
 **Verification level:** Requirement (QA)
@@ -84,6 +90,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-006: QRS detection
 
 **Software item:** dsp
+**Milestone:** M1
 **Statement:** For an input accepted by SRS-003, the software shall output the sample indices of the detected QRS complexes, in the time base of the input (index 0 = first input sample), such that each index lies within 150 ms of the QRS complex it represents, indices are strictly increasing, and no two indices are closer than 200 ms. For a noise-free input, the output shall contain exactly one index for each QRS complex and no other indices.
 **Rationale:** Beat positions are the basis of heart rate, HRV and beat classification, and are scored against reference annotations on the input time base (SRS-008). 200 ms is the physiological refractory period (at most 300 bpm).
 **Verification level:** Requirement (QA)
@@ -93,6 +100,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-007: QRS detection performance
 
 **Software item:** dsp
+**Milestone:** M1
 **Statement:** On all 48 records of the MIT-BIH Arrhythmia Database, using the first stored signal of each record and the mains interference filter set to 60 Hz, and evaluated as specified in SRS-008 and SRS-011, QRS detection shall achieve a gross sensitivity (Se) of at least 99.5% and a gross positive predictive value (+P) of at least 99.5%.
 **Rationale:** Quantified detection performance is the main control against missed and false beats. The target is close to the results published for Pan–Tompkins (Se 99.76%, +P 99.56%). The first stored signal is MLII in 46 records and a modified V5 in records 102 and 104.
 **Verification level:** System (test engineer)
@@ -102,6 +110,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-008: EC57 beat-by-beat matching
 
 **Software item:** dsp
+**Milestone:** M1
 **Statement:** The software shall match detected beats to reference beat annotations beat by beat, following ANSI/AAMI EC57:
 - a detection and a reference beat can match if they are at most 150 ms apart;
 - each detection and each reference beat belongs to at most one match, and the number of matches is the largest possible under these rules;
@@ -116,6 +125,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-009: Reproducible validation report
 
 **Software item:** dsp (scripts)
+**Milestone:** M1
 **Statement:** A single command shall run QRS detection and the evaluation of SRS-008 and SRS-011 on the reference database and write the report specified in SRS-012 to `docs/validation/`. Two runs on the same inputs and software version shall produce byte-identical reports.
 **Rationale:** Anyone can re-run every published result (README goal 4). Byte-identical output makes any change in results visible in version control.
 **Verification level:** Requirement (QA)
@@ -125,6 +135,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-010: QRS detection with baseline wander and mains interference
 
 **Software item:** dsp
+**Milestone:** M1
 **Statement:** The software shall meet the criteria of SRS-006 on an ECG with 1 mV QRS amplitude to which a 0.3 Hz sinusoidal baseline wander of 1 mV amplitude and a sinusoid at the configured mains frequency (50 Hz or 60 Hz) of 0.2 mV amplitude have been added.
 **Rationale:** Baseline wander and mains interference are the most common artefacts in ECG recordings and cause missed and false beats (HAZ-001, HAZ-002). This checks the effect of RC-002 on detection, whatever the internal processing.
 **Verification level:** Requirement (QA)
@@ -134,6 +145,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-011: Detection statistics
 
 **Software item:** dsp
+**Milestone:** M1
 **Statement:** From the matches of SRS-008, the software shall report for each record the true positives (TP), false negatives (FN), false positives (FP), Se = TP / (TP + FN) and +P = TP / (TP + FP) in percent; and for the set of records, gross Se and +P computed from the summed counts, and average Se and +P as the mean of the per-record values. A value whose denominator is zero shall be reported as not defined, and excluded from the averages.
 **Rationale:** EC57 reports both gross and average statistics. Undefined values must not appear as 0% or 100%.
 **Verification level:** Requirement (QA)
@@ -143,6 +155,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 ### SRS-012: Validation report content
 
 **Software item:** dsp (scripts)
+**Milestone:** M1
 **Statement:** The validation report shall contain:
 - the per-record and aggregate statistics of SRS-011;
 - the five records with the lowest Se and the five records with the lowest +P (ties ordered by record name);
@@ -160,6 +173,7 @@ The report shall not be written if the SRS-001 verification fails.
 ### SRS-013: Verified download of the noise stress test database
 
 **Software item:** dsp (scripts)
+**Milestone:** M1
 **Statement:** The software shall obtain version 1.0.0 of the MIT-BIH Noise Stress Test Database from PhysioNet into the local data directory, and verify every file listed in the SHA-256 checksum list that PhysioNet publishes for that version. If any listed file is missing or its checksum does not match, the software shall report the database as not verified, with an error naming each such file.
 **Rationale:** Noise stress results (SRS-014) are only meaningful on intact, known reference data, as for SRS-001.
 **Verification level:** Requirement (QA)
@@ -169,6 +183,7 @@ The report shall not be written if the SRS-001 verification fails.
 ### SRS-014: Detection performance versus signal-to-noise ratio
 
 **Software item:** dsp (scripts)
+**Milestone:** M1
 **Statement:** The command of SRS-009 shall also run QRS detection, with the channel and mains setting of SRS-007, on the 12 ECG records of the MIT-BIH Noise Stress Test Database (records 118 and 119 with electrode motion noise added at signal-to-noise ratios (SNR) of 24, 18, 12, 6, 0 and −6 dB), evaluate them as specified in SRS-008 and SRS-011, and add to the report of SRS-012 a noise stress section that contains:
 - for each record, its SNR and the statistics of SRS-011;
 - for each SNR, the gross Se and +P computed from the summed counts of the two records at that SNR;
@@ -184,6 +199,7 @@ The report shall not be written if the SRS-013 verification fails.
 ### SRS-015: Golden-vector export
 
 **Software item:** dsp (scripts)
+**Milestone:** M1
 **Statement:** A single command shall write one golden-vector file for each input of the following set:
 - synthetic ECGs generated deterministically by the software from documented parameters: sampling frequencies of 250 Hz and 360 Hz; heart rates of 40, 75 and 180 bpm; each without interference, and with the baseline wander and mains interference of SRS-010 at 50 Hz and at 60 Hz;
 - the first 60 s of each record of the subset of SRS-016, first stored signal, where the verified database is available.
@@ -197,6 +213,7 @@ Each file shall contain: an identifier of the input; its sampling frequency in H
 ### SRS-016: Subset validation report in continuous integration
 
 **Software item:** dsp (scripts); CI workflow
+**Milestone:** M1
 **Statement:** On every push, the automated build shall obtain records 100, 105, 108, 119, 203 and 207 of version 1.0.0 of the MIT-BIH Arrhythmia Database (a cached copy is allowed), verify each of their files against the SHA-256 checksum list of SRS-001, run QRS detection with the settings of SRS-007 and the evaluation of SRS-008 and SRS-011 on them, and regenerate a subset report. The subset report shall contain the items of SRS-012 for these records, except the pass or fail of the SRS-007 thresholds, and shall state that it covers a subset of records for regression checking and is not the performance evaluation of SRS-007. The build shall fail if the verification fails or if the regenerated subset report differs from the subset report stored in the repository.
 **Rationale:** Every change is checked against real reference data, and any change in detection results becomes visible in review instead of only when the full evaluation (SRS-007) is run locally. The records cover a clean recording (100), heavy noise (105), large P and T waves with noise (108), ventricular bigeminy (119, also the basis of the noise stress records), multiform ventricular ectopy with noise (203), and ventricular flutter with bundle branch block (207, relevant to OP-030): about 3 hours of ECG.
 **Verification level:** Requirement (QA)

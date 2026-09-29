@@ -8,7 +8,7 @@ Thanks for your interest. Sinus follows a lightweight version of medical-device 
 
 1. Branch from `develop` as `feature/<short-name>`.
 2. Open a pull request into `develop`. `main` only receives pull requests from `develop` at the end of a milestone.
-3. CI must pass: ruff, mypy, pytest and the traceability check.
+3. CI must pass: ruff, mypy, pytest and the traceability checks. On pull requests into `main`, the release gate also requires a verifying test for every requirement of a milestone that is in progress or released ([`milestones.md`](docs/regulatory/milestones.md)).
 
 ## Development setup (Python, `dsp/`)
 
@@ -21,8 +21,17 @@ uv run pytest && uv run mypy && uv run ruff check . && uv run ruff format --chec
 ## Rules for changes that affect behavior
 
 - **Requirements first.** Behavior is specified in [`docs/regulatory/srs.md`](docs/regulatory/srs.md) as `SRS-xxx`. Add or change the requirement in the same pull request as the code. IDs are never reused.
-- **Traceability.** Code cites the `SRS-xxx` it implements. Tests that verify a requirement use `@pytest.mark.requirement("SRS-xxx")` and must check the requirement's pass criterion.
-- **Independent verification.** Whoever implements a requirement does not write the tests that verify it. Implementers write unit tests in `dsp/tests/unit/` (no requirement markers). Requirement tests go in `dsp/tests/requirements/` and system tests in `dsp/tests/system/`, written by someone else. CI rejects requirement markers anywhere else. Regenerate the matrix with `uv run python scripts/traceability.py`.
+- **Traceability.** Code cites the `SRS-xxx` it implements. Tests that verify a requirement must check its pass criterion and are tagged:
+  - Python: `@pytest.mark.requirement("SRS-xxx")` on the test function or class;
+  - C++ (GoogleTest): one or more `// Verifies: SRS-xxx, SRS-yyy` lines directly above the `TEST`, `TEST_F`, `TEST_P`, `TYPED_TEST` or `TYPED_TEST_P` line, with no line in between. `Verifies:` is reserved for this use.
+
+  CI fails when a requirement cited in production code has no verifying test. Regenerate the matrix with `uv run python scripts/traceability.py` (from `dsp/`). Rules: [ADR 0004](docs/adr/0004-test-tagging-and-traceability-gates.md).
+- **Independent verification.** Whoever implements a requirement does not write the tests that verify it. Each component (`dsp/`, `libs/<library>/`, `desktop/`, `firmware/`) has three test folders:
+  - `tests/unit/`: the implementer's unit tests, with no requirement tags;
+  - `tests/requirements/`: tests of requirements with Verification level `Requirement`, written by someone else;
+  - `tests/system/`: tests of requirements with Verification level `System`, written by someone else.
+
+  CI rejects requirement tags anywhere else, and in the folder of the other level.
 - **Risk.** Check the change against [`docs/regulatory/risk-analysis.md`](docs/regulatory/risk-analysis.md) and update it when needed.
 - **Dependencies.** Add them with `uv add`, and list every new runtime dependency in [`docs/regulatory/soup.md`](docs/regulatory/soup.md).
 - **Open points.** Anything you defer or leave undecided goes in [`docs/regulatory/open-points.md`](docs/regulatory/open-points.md) as a new `OP-xxx` row, tagged with the `SRS`/`HAZ`/`RC` IDs it concerns.
