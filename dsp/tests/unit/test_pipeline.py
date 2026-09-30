@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from sinus_dsp import filters, pipeline, qrs
+from sinus_dsp import filters, input_checks, pipeline, qrs
 from sinus_dsp.errors import InvalidInputError
 
 
@@ -118,7 +118,7 @@ def test_rejected_input_raises_before_any_processing(
 def test_input_is_validated_once(monkeypatch: pytest.MonkeyPatch, synthetic_ecg: Any) -> None:
     x, _ = synthetic_ecg(360.0, 75)
     calls = []
-    original = pipeline.validate_input
+    original = input_checks.validate_input
 
     def counting(signal_mv: Any, fs_hz: float) -> Any:
         calls.append(fs_hz)

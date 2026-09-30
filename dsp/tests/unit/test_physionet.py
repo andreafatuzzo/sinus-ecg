@@ -6,7 +6,7 @@ import inspect
 import os
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -332,6 +332,11 @@ def test_parse_rejects_a_line_that_is_not_an_entry(line: str) -> None:
         "C:/windows/x",
         "C:x",
         "~/x",
+        # "~" is what keeps the temporary files of the download apart from listed files.
+        "a~b",
+        "100.dat.part~",
+        "SHA256SUMS.txt.part~",
+        "sub/100.dat.part~",
         "a?b",
         "a*",
         "é.dat",
@@ -430,8 +435,21 @@ def test_select_record_known_only_in_a_subfolder_gives_a_placeholder() -> None:
     assert select_files({"sub/5.dat": DIGEST_A, "5": DIGEST_A}, ["5"]) == ("5.*",)
 
 
-def test_select_no_record_selects_nothing() -> None:
-    assert select_files(CHECKSUMS, []) == ()
+@pytest.mark.parametrize("records", [[], ()])
+def test_select_rejects_an_empty_selection(records: Sequence[str]) -> None:
+    with pytest.raises(InvalidInputError):
+        select_files(CHECKSUMS, records)
+
+
+def test_select_empty_selection_message() -> None:
+    with pytest.raises(InvalidInputError) as caught:
+        select_files(CHECKSUMS, [])
+    assert str(caught.value) == "no record name given: the record selection is empty"
+
+
+def test_select_selects_any_extension_of_a_record() -> None:
+    checksums = {"108.at_": DIGEST_A, "108.dat": DIGEST_A, "108.hea": DIGEST_A, "1080.x": DIGEST_A}
+    assert select_files(checksums, ["108"]) == ("108.at_", "108.dat", "108.hea")
 
 
 @pytest.mark.parametrize(
@@ -451,6 +469,23 @@ def test_select_rejects_a_record_name_that_is_not_a_string() -> None:
 def test_select_rejects_a_string_in_place_of_the_sequence() -> None:
     with pytest.raises(InvalidInputError, match="not a sequence of record names"):
         select_files(CHECKSUMS, "100")
+
+
+def test_select_checks_the_string_first_then_the_empty_sequence_then_each_name() -> None:
+    with pytest.raises(InvalidInputError, match="not a sequence of record names"):
+        select_files(CHECKSUMS, "")
+    with pytest.raises(InvalidInputError, match="invalid record name: 'a/b'"):
+        select_files(CHECKSUMS, ["100", "a/b", "c/d"])
+
+
+def test_select_accepts_a_list_or_a_tuple_of_names() -> None:
+    assert select_files(CHECKSUMS, ["203"]) == select_files(CHECKSUMS, ("203",))
+
+
+def test_select_is_never_empty_for_a_parsed_list() -> None:
+    checksums = parse_checksum_list(f"{DIGEST_A} only.txt\n", "list")
+    assert select_files(checksums, None) == ("only.txt",)
+    assert select_files(checksums, ["100"]) == ("100.*",)
 
 
 # verify_database
@@ -602,6 +637,28 @@ def test_verify_rejects_an_invalid_record_name(tmp_path: Path) -> None:
     write_database(tmp_path, database)
     with pytest.raises(InvalidInputError, match="invalid record name"):
         verify_database(database, tmp_path, records=["../100"])
+
+
+def test_verify_rejects_an_invalid_record_name_without_the_folder_or_the_list(
+    tmp_path: Path,
+) -> None:
+    database = fixture_database()
+    # Without the data folder, then without the checksum list: the selection is checked
+    # before the list is read, so the error is not a DataVerificationError.
+    with pytest.raises(InvalidInputError, match="invalid record name"):
+        verify_database(database, tmp_path / "absent", records=["../100"])
+    (tmp_path / database.slug).mkdir()
+    with pytest.raises(InvalidInputError, match="invalid record name"):
+        verify_database(database, tmp_path, records=["../100"])
+    assert not (tmp_path / "absent").exists()
+
+
+@pytest.mark.parametrize("records", [[], ()])
+def test_verify_rejects_an_empty_selection(tmp_path: Path, records: Sequence[str]) -> None:
+    database = fixture_database()
+    write_database(tmp_path, database)
+    with pytest.raises(InvalidInputError, match="the record selection is empty"):
+        verify_database(database, tmp_path, records=records)
 
 
 def test_verify_reports_a_pinned_list_that_is_malformed(tmp_path: Path) -> None:
@@ -800,12 +857,62 @@ def test_download_overwrites_stale_part_files_and_leaves_none(tmp_path: Path) ->
     database = fixture_database()
     folder = tmp_path / "fixdb"
     (folder / "docs").mkdir(parents=True)
-    (folder / "100.dat.part").write_bytes(b"stale and longer than the real file content")
-    (folder / "docs" / "notes.txt.part").write_bytes(b"stale")
-    (folder / "SHA256SUMS.txt.part").write_bytes(b"stale")
+    (folder / "100.dat.part~").write_bytes(b"stale and longer than the real file content")
+    (folder / "docs" / "notes.txt.part~").write_bytes(b"stale")
+    (folder / "SHA256SUMS.txt.part~").write_bytes(b"stale")
     download_database(database, tmp_path, fetch=FakeFetch(served(database)))
     assert tree(folder) == dict(FILES) | {CHECKSUM_LIST_NAME: checksum_list(FILES)}
-    assert list(folder.rglob("*.part")) == []
+    assert list(folder.rglob("*.part~")) == []
+
+
+def test_download_leaves_a_part_file_of_the_former_suffix_alone(tmp_path: Path) -> None:
+    # A file named <name>.part, left by a version that used that suffix, is not listed: it is
+    # neither used, nor verified, nor removed.
+    database = fixture_database()
+    folder = tmp_path / "fixdb"
+    folder.mkdir()
+    (folder / "100.dat.part").write_bytes(b"left by an older version")
+    result = download_database(database, tmp_path, fetch=FakeFetch(served(database)))
+    assert result.files == tuple(sorted(FILES))
+    assert (folder / "100.dat.part").read_bytes() == b"left by an older version"
+    assert (folder / "100.dat").read_bytes() == FILES["100.dat"]
+
+
+COLLIDING_FILES: Mapping[str, bytes] = {
+    "a.dat": b"samples of a",
+    "a.dat.part": b"a listed file whose name ends with .part",
+    "sub/b.hea": b"header of b",
+    "sub/b.hea.part": b"another one, in a subfolder",
+}
+
+
+def test_download_a_list_that_names_a_file_and_its_part_name(tmp_path: Path) -> None:
+    database = fixture_database(COLLIDING_FILES)
+    fetch = FakeFetch(served(database, COLLIDING_FILES))
+    result = download_database(database, tmp_path, fetch=fetch)
+    assert result.files == ("a.dat", "a.dat.part", "sub/b.hea", "sub/b.hea.part")
+    expected = dict(COLLIDING_FILES) | {CHECKSUM_LIST_NAME: checksum_list(COLLIDING_FILES)}
+    assert tree(tmp_path / database.slug) == expected
+
+
+def test_download_refetching_a_file_keeps_the_listed_file_of_its_part_name(
+    tmp_path: Path,
+) -> None:
+    # With ".part" as the suffix, writing a.dat again would go through a.dat.part, a verified
+    # listed file, and remove it. The server offers only the two files to fetch again.
+    database = fixture_database(COLLIDING_FILES)
+    folder = write_database(tmp_path, database, COLLIDING_FILES)
+    (folder / "a.dat").write_bytes(b"outdated")
+    (folder / "sub" / "b.hea").unlink()
+    base = database_url(database)
+    fetch = FakeFetch(
+        {base + "a.dat": COLLIDING_FILES["a.dat"], base + "sub/b.hea": COLLIDING_FILES["sub/b.hea"]}
+    )
+    result = download_database(database, tmp_path, fetch=fetch)
+    assert fetch.urls == [base + "a.dat", base + "sub/b.hea"]
+    assert result.files == ("a.dat", "a.dat.part", "sub/b.hea", "sub/b.hea.part")
+    expected = dict(COLLIDING_FILES) | {CHECKSUM_LIST_NAME: checksum_list(COLLIDING_FILES)}
+    assert tree(folder) == expected
 
 
 def test_download_writes_through_a_part_file_in_the_same_folder(
@@ -829,9 +936,9 @@ def test_download_writes_through_a_part_file_in_the_same_folder(
     monkeypatch.setattr(os, "replace", replace)
     download_database(database, tmp_path, records=["101"], fetch=FakeFetch(served(database)))
     assert replaced == [
-        ("fixdb/SHA256SUMS.txt.part", "fixdb/SHA256SUMS.txt", checksum_list(FILES)),
-        ("fixdb/101.dat.part", "fixdb/101.dat", FILES["101.dat"]),
-        ("fixdb/101.hea.part", "fixdb/101.hea", FILES["101.hea"]),
+        ("fixdb/SHA256SUMS.txt.part~", "fixdb/SHA256SUMS.txt", checksum_list(FILES)),
+        ("fixdb/101.dat.part~", "fixdb/101.dat", FILES["101.dat"]),
+        ("fixdb/101.hea.part~", "fixdb/101.hea", FILES["101.hea"]),
     ]
 
 
@@ -859,8 +966,103 @@ def test_download_never_fetches_the_placeholder_of_a_record_without_files(tmp_pa
 
 def test_download_rejects_an_invalid_record_name(tmp_path: Path) -> None:
     database = fixture_database()
+    data_root = tmp_path / "data"
+    fetch = FakeFetch(served(database))
     with pytest.raises(InvalidInputError, match="invalid record name"):
-        download_database(database, tmp_path, records=["a/b"], fetch=FakeFetch(served(database)))
+        download_database(database, data_root, records=["a/b"], fetch=fetch)
+    assert not data_root.exists()
+    assert fetch.urls == []
+
+
+@pytest.mark.parametrize("records", [[], ()])
+def test_download_rejects_an_empty_selection(tmp_path: Path, records: Sequence[str]) -> None:
+    database = fixture_database()
+    data_root = tmp_path / "data"
+    fetch = FakeFetch(served(database))
+    with pytest.raises(InvalidInputError, match="the record selection is empty"):
+        download_database(database, data_root, records=records, fetch=fetch)
+    assert not data_root.exists()
+    assert fetch.urls == []
+
+
+def _failing_fetch(url: str) -> bytes:
+    raise AssertionError(f"fetch called for a rejected selection: {url}")
+
+
+def _snapshot(root: Path) -> dict[str, bytes | None]:
+    """Every file and folder under ``root`` (a folder maps to ``None``)."""
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes() if path.is_file() else None
+        for path in sorted(root.rglob("*"))
+    }
+
+
+_INVALID_SELECTIONS: list[Any] = [
+    [],
+    (),
+    "100",
+    "",
+    ["../100"],
+    ["100", "a/b"],
+    ["100", ""],
+    [100],
+]
+
+_DATA_FOLDER_STATES = [
+    "no data folder",
+    "no database folder",
+    "no checksum list",
+    "altered checksum list",
+    "malformed pinned checksum list",
+    "complete database",
+]
+
+
+def _prepare(state: str, tmp_path: Path) -> tuple[Database, Path]:
+    """A database and a data folder in the given state."""
+    data_root = tmp_path / "data"
+    database = fixture_database()
+    if state == "no data folder":
+        return database, data_root
+    data_root.mkdir()
+    if state == "no database folder":
+        return database, data_root
+    folder = write_database(data_root, database)
+    if state == "no checksum list":
+        (folder / CHECKSUM_LIST_NAME).unlink()
+    elif state == "altered checksum list":
+        (folder / CHECKSUM_LIST_NAME).write_bytes(b"altered\n")
+    elif state == "malformed pinned checksum list":
+        content = b"not a checksum list\n"
+        (folder / CHECKSUM_LIST_NAME).write_bytes(content)
+        database = Database(database.slug, "1.0.0", "Fixture", sha256(content))
+    return database, data_root
+
+
+@pytest.mark.parametrize("state", _DATA_FOLDER_STATES)
+@pytest.mark.parametrize("records", _INVALID_SELECTIONS)
+def test_verify_validates_the_selection_before_reading_anything(
+    tmp_path: Path, state: str, records: Any
+) -> None:
+    database, data_root = _prepare(state, tmp_path)
+    before = _snapshot(tmp_path)
+    with pytest.raises(InvalidInputError):
+        verify_database(database, data_root, records=records)
+    assert _snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("state", _DATA_FOLDER_STATES)
+@pytest.mark.parametrize("records", _INVALID_SELECTIONS)
+def test_download_validates_the_selection_before_any_folder_or_fetch(
+    tmp_path: Path, state: str, records: Any
+) -> None:
+    database, data_root = _prepare(state, tmp_path)
+    before = _snapshot(tmp_path)
+    with pytest.raises(InvalidInputError):
+        download_database(database, data_root, records=records, fetch=_failing_fetch)
+    assert _snapshot(tmp_path) == before
+    if state == "no data folder":
+        assert not data_root.exists()
 
 
 def test_download_lets_other_errors_of_the_fetch_function_through(tmp_path: Path) -> None:

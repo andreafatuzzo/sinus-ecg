@@ -4,6 +4,7 @@ The cases are at 360 Hz: a window of 54 samples and a start at sample 108000.
 """
 
 import dataclasses
+import itertools
 import random
 from collections.abc import Sequence
 
@@ -159,6 +160,103 @@ def test_offset_while_no_episode_is_open_is_ignored() -> None:
 def test_episode_open_at_the_end_lasts_until_the_last_sample() -> None:
     annotations = [annotation(100, "["), annotation(250, "]"), annotation(600, "[")]
     assert vf_episodes(annotations, 1000) == (Episode(100, 250), Episode(600, 999))
+
+
+@pytest.mark.parametrize(
+    ("onset", "n_samples", "expected"),
+    [
+        (998, 1000, Episode(998, 999)),
+        (999, 1000, Episode(999, 999)),
+        (1000, 1000, Episode(1000, 1000)),
+        (1500, 1000, Episode(1500, 1500)),
+        (0, 1, Episode(0, 0)),
+        (0, 0, Episode(0, 0)),
+        (5, 0, Episode(5, 5)),
+    ],
+)
+def test_open_episode_never_ends_before_its_onset(
+    onset: int, n_samples: int, expected: Episode
+) -> None:
+    # end_sample = max(start_sample, n_samples - 1): an onset at or beyond the end of the
+    # record gives the single sample of its "[".
+    assert vf_episodes([annotation(onset, "[")], n_samples) == (expected,)
+
+
+def test_open_episode_beyond_the_end_after_a_closed_one() -> None:
+    annotations = [annotation(100, "["), annotation(250, "]"), annotation(1200, "[")]
+    assert vf_episodes(annotations, 1000) == (Episode(100, 250), Episode(1200, 1200))
+
+
+def test_closed_episode_beyond_the_end_is_kept_as_annotated() -> None:
+    annotations = [annotation(900, "["), annotation(1100, "]")]
+    assert vf_episodes(annotations, 1000) == (Episode(900, 1100),)
+
+
+def test_equal_samples_are_accepted() -> None:
+    annotations = [
+        annotation(100, "["),
+        annotation(100, "]"),
+        annotation(200, "+"),
+        annotation(200, "["),
+        annotation(300, "]"),
+        annotation(300, "["),
+    ]
+    assert vf_episodes(annotations, 1000) == (
+        Episode(100, 100),
+        Episode(200, 300),
+        Episode(300, 999),
+    )
+
+
+@pytest.mark.parametrize(
+    ("annotations", "message"),
+    [
+        (
+            [annotation(200, "["), annotation(100, "]")],
+            "annotation samples are not non-decreasing: 100 at index 1 follows 200",
+        ),
+        (
+            [annotation(100, "["), annotation(200, "]"), annotation(150, "+")],
+            "annotation samples are not non-decreasing: 150 at index 2 follows 200",
+        ),
+        (
+            # Also when no annotation opens or closes an episode.
+            [annotation(100, "+"), annotation(50, "~")],
+            "annotation samples are not non-decreasing: 50 at index 1 follows 100",
+        ),
+        (
+            [annotation(500, "["), annotation(10, "[")],
+            "annotation samples are not non-decreasing: 10 at index 1 follows 500",
+        ),
+    ],
+)
+def test_decreasing_annotation_samples_are_rejected(
+    annotations: list[Annotation], message: str
+) -> None:
+    with pytest.raises(InvalidInputError) as caught:
+        vf_episodes(annotations, 1000)
+    assert str(caught.value) == message
+    assert isinstance(caught.value, ValueError)
+
+
+def test_random_annotations_give_ordered_episodes_that_never_end_before_they_start() -> None:
+    rng = random.Random(20260930)
+    symbols = ["[", "]", "+", "!", "~"]
+    for _ in range(2000):
+        n_samples = rng.randint(0, 400)
+        samples = sorted(rng.choices(range(500), k=rng.randint(0, 12)))
+        annotations = [annotation(sample, rng.choice(symbols)) for sample in samples]
+        episodes = vf_episodes(annotations, n_samples)
+        assert all(e.start_sample <= e.end_sample for e in episodes)
+        # In the order of their onsets, each at or after the end of the previous one.
+        assert all(a.end_sample <= b.start_sample for a, b in itertools.pairwise(episodes))
+        onsets = {a.sample for a in annotations if a.symbol == "["}
+        assert all(e.start_sample in onsets for e in episodes)
+        # Only the last episode can be open at the end.
+        for episode in episodes[:-1]:
+            assert any(a.symbol == "]" and a.sample == episode.end_sample for a in annotations), (
+                episode
+            )
 
 
 def test_episodes_are_a_tuple_of_frozen_values() -> None:
@@ -638,12 +736,12 @@ def test_episode_until_the_end_of_the_record() -> None:
 
 
 def test_episode_before_the_start() -> None:
-    # Reference beats inside an episode are counted as excluded wherever the episode is;
-    # detections before the start are not scored and are not counted.
+    # The learning period comes first: reference beats and detections before the start are
+    # in no count, whether or not they lie inside an episode.
     episode = Episode(50000, 60000)
     result = match([55000, 56000, START + 100], [55000, 56000, START + 100], [episode])
     assert outcome(result) == (((START + 100, START + 100),), (), ())
-    assert (result.reference_excluded, result.detections_excluded) == (2, 0)
+    assert (result.reference_excluded, result.detections_excluded) == (0, 0)
 
 
 def test_episode_across_the_start() -> None:
@@ -653,9 +751,65 @@ def test_episode_across_the_start() -> None:
     result = match(reference, detections, episode_list := [episode])
     assert episode_list == [episode]
     # START + 20 is the first detection within the window after the start; the next one is
-    # closer to the first scored beat (START + 2000), so it is dropped, not counted.
+    # closer to the first scored beat (START + 2000), so it is dropped, not counted. Only the
+    # beat and the detection at START + 500 are counted as not scored; those at START - 500
+    # are left out by the learning period.
     assert outcome(result) == (((START + 2000, START + 2000),), (), ())
-    assert (result.reference_excluded, result.detections_excluded) == (2, 1)
+    assert (result.reference_excluded, result.detections_excluded) == (1, 1)
+
+
+def test_episode_ending_just_before_the_start_counts_nothing() -> None:
+    # Architecture §8.8.3, first verification note.
+    episode = Episode(START - 2000, START - 1)
+    reference = [START - 1500, START - 1, START + 3000]
+    detections = [START - 1500, START - 700, START - 1, START + 3000]
+    result = match(reference, detections, [episode])
+    assert outcome(result) == (((START + 3000, START + 3000),), (), ())
+    assert (result.reference_excluded, result.detections_excluded) == (0, 0)
+
+
+def test_episode_across_the_start_without_a_pair() -> None:
+    # Architecture §8.8.3, second verification note.
+    episode = Episode(107000, 109000)
+    result = match([107500, 108500], [107500, 108500], [episode])
+    assert outcome(result) == ((), (), ())
+    assert (result.reference_excluded, result.detections_excluded) == (1, 1)
+
+
+def test_detection_dropped_at_the_start_inside_an_episode_is_not_counted() -> None:
+    # Architecture §8.8.3, third verification note.
+    episode = Episode(107000, 109000)
+    result = match([110000], [108020, 110000], [episode])
+    assert outcome(result) == (((110000, 110000),), (), ())
+    assert (result.reference_excluded, result.detections_excluded) == (0, 0)
+
+
+@pytest.mark.parametrize("sample", [START + 1000, START + 1700])
+def test_onset_and_offset_samples_are_inside_the_episode(sample: int) -> None:
+    episode = Episode(START + 1000, START + 1700)
+    beats = match([sample, START + 5000], [START + 5000], [episode])
+    assert (beats.reference_excluded, beats.tp, beats.fn) == (1, 1, 0)
+    detections = match([START + 5000], [sample, START + 5000], [episode])
+    assert (detections.detections_excluded, detections.tp, detections.fp) == (1, 1, 0)
+
+
+def test_items_at_the_start_inside_an_episode_are_counted_and_those_before_are_not() -> None:
+    episode = Episode(START - 10, START + 10)
+    reference = [START - 1, START, START + 3000]
+    detections = [START - 1, START, START + 9000]
+    result = match(reference, detections, [episode])
+    # START - 1 is left out by the learning period; START is inside the episode and counted.
+    assert outcome(result) == ((), (START + 3000,), (START + 9000,))
+    assert (result.reference_excluded, result.detections_excluded) == (1, 1)
+
+
+def test_episode_at_or_beyond_the_end_of_the_record_excludes_nothing_inside_it() -> None:
+    n_samples = 650000
+    episodes = vf_episodes([annotation(n_samples + 10, "[")], n_samples)
+    assert episodes == (Episode(n_samples + 10, n_samples + 10),)
+    reference = [200000, 649999]
+    result = match(reference, reference, episodes)
+    assert (result.tp, result.reference_excluded, result.detections_excluded) == (2, 0, 0)
 
 
 def test_episodes_given_as_a_tuple_or_a_list() -> None:
@@ -787,7 +941,7 @@ def _transcription(
         return any(e.start_sample <= sample <= e.end_sample for e in vf)
 
     scored = [sample for sample in reference if not inside(sample)]
-    excluded = len(reference) - len(scored)
+    excluded = sum(1 for sample in reference if sample >= start and inside(sample))
     ref = _Cursor(scored)
     while ref.current < start:
         ref.advance()
@@ -837,6 +991,68 @@ def _transcription(
                 misses.append(big_t)
             ref.advance()
     return pairs, misses, extras, excluded, not_counted
+
+
+def _step_3(
+    reference: Sequence[int],
+    detections: Sequence[int],
+    window: int,
+    start: int,
+    vf: Sequence[Episode],
+) -> tuple[bool, bool]:
+    """Whether step 3 pairs the last detection before the start, and whether it drops the
+    first detection at or after the start (architecture §8.8.2, step 3)."""
+
+    def inside(sample: int) -> bool:
+        return any(e.start_sample <= sample <= e.end_sample for e in vf)
+
+    first_scored = [beat for beat in reference if beat >= start and not inside(beat)]
+    big_t = first_scored[0] if first_scored else HUGE
+    before = [d for d in detections if d < start]
+    after = [*(d for d in detections if d >= start), HUGE, HUGE]
+    if before and big_t - before[-1] <= window and big_t - before[-1] < abs(big_t - after[0]):
+        return True, False
+    t, t2 = after[0], after[1]
+    return False, t - start <= window and abs(big_t - t2) < abs(big_t - t)
+
+
+def _assert_accounting(
+    reference: Sequence[int],
+    detections: Sequence[int],
+    window: int,
+    start: int,
+    vf: Sequence[Episode],
+    result: MatchResult,
+) -> None:
+    """The two accounting equalities of architecture §8.8.3."""
+    reference_before = sum(1 for beat in reference if beat < start)
+    assert len(reference) == (reference_before + result.reference_excluded + result.tp + result.fn)
+    pairs_at_start, drops_at_start = _step_3(reference, detections, window, start, vf)
+    assert pairs_at_start == any(d < start for _, d in result.matched)
+    left_out = sum(1 for d in detections if d < start) - pairs_at_start + drops_at_start
+    assert len(detections) == left_out + result.detections_excluded + result.tp + result.fp
+
+
+@pytest.mark.parametrize(
+    ("reference", "detections", "vf"),
+    [
+        # The cases of the verification notes of architecture §8.8.3.
+        ([107500, 108500], [107500, 108500], [Episode(107000, 109000)]),
+        ([110000], [108020, 110000], [Episode(107000, 109000)]),
+        ([50000, 55000, 108100], [50000, 55000, 108100], [Episode(49000, 60000)]),
+        # Pair at the start, a drop at the start inside an episode, trailing items.
+        ([108010, 200000, 200500], [107990, 200000, 200400, 300000], [Episode(200300, 200600)]),
+        ([108100], [108020, 108100, 108300], [Episode(108000, 108050)]),
+        ([], [107000, 108000, 108010, 400000], [Episode(108005, 108020)]),
+        ([100, 200], [], [Episode(0, 10**6)]),
+        ([], [], []),
+    ],
+)
+def test_accounting_equalities(
+    reference: list[int], detections: list[int], vf: list[Episode]
+) -> None:
+    result = match(reference, detections, vf)
+    _assert_accounting(reference, detections, W, START, vf, result)
 
 
 def _random_case(
@@ -891,7 +1107,11 @@ def test_random_cases_agree_with_the_transcription_and_keep_the_invariants() -> 
         # Every scored reference beat is a true positive or a false negative, once.
         scored = sorted(beat for beat in reference if beat >= start and not inside(beat))
         assert sorted([beat for beat, _ in result.matched] + list(result.false_negatives)) == scored
-        assert result.reference_excluded == sum(1 for beat in reference if inside(beat))
+        # Only the beats at or after the start are counted as not scored (§8.8.3).
+        assert result.reference_excluded == sum(
+            1 for beat in reference if beat >= start and inside(beat)
+        )
+        _assert_accounting(reference, detections, window, start, episodes, result)
         # A detection is in at most one list; none before the start is a false positive.
         assert not set(paired_detections) & set(result.false_positives)
         assert all(d >= start and not inside(d) for d in result.false_positives)

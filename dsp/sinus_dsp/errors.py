@@ -25,7 +25,9 @@ class InvalidInputError(SinusError, ValueError):
     this error, and nothing is returned. SRS-005: a mains frequency other than 50 Hz or 60 Hz
     is rejected with it too. SRS-002: a channel that the record does not have, and signal
     units other than mV, are rejected with it. It is also raised for a design argument
-    outside its range (architecture §8.6) and for an invalid record name (architecture §8.3).
+    outside its range (architecture §8.6), for an invalid record name or an empty record
+    selection (architecture §8.3), and for samples out of order given to the matching
+    (architecture §8.8).
     """
 
 

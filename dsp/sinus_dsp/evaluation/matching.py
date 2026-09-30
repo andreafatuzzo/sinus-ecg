@@ -44,7 +44,9 @@ class Episode:
 
     Attributes:
         start_sample: Sample of the ``[`` annotation.
-        end_sample: Sample of the matching ``]`` annotation, inclusive.
+        end_sample: Sample of the matching ``]`` annotation, inclusive; never before
+            ``start_sample``. For an episode without ``]``, the last sample of the record, or
+            ``start_sample`` if the ``[`` lies at or beyond the end of the record.
     """
 
     start_sample: int
@@ -55,6 +57,10 @@ class Episode:
 class MatchResult:
     """Outcome of the matching of one record (SRS-008).
 
+    What is not scored is counted only in the scored part of the record, from the
+    ``start_sample`` of the matching on: the learning period comes first, and an item before
+    it is in no list and no count (architecture §8.8.3).
+
     Attributes:
         tp: Number of pairs.
         fn: Number of scored reference beats without a match.
@@ -62,9 +68,11 @@ class MatchResult:
         matched: The pairs ``(reference sample, detection sample)``, in time order.
         false_negatives: Reference samples without a match.
         false_positives: Detection samples without a match.
-        reference_excluded: Reference beats inside ventricular flutter or fibrillation
-            episodes, never scored.
-        detections_excluded: Unpaired detections inside such episodes, not counted.
+        reference_excluded: Reference beats at or after the start that lie inside a
+            ventricular flutter or fibrillation episode, never scored.
+        detections_excluded: Detections at or after the start that lie inside such an
+            episode and are not paired, not counted. The detection dropped at the start
+            (step 3 of the pairing) is not included.
     """
 
     tp: int
@@ -109,9 +117,12 @@ def vf_episodes(annotations: Sequence[Annotation], n_samples: int) -> tuple[Epis
     SRS-008: an episode runs from an onset annotation (``[``) to the next offset annotation
     (``]``), both included; an episode without an offset lasts until the end of the record.
 
-    The annotations are scanned in the order given. A ``[`` opens an episode and the next
-    ``]`` closes it. A ``[`` while an episode is open and a ``]`` while none is open are
-    ignored. An episode still open at the end ends at ``n_samples - 1``.
+    The annotations are scanned in the order given, and their samples must not decrease. A
+    ``[`` opens an episode and the next ``]`` closes it. A ``[`` while an episode is open and
+    a ``]`` while none is open are ignored. An episode still open at the end ends at the last
+    sample of the record: ``end_sample = max(start_sample, n_samples - 1)``. The maximum
+    covers a ``[`` at or beyond ``n_samples``: that episode is the single sample of its
+    ``[``, outside the record. Every episode therefore has ``start_sample <= end_sample``.
 
     Args:
         annotations: The non-beat annotations of the record, in file order.
@@ -119,18 +130,30 @@ def vf_episodes(annotations: Sequence[Annotation], n_samples: int) -> tuple[Epis
 
     Returns:
         The episodes, in the order of their onsets.
+
+    Raises:
+        InvalidInputError: If the sample of an annotation is lower than the sample of the
+            annotation before it.
     """
     episodes: list[Episode] = []
     open_start: int | None = None
-    for annotation in annotations:
+    previous: int | None = None
+    for index, annotation in enumerate(annotations):
+        sample = annotation.sample
+        if previous is not None and sample < previous:
+            raise InvalidInputError(
+                f"annotation samples are not non-decreasing: {sample} at index {index} "
+                f"follows {previous}"
+            )
+        previous = sample
         if annotation.symbol == _VF_ONSET:
             if open_start is None:
-                open_start = annotation.sample
+                open_start = sample
         elif annotation.symbol == _VF_OFFSET and open_start is not None:
-            episodes.append(Episode(start_sample=open_start, end_sample=annotation.sample))
+            episodes.append(Episode(start_sample=open_start, end_sample=sample))
             open_start = None
     if open_start is not None:
-        episodes.append(Episode(start_sample=open_start, end_sample=n_samples - 1))
+        episodes.append(Episode(start_sample=open_start, end_sample=max(open_start, n_samples - 1)))
     return tuple(episodes)
 
 
@@ -146,8 +169,10 @@ def match_beats(
 
     SRS-008. The procedure is the one of architecture §8.8.2:
 
-    1. The reference beats inside an episode of ``vf`` (bounds included) are removed and
-       counted in ``reference_excluded``. A sentinel ends both lists.
+    1. The reference beats inside an episode of ``vf`` (bounds included) are removed. Those
+       at or after ``start_sample`` are counted in ``reference_excluded``; those before it
+       are left out by the learning period and are in no count (architecture §8.8.3). A
+       sentinel ends both lists.
     2. ``T`` and ``T2`` are the current and the next reference beat; ``t`` and ``t2`` the
        current and the next detection.
     3. Start. ``T`` is the first reference beat at or after ``start_sample``; ``t2`` is the
@@ -159,11 +184,11 @@ def match_beats(
        is dropped, not scored).
     4. Loop, until both lists are at their sentinel. If ``t < T``: the pair ``(T, t)`` is
        made if ``T - t <= window_samples`` and (``T - t < |T - t2|`` or
-       ``|T2 - t2| < |T - t2|``); otherwise ``t`` is not counted if it lies inside an episode
-       of ``vf``, and is a false positive if it does not, and the detections advance. If
-       ``T <= t``: the pair is made if ``t - T <= window_samples`` and (``t - T < |t - T2|``
-       or ``|t2 - T2| < |t - T2|``); otherwise ``T`` is a false negative and the reference
-       advances. After a pair both lists advance.
+       ``|T2 - t2| < |T - t2|``); otherwise ``t`` is counted in ``detections_excluded`` if
+       it lies inside an episode of ``vf``, and is a false positive if it does not, and the
+       detections advance. If ``T <= t``: the pair is made if ``t - T <= window_samples``
+       and (``t - T < |t - T2|`` or ``|t2 - T2| < |t - T2|``); otherwise ``T`` is a false
+       negative and the reference advances. After a pair both lists advance.
 
     Args:
         reference_samples: Samples of the reference beats, integers, non-decreasing.
@@ -187,10 +212,13 @@ def match_beats(
     all_detections = _sample_list(detection_samples, "detection samples", strictly=True)
     episodes = tuple(vf)
 
-    # 1. Scored reference sequence. Two sentinels: the element after the current one is read
-    # even when the current one is the sentinel.
+    # 1. Scored reference sequence. The learning period comes first: a beat inside an episode
+    # but before the start is in no count. Two sentinels: the element after the current one is
+    # read even when the current one is the sentinel.
     reference = [sample for sample in all_reference if not _inside(sample, episodes)]
-    reference_excluded = len(all_reference) - len(reference)
+    reference_excluded = sum(
+        1 for sample in all_reference if sample >= start and _inside(sample, episodes)
+    )
     reference += [_HUGE, _HUGE]
     detections = [*all_detections, _HUGE, _HUGE]
 
