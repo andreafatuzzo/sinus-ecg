@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2, 2026-09-29. Status: draft v0.2, detailed design pending owner approval (sections 1 to 7 and 9 to 12 approved in v0.1 on 2026-09-29)._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2, 2026-09-29. Status: approved by the project owner on 2026-09-29 (sections 1 to 7 and 9 to 12 in v0.1, the detailed design of §8 in v0.2)._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;
@@ -27,6 +27,7 @@ The detailed design of each requirement (module, interface, algorithm with refer
 |---|---|---|
 | 0.1 | 2026-09-29 | First version, replacing the Milestone 0 stub: software items, allocation of the functional blocks, interfaces and data flows, constraints of the portable real-time library, outlines of the firmware, desktop application and backend, equivalence principle and golden-vector format (SRS-015), Milestone 1 module structure of `dsp`, SOUP per item, segregation |
 | 0.2 | 2026-09-29 | Detailed design of the Milestone 1 requirements SRS-001 to SRS-016 in §8 (closes OP-008): common conventions and error classes; download and verification against pinned checksum lists; record loading; input validation; filter designs with computed gains and the settling rule for verification; causal Pan–Tompkins detection with delay compensation; EC57 matching as in the WFDB comparator `bxb` (closes OP-030); statistics; evaluation run and report formats; CI subset check and its stability across machines; golden-vector interfaces; implementation order. §7.1 points to the detector initialisation in §8.7.3 |
+| 0.2.1 | 2026-09-29 | Detailed design (§8) approved by the project owner; EC57 scoring as `bxb` confirmed (decision recorded with OP-053) |
 
 ## 1. System context
 

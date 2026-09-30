@@ -1,6 +1,6 @@
 # Software development plan
 
-_Inspired by IEC 62304 §5.1. Version 0.3, 2026-09-29. Status: draft (Milestone 0)._
+_Inspired by IEC 62304 §5.1. Version 0.3.1, 2026-09-29. Status: draft (Milestone 0)._
 
 > Sinus is not a medical device and claims no compliance with IEC 62304. This plan borrows the standard's structure so that the project is developed the way medical device software is.
 >
@@ -13,6 +13,7 @@ _Inspired by IEC 62304 §5.1. Version 0.3, 2026-09-29. Status: draft (Milestone 
 | 0.1 | 2026-09-28 | First draft |
 | 0.2 | 2026-09-28 | Repository URL, reviewer role, detailed design scope |
 | 0.3 | 2026-09-29 | Software items aligned with the roadmap M0 to M6:<br>- portable C++17 library;<br>- Qt 6 desktop application;<br>- ESP32-S3 firmware in C++17 on ESP-IDF with FreeRTOS;<br>- backend.<br>Also:<br>- no quality management system;<br>- traceability gates and milestone register (ADR 0004);<br>- tools in use and planned per milestone, including the SBOM;<br>- development with AI assistance;<br>- equivalence, integration-by-replay and usability verification levels;<br>- definition of done per component |
+| 0.3.1 | 2026-09-29 | §6: rule for parameters tuned on the evaluation data |
 
 ## 1. Purpose and scope
 
@@ -151,6 +152,8 @@ Development is assisted by Claude Code (an AI coding assistant). All AI-generate
 | Process | `traceability.py --check` on every push and `--release-gate` on pull requests into `main` (ADR 0004); process compliance review (Reviewer role) before merging into `main` | CI log; pull request |
 
 A requirement counts as verified only when at least one test checks its pass criterion and that test passes in CI. Tests that need the complete reference databases run locally, and their output is captured in the validation report of the milestone. CI obtains a subset of records and checks the subset report on every push (SRS-016).
+
+**Tuning on evaluation data** (decided by the project owner, 2026-09-29). The algorithm parameters are fixed in the approved detailed design before the first run on the full MIT-BIH Arrhythmia Database. Any parameter change made after results on that database, or on the Noise Stress Test Database, have been seen is recorded in the milestone verification report as *tuned on the evaluation data*, with the parameters before and after and the results of both. Results after such a change are reported as such, and independent evidence on a database not used during development (OP-029) is needed before claiming generalisation.
 
 ## 7. SOUP management
 
