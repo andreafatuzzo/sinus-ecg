@@ -1,6 +1,6 @@
 # Risk analysis
 
-_Inspired by ISO 14971:2019. Version 0.3.2, 2026-09-29. Status: draft (Milestone 0)._
+_Inspired by ISO 14971:2019. Version 0.3.3, 2026-09-30. Status: draft (Milestone 0)._
 
 ## Conventions
 
@@ -20,6 +20,7 @@ _Inspired by ISO 14971:2019. Version 0.3.2, 2026-09-29. Status: draft (Milestone
 | 0.3 | 2026-09-29 | Aligned with functional analysis v0.2 (new roadmap: portable real-time library, desktop application with replay, ESP32-S3 device). Added HAZ-006 (contact loss and low signal quality), HAZ-007 (stale data), HAZ-011 (low battery), HAZ-012 (device fault, watchdog reset, data gaps), HAZ-013 (replayed or test data taken for the live signal), HAZ-014 (beat class shown where the system should abstain); RC-007, RC-008, RC-012 to RC-016. Causes added to HAZ-001, HAZ-002 (real-time implementation differs from the reference), HAZ-004 (performance known only on clean data) and HAZ-005 (wired test link). RC-004 extended to SRS-013, SRS-014 and SRS-016. Milestone references renumbered |
 | 0.3.1 | 2026-09-29 | Security causes added to HAZ-001, HAZ-002 and HAZ-013, from the threat model in cybersecurity.md (TH-2, TH-4, TH-7, TH-18) |
 | 0.3.2 | 2026-09-29 | Process review: header version; HAZ-007 acceptability now cites Milestones 2 to 4 (heart-rate tracking at Milestone 2) |
+| 0.3.3 | 2026-09-30 | Cause added to HAZ-001: a QRS complex that follows the previous one very closely can be missed (heart rates above the 30–200 bpm range of SRS-006, as in a fast ventricular tachycardia, or a very early premature beat), from the decision on OP-055. Severity, probabilities and risk controls unchanged |
 
 ## Scope
 
@@ -57,7 +58,7 @@ _Inspired by ISO 14971:2019. Version 0.3.2, 2026-09-29. Status: draft (Milestone
 
 | ID | Hazard / hazardous situation | Possible harm | S | P before | Risk controls | P after | Acceptable |
 |---|---|---|---|---|---|---|---|
-| HAZ-001 | QRS complexes missed (false negatives), including when pacing spikes of a wearer with a pacemaker are taken for beats and mask missed ones, or when the real-time implementation behaves differently from the validated reference, or when packets are injected or altered on the wireless link or the firmware is altered (cybersecurity.md TH-4, TH-18); the heart rate shown is too low or irregular beats go unseen | User is falsely reassured and delays seeking care for a real symptom | S2 | P3 | RC-001, RC-004, RC-005, RC-012 | P2 | Yes |
+| HAZ-001 | QRS complexes missed (false negatives), including when pacing spikes of a wearer with a pacemaker are taken for beats and mask missed ones, or when a QRS complex follows the previous one very closely (heart rates above the 30–200 bpm range of SRS-006, as in a fast ventricular tachycardia, or a very early premature beat), or when the real-time implementation behaves differently from the validated reference, or when packets are injected or altered on the wireless link or the firmware is altered (cybersecurity.md TH-4, TH-18); the heart rate shown is too low or irregular beats go unseen | User is falsely reassured and delays seeking care for a real symptom | S2 | P3 | RC-001, RC-004, RC-005, RC-012 | P2 | Yes |
 | HAZ-002 | Noise, baseline wander, mains interference (including a mains frequency setting wrong for the place of use) or pacing spikes detected as beats (false positives), including when the real-time implementation behaves differently from the validated reference, or when packets are injected or altered on the wireless link or the firmware is altered (cybersecurity.md TH-4, TH-18); the heart rate shown is too high or irregular | User is falsely alarmed: anxiety or an unnecessary medical visit | S2 | P3 | RC-001, RC-002, RC-004, RC-005, RC-012 | P2 | Yes |
 | HAZ-003 | Invalid input (non-finite samples, wrong sampling frequency, too-short record) processed silently, and meaningless output presented as valid | As HAZ-001 or HAZ-002 | S2 | P3 | RC-003, RC-005 | P1 | Yes |
 | HAZ-004 | Validation results do not represent real performance (corrupted data, non-standard scoring, results that cannot be reproduced, performance known only on clean recordings), so the algorithm is trusted more than it deserves | Increases the probability of HAZ-001 and HAZ-002 | S2 | P2 | RC-004 | P1 | Yes |

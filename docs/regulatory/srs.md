@@ -1,6 +1,6 @@
 # Software Requirements Specification
 
-_Inspired by IEC 62304 §5.2. Version 0.4.1, 2026-09-30. Status: confirmed by the project owner (Milestone 1)._
+_Inspired by IEC 62304 §5.2. Version 0.5, 2026-09-30. Status: confirmed by the project owner (Milestone 1)._
 
 ## Conventions
 
@@ -27,6 +27,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 | 0.3 | 2026-09-29 | Scope aligned with functional analysis v0.2 (new roadmap, features F1.10 to F1.12). Added SRS-013 (verified download of the noise stress test database), SRS-014 (detection performance versus signal-to-noise ratio), SRS-015 (golden-vector export) and SRS-016 (subset validation report in continuous integration). SRS-001 to SRS-012 unchanged. Confirmed by the project owner on 2026-09-29 |
 | 0.4 | 2026-09-29 | Aligned with the approved detailed design (closes OP-053). SRS-008: EC57 scoring with the rules of the WFDB comparator `bxb`, decided by the project owner on 2026-09-29: sequential pairing in time order instead of a maximum matching, `bxb`'s rules at 5:00, ventricular flutter and fibrillation episodes not scored; rationale and verification cases updated. SRS-002: rationale states the use of the `[` and `]` annotations; verification includes them. SRS-005: verification inputs last at least 2 s. SRS-016: rationale no longer refers to an undecided point. Confirmed by the project owner on 2026-09-29 |
 | 0.4.1 | 2026-09-30 | SRS-012: the report also states what was not scored (ventricular flutter and fibrillation episodes, beats and detections excluded), as decided by the project owner. Version 0.4 and this change confirmed by the project owner |
+| 0.5 | 2026-09-30 | Decisions of the project owner on the open points raised while implementing Milestone 1. SRS-002: a channel that the record does not have, and signal units other than mV, are rejected with an explicit error; verification cases added (closes OP-060; the error behaviours of SRS-008 and SRS-011 stay design behaviours, verified by unit tests). SRS-005: a mains setting other than 50 Hz or 60 Hz is rejected with an explicit error; verification cases added (closes OP-054). SRS-006: exactly one index per QRS complex is required for a noise-free input with a heart rate between 30 and 200 bpm; verification adds 30 and 200 bpm; rationale gives the reason for the range (closes OP-055). SRS-010: states the heart-rate range of SRS-006 and the one-index-per-QRS criterion explicitly; verification at the heart rates of SRS-006 (OP-055). SRS-008: the samples of the onset and offset annotations belong to an episode for detections too; verification adds an episode without an offset annotation (OP-059). SRS-012: the figures on what was not scored cover the part of each record from 5:00 to its end: episodes in the record, episodes that reach 5:00 or later, their duration from 5:00, and the reference beats and unpaired detections inside them; rationale and verification updated (closes OP-059). Confirmed by the project owner on 2026-09-30 |
 
 ## Requirements
 
@@ -50,9 +51,11 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 - the reference beat annotations, as sample index and label, restricted to the PhysioNet beat annotation codes N, L, R, B, A, a, J, S, V, r, F, e, j, n, E, /, f, Q and ?;
 - all other annotations (e.g. rhythm changes, signal-quality marks, ventricular flutter episodes), separately from the beat annotations.
 
-**Rationale:** Every algorithm and evaluation consumes records the same way, so all of them see the same data. Non-beat annotations are kept because the EC57 evaluation excludes ventricular flutter and fibrillation episodes, marked by `[` and `]` annotations, from scoring (SRS-008).
+If the record does not have the requested channel, or the signal units of that channel, as stated in the record header, are not mV, the software shall reject the request with an explicit error and provide none of the above.
+
+**Rationale:** Every algorithm and evaluation consumes records the same way, so all of them see the same data. Non-beat annotations are kept because the EC57 evaluation excludes ventricular flutter and fibrillation episodes, marked by `[` and `]` annotations, from scoring (SRS-008). Every amplitude in these requirements is in millivolts, and every result must come from the signal that its settings name (SRS-012), so a record in other units, or without the requested channel, is rejected instead of being processed.
 **Verification level:** Requirement (QA)
-**Verification:** Test on a synthetic WFDB record written by the test, with beat annotations of several codes and non-beat annotations (a rhythm change, a signal-quality mark, and a ventricular flutter onset and offset). The returned signal equals the written one within one quantization step of the record; the sampling frequency is equal; the beat annotations are equal and contain no non-beat annotation; every non-beat annotation is returned in the separate list.
+**Verification:** Test on a synthetic WFDB record written by the test, with beat annotations of several codes and non-beat annotations (a rhythm change, a signal-quality mark, and a ventricular flutter onset and offset). The returned signal equals the written one within one quantization step of the record; the sampling frequency is equal; the beat annotations are equal and contain no non-beat annotation; every non-beat annotation is returned in the separate list. Rejected with an error, with no signal or annotations returned: a request for the channel after the last channel of the record, and for a negative channel number; the same record written with signal units of µV.
 **Risk controls:** none.
 
 ### SRS-003: Input validation
@@ -83,20 +86,20 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 
 **Software item:** dsp
 **Milestone:** M1
-**Statement:** The software shall provide a mains interference filter configurable for 50 Hz or 60 Hz. It shall attenuate a sinusoid at the configured frequency by at least 30 dB. Components between 1 Hz and 40 Hz shall change in amplitude by no more than ±0.5 dB.
-**Rationale:** Mains interference is common in ECG recordings. MIT-BIH was recorded on 60 Hz mains, while the Sinus device will be used on 50 Hz mains. Tolerance to deviations of the mains frequency is left to the live-use analysis (OP-022).
+**Statement:** The software shall provide a mains interference filter configurable for 50 Hz or 60 Hz. It shall attenuate a sinusoid at the configured frequency by at least 30 dB. Components between 1 Hz and 40 Hz shall change in amplitude by no more than ±0.5 dB. A setting other than 50 Hz or 60 Hz shall be rejected with an explicit error, without producing a filtered signal.
+**Rationale:** Mains interference is common in ECG recordings. MIT-BIH was recorded on 60 Hz mains, while the Sinus device will be used on 50 Hz mains. Tolerance to deviations of the mains frequency is left to the live-use analysis (OP-022). Any other setting is rejected because a filter set to a frequency that is not a mains frequency would leave the interference in the signal while its output looks filtered.
 **Verification level:** Requirement (QA)
-**Verification:** Test at 360 Hz and at 250 Hz sampling, for both settings: attenuation at the configured frequency is at least 30 dB, and gain at 1, 5, 10, 20 and 40 Hz is within ±0.5 dB. Each input lasts at least ten periods of its frequency and at least 2 s, so that the start-up transient of a narrow mains filter does not affect the measurement, and amplitude is measured on its second half.
+**Verification:** Test at 360 Hz and at 250 Hz sampling, for both settings: attenuation at the configured frequency is at least 30 dB, and gain at 1, 5, 10, 20 and 40 Hz is within ±0.5 dB. Each input lasts at least ten periods of its frequency and at least 2 s, so that the start-up transient of a narrow mains filter does not affect the measurement, and amplitude is measured on its second half. Settings of 49 Hz, 51 Hz, 59 Hz, 61 Hz and 100 Hz, and a non-finite setting, are each rejected with an error, and no filtered signal is produced.
 **Risk controls:** RC-002.
 
 ### SRS-006: QRS detection
 
 **Software item:** dsp
 **Milestone:** M1
-**Statement:** For an input accepted by SRS-003, the software shall output the sample indices of the detected QRS complexes, in the time base of the input (index 0 = first input sample), such that each index lies within 150 ms of the QRS complex it represents, indices are strictly increasing, and no two indices are closer than 200 ms. For a noise-free input, the output shall contain exactly one index for each QRS complex and no other indices.
-**Rationale:** Beat positions are the basis of heart rate, HRV and beat classification, and are scored against reference annotations on the input time base (SRS-008). 200 ms is the physiological refractory period (at most 300 bpm).
+**Statement:** For an input accepted by SRS-003, the software shall output the sample indices of the detected QRS complexes, in the time base of the input (index 0 = first input sample), such that each index lies within 150 ms of the QRS complex it represents, indices are strictly increasing, and no two indices are closer than 200 ms. For a noise-free input with a heart rate between 30 and 200 bpm (bounds included), the output shall contain exactly one index for each QRS complex and no other indices.
+**Rationale:** Beat positions are the basis of heart rate, HRV and beat classification, and are scored against reference annotations on the input time base (SRS-008). 200 ms is the physiological refractory period (at most 300 bpm). The range of 30 to 200 bpm covers the heart rates expected in the intended use, an adult at rest or in light activity ([`functional-analysis.md`](functional-analysis.md) §2.3); 30 bpm is also the rate on which the 10 s minimum of SRS-003 is based. Above 200 bpm, one index for each QRS complex is not required: at 300 bpm the QRS complexes are exactly 200 ms apart, so no output could meet both this criterion and the minimum spacing, and between the two rates the result depends on the waveform. Beats of faster rhythms, such as a fast ventricular tachycardia, can be missed (a cause of HAZ-001); detection performance on real recordings is measured by SRS-007.
 **Verification level:** Requirement (QA)
-**Verification:** Test on synthetic ECGs with known QRS positions, at 360 Hz and at 250 Hz, at 40, 75 and 180 bpm. Every known QRS has exactly one detection within 150 ms, there are no other detections, and the order and minimum spacing hold. A flat input of 10 s produces no detections and no error.
+**Verification:** Test on synthetic ECGs with known QRS positions, at 360 Hz and at 250 Hz, at 30, 40, 75, 180 and 200 bpm. Every known QRS has exactly one detection within 150 ms, there are no other detections, and the order and minimum spacing hold. A flat input of 10 s produces no detections and no error.
 **Risk controls:** RC-001.
 
 ### SRS-007: QRS detection performance
@@ -117,7 +120,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 - a detection and a reference beat can match if they are at most 150 ms apart;
 - detections and reference beats are paired in time order. The earlier of the current detection and the current reference beat (the reference beat, if both are at the same sample) is paired with the other if they can match, unless the item that follows the earlier one in its own list is at least as close to the later one as the earlier one is, and is no closer to the item that follows the later one in its list than to the later one. After a pair, the next item of each list becomes current; otherwise the earlier one stays unmatched and the next item of its list becomes current. Each detection and each reference beat belongs to at most one match;
 - reference beats before 5:00 (the first 5 minutes of the record) are not scored, and neither are detections before 5:00, except that the last detection before 5:00 is paired with the first scored reference beat if they can match and it is closer to that beat than the next detection is. The first detection at or after 5:00 is not scored if it is at most 150 ms after 5:00 and either the next detection is closer to the first scored reference beat or no reference beat is scored;
-- reference beats from a ventricular flutter or fibrillation onset annotation (`[`) to the next offset annotation (`]`), both included, are not scored; an episode without an offset annotation lasts until the end of the record. A detection inside such an episode that is not paired is not scored; one that is paired with a scored reference beat outside the episode is a match;
+- reference beats from a ventricular flutter or fibrillation onset annotation (`[`) to the next offset annotation (`]`), both included, are not scored; an episode without an offset annotation lasts until the end of the record. A detection inside such an episode (the samples of the onset and offset annotations included) that is not paired is not scored; one that is paired with a scored reference beat outside the episode is a match;
 - a scored reference beat without a match is a false negative; a scored detection without a match is a false positive.
 
 **Rationale:** A standard scoring method makes the results comparable with published work and hard to inflate unintentionally. Published EC57 results are produced with `bxb`, whose sequential pairing is not a maximum matching; following its rules keeps the counts comparable. Ventricular flutter and fibrillation have no distinct beats to match, so their episodes are left out of beat-by-beat scoring, as in `bxb`. The rules are stated here in full so that they can be verified without `bxb`; in corner cases where `bxb` behaves differently (for example, it rounds the match window above 150 ms at some sampling frequencies), these rules apply.
@@ -127,7 +130,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 - two detections near one reference beat: the closer one is paired; two detections equidistant from it, one before and one after: the later one is paired;
 - one detection between two reference beats that are both within 150 ms of it: paired with the closer one; one detection equidistant from both: paired with the later one;
 - reference beats just before and at 5:00: not scored; scored. The last detection before 5:00, within 150 ms of the first scored reference beat: paired if it is closer to that beat than the next detection, otherwise not scored. The first detection within 150 ms after 5:00, when the next detection is closer to the first scored reference beat: not scored;
-- reference beats and an unpaired detection inside a ventricular flutter episode: none of them scored; a detection inside the episode within 150 ms of a scored reference beat outside it: paired;
+- reference beats and an unpaired detection inside a ventricular flutter episode: none of them scored; a detection inside the episode within 150 ms of a scored reference beat outside it: paired; an episode without an offset annotation: reference beats and unpaired detections from its onset to the end of the record are not scored;
 - an empty detection list: every scored reference beat is a false negative; an empty reference list: every detection at or after 5:00 is a false positive, except the first one if it is at most 150 ms after 5:00.
 
 **Risk controls:** RC-004.
@@ -146,10 +149,10 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 
 **Software item:** dsp
 **Milestone:** M1
-**Statement:** The software shall meet the criteria of SRS-006 on an ECG with 1 mV QRS amplitude to which a 0.3 Hz sinusoidal baseline wander of 1 mV amplitude and a sinusoid at the configured mains frequency (50 Hz or 60 Hz) of 0.2 mV amplitude have been added.
-**Rationale:** Baseline wander and mains interference are the most common artefacts in ECG recordings and cause missed and false beats (HAZ-001, HAZ-002). This checks the effect of RC-002 on detection, whatever the internal processing.
+**Statement:** The software shall meet all the criteria of SRS-006, including exactly one index for each QRS complex and no other indices, on an ECG with a heart rate between 30 and 200 bpm (bounds included) and 1 mV QRS amplitude, to which a 0.3 Hz sinusoidal baseline wander of 1 mV amplitude and a sinusoid at the configured mains frequency (50 Hz or 60 Hz) of 0.2 mV amplitude have been added.
+**Rationale:** Baseline wander and mains interference are the most common artefacts in ECG recordings and cause missed and false beats (HAZ-001, HAZ-002). This checks the effect of RC-002 on detection, whatever the internal processing. The heart-rate range is that of SRS-006.
 **Verification level:** Requirement (QA)
-**Verification:** Test on the synthetic ECGs of SRS-006, at 360 Hz and at 250 Hz, with the interference added and the mains setting matching it (one case at 50 Hz and one at 60 Hz): the pass criteria of SRS-006 hold.
+**Verification:** Test on the synthetic ECGs of SRS-006 (30, 40, 75, 180 and 200 bpm), at 360 Hz and at 250 Hz, with the interference added and the mains setting matching it (one case at 50 Hz and one at 60 Hz): the pass criteria of SRS-006 hold.
 **Risk controls:** RC-002.
 
 ### SRS-011: Detection statistics
@@ -172,13 +175,13 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 - the pass or fail of each SRS-007 threshold;
 - the database name and version, and the outcome of its SRS-001 verification;
 - the software version and the settings used (channel, mains frequency);
-- what was not scored under SRS-008: for each record with a ventricular flutter or fibrillation episode, the number of episodes, their total duration, and the numbers of reference beats and detections not scored; and a statement when no record has such an episode;
+- what was not scored under SRS-008 because of ventricular flutter or fibrillation episodes. The first 5 minutes of a record are not scored in any case, so these figures cover the part of each record from 5:00 to its end. For each record with at least one episode: the number of episodes in the record; the number of episodes that reach 5:00 or later; the total duration of those episodes, counted from 5:00 and including the samples of the onset and offset annotations; the number of reference beats at or after 5:00 that lie inside an episode; and the number of detections at or after 5:00 that lie inside an episode and are not paired. The detection left unscored by the rule at 5:00 (SRS-008) is not included. A statement is given instead when no record has an episode;
 - the statement "Technical evaluation only. Sinus is not a medical device; these results are not a clinical validation."
 
 The report shall not be written if the SRS-001 verification fails.
-**Rationale:** A reader must be able to tell what was measured, on which data and software, where performance is weakest, what was left out of the scoring, and what the results do not mean (HAZ-004, HAZ-010).
+**Rationale:** A reader must be able to tell what was measured, on which data and software, where performance is weakest, what was left out of the scoring, and what the results do not mean (HAZ-004, HAZ-010). Episodes in the first 5 minutes are counted but not measured, because that part of the record is not scored for another reason.
 **Verification level:** Requirement (QA)
-**Verification:** Test with fixture records. The report contains each listed item, with values matching the fixture and the worst records in the expected order. One fixture record has a ventricular flutter episode with reference beats and a detection inside it: the report gives its episode count, duration and the numbers not scored; with fixtures that have no episode, the report says so. With a fixture database that fails verification, no report is written and an error is raised.
+**Verification:** Test with fixture records. The report contains each listed item, with values matching the fixture and the worst records in the expected order. One fixture record has two ventricular flutter episodes, one that ends before 5:00 and one after 5:00, each with reference beats and an unpaired detection inside it: the report gives two episodes in the record and one from 5:00, the duration of the second episode, and the numbers of reference beats and detections inside the second episode only. With fixtures that have no episode, the report says so. With a fixture database that fails verification, no report is written and an error is raised.
 **Risk controls:** RC-004, RC-005, RC-011.
 
 ### SRS-013: Verified download of the noise stress test database
