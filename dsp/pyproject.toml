@@ -20,6 +20,7 @@ dev = [
     "pytest>=8",
     "ruff>=0.5",
     "mypy>=1.10",
+    "cyclonedx-bom>=7.4.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -27,9 +28,13 @@ include = ["sinus_dsp*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers"
+# tests/unit: developer unit tests (no requirement marker)
+# tests/requirements: QA functional tests; tests/system: test-engineer system tests
+# Tagging rules and CI gates: docs/adr/0004-test-tagging-and-traceability-gates.md
+addopts = "--strict-markers --import-mode=importlib"
 markers = [
-    "requirement(*ids): SRS requirement IDs verified by this test (e.g. 'SRS-001')",
+    "requirement(*ids): SRS requirement IDs verified by this test (e.g. 'SRS-001'); only in tests/requirements (Verification level Requirement) and tests/system (level System)",
+    "needs_data: requires the local MIT-BIH database in data/; skipped when it is absent (e.g. in CI)",
 ]
 
 [tool.ruff]
