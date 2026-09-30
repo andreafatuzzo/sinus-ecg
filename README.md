@@ -204,4 +204,4 @@ Code (firmware, DSP library and reference, desktop application, backend) is lice
 
 ## Status
 
-🚧 Early development: Milestone 0 (foundations) released; Milestone 1 (Python reference) next.
+🚧 Early development: Milestone 0 (foundations) released; Milestone 1 (Python reference) in progress.
