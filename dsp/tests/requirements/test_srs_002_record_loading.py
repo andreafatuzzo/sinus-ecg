@@ -11,7 +11,8 @@ and others.
 Pass criteria (SRS-002): the signal equals the written one within one quantization step of
 the record (1 / ADC gain, read from the written header); the sampling frequency is equal; the
 beat annotations are equal and hold no non-beat annotation; every non-beat annotation is in
-the separate list.
+the separate list. A request for a channel that the record does not have, or for a channel
+whose units in the header are not mV, raises an explicit error, so that nothing is returned.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import pytest
 import wfdb
 
 from sinus_dsp.data.records import BEAT_SYMBOLS, Record, load_record
+from sinus_dsp.errors import InvalidInputError, SinusError
 
 AnnotationTuple = tuple[int, str, int, str]  # sample, symbol, subtype, auxiliary note
 
@@ -66,6 +68,10 @@ SIGNAL_NAMES = ("MLII", "V5")
 ADC_GAIN = (200.0, 100.0)
 BASELINE = (1024, 0)
 
+# Physical value per millivolt, for the units in which a test writes the reference record.
+# `uV` is the WFDB spelling of microvolts (headers are ASCII text).
+UNIT_SCALE = {"mV": 1.0, "uV": 1000.0, "V": 0.001}
+
 
 @dataclass(frozen=True)
 class WrittenRecord:
@@ -83,6 +89,7 @@ def _write_reference(
     write_wfdb_record: Callable[..., Path],
     *,
     fmt: str = "212",
+    units: tuple[str, str] = ("mV", "mV"),
 ) -> WrittenRecord:
     """Write the reference record of these tests: 30 s at 360 Hz, two signals, annotations.
 
@@ -91,6 +98,9 @@ def _write_reference(
       0.25 mV).
     - Each QRS has a beat annotation; the codes cycle through the 19 beat codes of SRS-002.
     - The non-beat annotations of ``NON_BEAT_WRITTEN`` lie between the beats.
+    - ``units`` gives the units of each signal in the header (``UNIT_SCALE``). The physical
+      values and the ADC gains are scaled so that the stored samples are the same in every
+      unit: the same record, stated in other units. ``signals_mv`` stays in millivolts.
     """
     ecg = make_synthetic_ecg(FS_HZ, 75)
     t_s = np.arange(ecg.signal_mv.size, dtype=np.float64) / FS_HZ
@@ -105,14 +115,16 @@ def _write_reference(
         [(sample, code, 0, "") for sample, code in beats] + list(NON_BEAT_WRITTEN),
         key=lambda a: a[0],
     )
+    scale = np.asarray([UNIT_SCALE[u] for u in units], dtype=np.float64)
     path = write_wfdb_record(
         folder,
         "rec1",
         fs_hz=FS_HZ,
-        signals_mv=signals,
+        signals_mv=signals * scale,
         signal_names=SIGNAL_NAMES,
+        units=units,
         fmt=fmt,
-        adc_gain=ADC_GAIN,
+        adc_gain=[gain / s for gain, s in zip(ADC_GAIN, scale.tolist(), strict=True)],
         baseline=BASELINE,
         annotations=annotations,
     )
@@ -498,3 +510,197 @@ def test_record_without_beat_annotation(
     assert record.beat_samples.tolist() == []
     assert len(record.beat_symbols) == 0
     assert _other_tuples(record) == others
+
+
+# --------------------------------------------------------------------------------------------
+# Rejected requests: a channel that the record does not have, units other than mV
+# --------------------------------------------------------------------------------------------
+
+
+def _assert_rejected(path: Path, channel: int) -> InvalidInputError:
+    """The request raises the explicit error of SRS-002, so the loader returns nothing.
+
+    Returns the error, whose message must not be empty.
+    """
+    with pytest.raises(InvalidInputError) as excinfo:
+        load_record(path, channel)
+    assert isinstance(excinfo.value, SinusError)
+    assert str(excinfo.value).strip(), "the error carries no message"
+    return excinfo.value
+
+
+def _one_signal_record(folder: Path, write_wfdb_record: Callable[..., Path]) -> Path:
+    """A record of 10 s at 360 Hz with one signal (MLII, in mV) and two beat annotations."""
+    signal = 0.5 * np.sin(2.0 * np.pi * np.arange(3600, dtype=np.float64) / FS_HZ)
+    return write_wfdb_record(
+        folder,
+        "single",
+        fs_hz=FS_HZ,
+        signals_mv=signal.reshape(-1, 1),
+        signal_names=["MLII"],
+        annotations=[(300, "N", 0, ""), (900, "N", 0, "")],
+    )
+
+
+@pytest.mark.requirement("SRS-002")
+@pytest.mark.parametrize(
+    "channel",
+    [pytest.param(2, id="channel-after-the-last"), pytest.param(10, id="channel-10")],
+)
+def test_channel_after_the_last_is_rejected(reference: WrittenRecord, channel: int) -> None:
+    """A request for a channel that the record does not have: after the last one.
+
+    Input: the reference record, with two signals (channels 0 and 1), requested for channel
+    2 (the channel after the last) and for channel 10.
+    Expected: `InvalidInputError` with a message; no record is returned. The last channel,
+    1, is loaded (just inside the limit).
+    """
+    _assert_rejected(reference.path, channel)
+
+    assert load_record(reference.path, 1).signal_name == "V5"
+
+
+@pytest.mark.requirement("SRS-002")
+def test_channel_after_the_last_of_a_one_signal_record_is_rejected(
+    tmp_path: Path, write_wfdb_record: Callable[..., Path]
+) -> None:
+    """A request for channel 1 of a record that has a single signal.
+
+    Input: a record of 10 s at 360 Hz with one signal (channel 0), requested for channel 1.
+    Expected: `InvalidInputError` with a message; no record is returned. Channel 0 is
+    loaded.
+    """
+    path = _one_signal_record(tmp_path, write_wfdb_record)
+
+    _assert_rejected(path, 1)
+
+    assert load_record(path, 0).beat_samples.tolist() == [300, 900]
+
+
+@pytest.mark.requirement("SRS-002")
+@pytest.mark.parametrize("channel", [-1, -2])
+def test_negative_channel_is_rejected(reference: WrittenRecord, channel: int) -> None:
+    """A request for a negative channel number.
+
+    Input: the reference record, with two signals, requested for channel -1 and -2 (numbers
+    that sequence indexing from the end would turn into channel 1 and channel 0).
+    Expected: `InvalidInputError` with a message; no record is returned, neither the last
+    nor the first signal.
+    """
+    _assert_rejected(reference.path, channel)
+
+
+@pytest.mark.requirement("SRS-002")
+@pytest.mark.parametrize("channel", [0, 1])
+def test_same_record_in_microvolts_is_rejected(
+    tmp_path: Path,
+    make_synthetic_ecg: Callable[..., Any],
+    write_wfdb_record: Callable[..., Path],
+    channel: int,
+) -> None:
+    """The reference record written with signal units of microvolts.
+
+    Input: the reference record written with both signals in `uV` (the WFDB spelling of µV):
+    the same stored samples, with physical values 1000 times larger and ADC gains of 0.2 and
+    0.1 per µV. It is requested for channel 0 and for channel 1.
+    Expected: `InvalidInputError` whose message names the units `uV`; no record is returned.
+    """
+    written = _write_reference(tmp_path, make_synthetic_ecg, write_wfdb_record, units=("uV", "uV"))
+    assert wfdb.rdheader(str(written.path)).units == ["uV", "uV"]
+
+    error = _assert_rejected(written.path, channel)
+
+    assert "uV" in str(error)
+
+
+@pytest.mark.requirement("SRS-002")
+@pytest.mark.parametrize("channel", [0, 1])
+def test_record_with_the_micro_sign_in_its_header_is_rejected(
+    tmp_path: Path,
+    make_synthetic_ecg: Callable[..., Any],
+    write_wfdb_record: Callable[..., Path],
+    channel: int,
+) -> None:
+    """The reference record whose header states the units with the micro sign, `µV`.
+
+    Input: the reference record written in `uV`, whose header is then rewritten with the
+    units `µV` (micro sign, UTF-8). It is requested for channel 0 and for channel 1.
+    Expected: `InvalidInputError` with a message; no record is returned.
+    """
+    written = _write_reference(tmp_path, make_synthetic_ecg, write_wfdb_record, units=("uV", "uV"))
+    header = written.path.with_suffix(".hea")
+    content = header.read_bytes()
+    assert content.count(b"/uV") == 2
+    header.write_bytes(content.replace(b"/uV", "/µV".encode()))
+
+    _assert_rejected(written.path, channel)
+
+
+@pytest.mark.requirement("SRS-002")
+@pytest.mark.parametrize("channel", [0, 1])
+def test_same_record_in_volts_is_rejected(
+    tmp_path: Path,
+    make_synthetic_ecg: Callable[..., Any],
+    write_wfdb_record: Callable[..., Path],
+    channel: int,
+) -> None:
+    """The reference record written with signal units of volts.
+
+    Input: the reference record written with both signals in `V`: the same stored samples,
+    with physical values 1000 times smaller. It is requested for channel 0 and channel 1.
+    Expected: `InvalidInputError` with a message; no record is returned.
+    """
+    written = _write_reference(tmp_path, make_synthetic_ecg, write_wfdb_record, units=("V", "V"))
+    assert wfdb.rdheader(str(written.path)).units == ["V", "V"]
+
+    _assert_rejected(written.path, channel)
+
+
+@pytest.mark.requirement("SRS-002")
+def test_units_are_those_of_the_requested_channel(
+    tmp_path: Path,
+    make_synthetic_ecg: Callable[..., Any],
+    write_wfdb_record: Callable[..., Path],
+) -> None:
+    """A record whose two signals have different units.
+
+    Input: the reference record written with signal 0 in `mV` and signal 1 in `uV`.
+    Expected: channel 0 is loaded, equal to the written signal within one quantization step
+    (0.005 mV); channel 1 is rejected with `InvalidInputError`, and nothing is returned.
+    """
+    written = _write_reference(tmp_path, make_synthetic_ecg, write_wfdb_record, units=("mV", "uV"))
+
+    record = load_record(written.path, 0)
+    assert float(np.max(np.abs(record.signal_mv - written.signals_mv[:, 0]))) <= 0.005
+
+    _assert_rejected(written.path, 1)
+
+
+@pytest.mark.requirement("SRS-002")
+@pytest.mark.parametrize("channel", [0, 1])
+def test_header_without_units_is_read_as_millivolts(
+    tmp_path: Path,
+    make_synthetic_ecg: Callable[..., Any],
+    write_wfdb_record: Callable[..., Path],
+    channel: int,
+) -> None:
+    """A header that gives no units, as the headers of the MIT-BIH Arrhythmia Database.
+
+    In the WFDB header format, a signal whose units field is absent is in millivolts; the
+    headers of the reference database give only the ADC gain (e.g. `200`). The rejection of
+    units other than mV must not reject them.
+    Input: the reference record written in `mV`, whose header is then rewritten without the
+    units field (`200.0(1024)` instead of `200.0(1024)/mV`), requested for channel 0 and 1.
+    Expected: the record is loaded; the signal equals the written one within one quantization
+    step (0.005 mV for channel 0, 0.01 mV for channel 1).
+    """
+    written = _write_reference(tmp_path, make_synthetic_ecg, write_wfdb_record)
+    header = written.path.with_suffix(".hea")
+    content = header.read_bytes()
+    assert content.count(b"/mV") == 2
+    header.write_bytes(content.replace(b"/mV", b""))
+
+    record = load_record(written.path, channel)
+
+    step_mv = 1.0 / ADC_GAIN[channel]
+    assert float(np.max(np.abs(record.signal_mv - written.signals_mv[:, channel]))) <= step_mv

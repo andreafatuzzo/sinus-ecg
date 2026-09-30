@@ -7,12 +7,18 @@ pairs, false negatives, false positives and items not scored are worked out by h
 statement; the docstring of each test gives the reasoning.
 
 An item "not scored" appears in no pair, in no false negative and in no false positive. For
-the items inside a ventricular flutter episode, the result also gives their numbers.
+the items inside a ventricular flutter episode after 5:00, the result also gives their
+numbers. How the items not scored are counted when an episode reaches back before 5:00, or
+holds the detection left unscored by the rule at 5:00, is stated by SRS-012 and verified in
+`test_srs_012_not_scored_counts.py`; the cases of this file that involve both only check the
+pairs, the false negatives and the false positives.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 import pytest
@@ -1127,3 +1133,418 @@ def test_annotations_of_a_record_exclude_its_episodes_from_scoring() -> None:
         reference_excluded=4,
         detections_excluded=3,
     )
+
+
+# --------------------------------------------------------------------------------------------
+# An episode without an offset annotation
+# --------------------------------------------------------------------------------------------
+
+N_SAMPLES = 650000  # record length of these cases (30 min 5.6 s at 360 Hz)
+OPEN_ONSET = 400000
+
+
+@pytest.mark.requirement("SRS-008")
+@pytest.mark.parametrize(
+    ("annotations", "expected"),
+    [
+        pytest.param(
+            [(150, "+"), (OPEN_ONSET, "["), (400500, "!"), (500000, "~")],
+            [(OPEN_ONSET, N_SAMPLES - 1)],
+            id="only-episode-of-the-record",
+        ),
+        pytest.param(
+            [(OPEN_ONSET, "["), (500000, "[")],
+            [(OPEN_ONSET, N_SAMPLES - 1)],
+            id="second-onset-while-open",
+        ),
+        pytest.param(
+            [(N_SAMPLES - 1, "[")],
+            [(N_SAMPLES - 1, N_SAMPLES - 1)],
+            id="onset-on-the-last-sample",
+        ),
+    ],
+)
+def test_lone_episode_without_offset_lasts_until_the_end_of_the_record(
+    annotations: list[tuple[int, str]], expected: list[tuple[int, int]]
+) -> None:
+    """An episode without offset annotation, with no episode before it in the record.
+
+    Input: the non-beat annotations of a record of 650000 samples, holding a `[` without
+    any `]`: at sample 400000, among other annotations; at 400000 followed by a second `[`
+    at 500000; on the last sample, 649999.
+    Expected: a single episode, from the onset to the last sample of the record, 649999.
+    """
+    episodes = vf_episodes([_annotation(s, symbol) for s, symbol in annotations], N_SAMPLES)
+
+    assert _spans(episodes) == expected
+
+
+def _open_episode_annotations(earlier_closed: bool) -> list[Annotation]:
+    """Non-beat annotations with a `[` at 400000 and no `]` after it.
+
+    With ``earlier_closed``, a closed episode (`[` at 200000, `]` at 203000) comes first.
+    """
+    annotations = [_annotation(100, "+", aux_note="(N")]
+    if earlier_closed:
+        annotations += [_annotation(VF_START, "["), _annotation(VF_END, "]")]
+    return [*annotations, _annotation(OPEN_ONSET, "["), _annotation(OPEN_ONSET + 10, "!")]
+
+
+@pytest.mark.requirement("SRS-008")
+@pytest.mark.parametrize("earlier_closed", [False, True], ids=["alone", "after-a-closed-episode"])
+def test_items_from_an_unclosed_onset_to_the_end_of_the_record_are_not_scored(
+    earlier_closed: bool,
+) -> None:
+    """Reference beats and unpaired detections from an unclosed onset to the end of the record.
+
+    Input: a record of 650000 samples at 360 Hz with a `[` at 400000 and no `]` after it,
+    alone or after a closed episode from 200000 to 203000 (which holds a reference beat at
+    201000 and a detection at 201500). Reference beats at 300000 (detection at 300003),
+    399800 (no detection; before the onset), 400000 (on the onset), 520000 and 649999 (the
+    last sample). Detections also at 399999 (one sample before the onset, 199 samples from
+    the beat at 399800), 400000 (on the onset), 450000 and 649999 (the last sample), none
+    within 150 ms of a scored beat. The episodes are obtained from the annotations.
+    Expected: the pair (300000, 300003); the beat at 399800 is a false negative and the
+    detection at 399999 a false positive; the beats at 400000, 520000 and 649999 and the
+    detections at 400000, 450000 and 649999 are not scored (3 reference beats and 3
+    detections excluded, plus the beat and the detection of the closed episode when it is
+    there). The earlier closed episode does not change how the open one is treated.
+    """
+    episodes = vf_episodes(_open_episode_annotations(earlier_closed), N_SAMPLES)
+    reference = [300000, 399800, 400000, 520000, 649999]
+    detections = [300003, 399999, 400000, 450000, 649999]
+    if earlier_closed:
+        reference = [201000, *reference]
+        detections = [201500, *detections]
+
+    result = match_beats(
+        np.asarray(reference, dtype=np.int64),
+        np.asarray(detections, dtype=np.int64),
+        window_samples=match_window_samples(FS_HZ),
+        start_sample=learning_period_samples(FS_HZ),
+        vf=episodes,
+    )
+
+    _check(
+        result,
+        pairs=[(300000, 300003)],
+        false_negatives=[399800],
+        false_positives=[399999],
+        reference_excluded=4 if earlier_closed else 3,
+        detections_excluded=4 if earlier_closed else 3,
+    )
+
+
+@pytest.mark.requirement("SRS-008")
+@pytest.mark.parametrize(
+    ("detection", "pairs", "false_negatives", "detections_excluded"),
+    [
+        pytest.param(400034, [(399980, 400034)], [], 0, id="150ms-after-the-beat"),
+        pytest.param(400035, [], [399980], 1, id="150ms-plus-one-sample"),
+    ],
+)
+def test_detection_after_an_unclosed_onset_is_paired_with_a_scored_beat_before_it(
+    detection: int,
+    pairs: list[tuple[int, int]],
+    false_negatives: list[int],
+    detections_excluded: int,
+) -> None:
+    """A detection inside an episode without offset, near a scored beat before its onset.
+
+    Input: a record of 650000 samples with a `[` at 400000 and no `]`; a scored reference
+    beat at 399980, 20 samples before the onset; one detection inside the episode, 54
+    samples (150 ms) or 55 samples after the beat.
+    Expected: at 54 samples the detection is paired with the beat (a match, not excluded);
+    at 55 samples the beat is a false negative and the detection is not scored (excluded,
+    not a false positive).
+    """
+    episodes = vf_episodes(_open_episode_annotations(False), N_SAMPLES)
+
+    result = _match([399980], [detection], vf=episodes)
+
+    _check(
+        result,
+        pairs=pairs,
+        false_negatives=false_negatives,
+        false_positives=[],
+        detections_excluded=detections_excluded,
+    )
+
+
+@pytest.mark.requirement("SRS-008")
+@pytest.mark.parametrize(
+    ("onset", "false_negatives", "reference_excluded"),
+    [
+        pytest.param(N_SAMPLES - 1, [N_SAMPLES - 2], 1, id="onset-on-the-last-sample"),
+        pytest.param(N_SAMPLES, [N_SAMPLES - 2, N_SAMPLES - 1], 0, id="onset-after-the-end"),
+        pytest.param(N_SAMPLES + 500, [N_SAMPLES - 2, N_SAMPLES - 1], 0, id="onset-far-after"),
+    ],
+)
+def test_unclosed_onset_at_the_end_of_the_record(
+    onset: int, false_negatives: list[int], reference_excluded: int
+) -> None:
+    """An unclosed onset on the last sample of the record, or after its end.
+
+    Input: a record of 650000 samples whose only `[` (without `]`) is on the last sample
+    (649999), on the first sample after the end (650000) or 500 samples after the end;
+    reference beats at 649998 and 649999; no detection.
+    Expected: with the onset on the last sample, the beat on that sample is not scored and
+    the beat before it is a false negative. With the onset after the end, the episode holds
+    no sample of the record: both beats are false negatives and nothing is excluded.
+    """
+    episodes = vf_episodes([_annotation(onset, "[")], N_SAMPLES)
+
+    result = _match([N_SAMPLES - 2, N_SAMPLES - 1], [], vf=episodes)
+
+    _check(
+        result,
+        pairs=[],
+        false_negatives=false_negatives,
+        false_positives=[],
+        reference_excluded=reference_excluded,
+    )
+
+
+# --------------------------------------------------------------------------------------------
+# Episodes and the rules at 5:00 (pairs, false negatives and false positives)
+# --------------------------------------------------------------------------------------------
+
+
+def _check_lists(
+    result: MatchResult,
+    *,
+    pairs: Pairs,
+    false_negatives: Sequence[int],
+    false_positives: Sequence[int],
+) -> None:
+    """Compare the pairs, false negatives and false positives only (not the counts)."""
+    assert [(int(r), int(d)) for r, d in result.matched] == list(pairs)
+    assert [int(s) for s in result.false_negatives] == list(false_negatives)
+    assert [int(s) for s in result.false_positives] == list(false_positives)
+    assert (result.tp, result.fn, result.fp) == (
+        len(pairs),
+        len(false_negatives),
+        len(false_positives),
+    )
+
+
+@pytest.mark.requirement("SRS-008")
+@pytest.mark.parametrize(
+    ("vf", "pairs", "false_negatives"),
+    [
+        pytest.param(
+            [Episode(start_sample=107000, end_sample=108015)],
+            [(108040, 107995)],
+            [],
+            id="beat-at-108010-inside-an-episode",
+        ),
+        pytest.param([], [(108010, 107995)], [108040], id="control-without-episode"),
+    ],
+)
+def test_first_scored_beat_is_the_first_one_outside_every_episode(
+    vf: list[Episode], pairs: list[tuple[int, int]], false_negatives: list[int]
+) -> None:
+    """The first scored reference beat of the rule at 5:00, when an episode spans 5:00.
+
+    Input: an episode from 107000 to 108015; reference beats at 107990 (inside, before
+    5:00), 108010 (inside, after 5:00) and 108040 (outside); one detection at 107995, the
+    last before 5:00, 15 samples from 108010 and 45 from 108040. Control: the same lists
+    without the episode.
+    Expected: with the episode, the first scored reference beat is 108040, and the detection
+    is paired with it; the beats inside are not scored. Without the episode, the detection
+    is paired with 108010 and the beat at 108040 is a false negative. No false positive.
+    """
+    result = _match([107990, 108010, 108040], [107995], vf=vf)
+
+    _check_lists(result, pairs=pairs, false_negatives=false_negatives, false_positives=[])
+
+
+@pytest.mark.requirement("SRS-008")
+def test_detection_before_5_minutes_inside_an_episode_can_be_paired() -> None:
+    """The last detection before 5:00 lies inside an episode that ends before 5:00.
+
+    Input: an episode from 107900 to 107995; the last detection before 5:00 at 107990,
+    inside it; the first scored reference beat at 108020, 30 samples from it; no other item.
+    Expected: the detection is paired with the beat (a match, as for any detection inside an
+    episode that is paired with a scored beat outside it). No false negative or positive.
+    """
+    result = _match([108020], [107990], vf=[Episode(start_sample=107900, end_sample=107995)])
+
+    _check_lists(result, pairs=[(108020, 107990)], false_negatives=[], false_positives=[])
+
+
+EPISODE_OVER_5_MIN = Episode(start_sample=107000, end_sample=109000)
+
+
+@pytest.mark.requirement("SRS-008")
+@pytest.mark.parametrize(
+    ("reference", "detections", "pairs", "false_negatives", "false_positives"),
+    [
+        pytest.param(
+            [107500, 108500], [107500, 108500], [], [], [], id="items-inside-before-and-after"
+        ),
+        pytest.param(
+            [110000], [108020, 110000], [(110000, 110000)], [], [], id="first-detection-dropped"
+        ),
+        pytest.param(
+            [110000],
+            [108020, 113000],
+            [],
+            [110000],
+            [113000],
+            id="first-detection-inside-not-dropped",
+        ),
+        pytest.param(
+            [107500, 108500],
+            [108010, 108600, 109500],
+            [],
+            [],
+            [109500],
+            id="no-scored-beat",
+        ),
+    ],
+)
+def test_episode_that_spans_5_minutes(
+    reference: list[int],
+    detections: list[int],
+    pairs: list[tuple[int, int]],
+    false_negatives: list[int],
+    false_positives: list[int],
+) -> None:
+    """An episode from 107000 to 109000, which contains 5:00 (sample 108000).
+
+    Input and expected result, from the rules of SRS-008:
+    - beats and detections at 107500 and 108500: the items before 5:00 are not scored, and
+      those after it lie inside the episode (the detection is unpaired): nothing is scored;
+    - a first scored beat at 110000 and detections at 108020 and 110000: the detection at
+      108020 is the first one after 5:00, within 150 ms of it, and the next detection is
+      closer to the first scored beat: it is not scored; the pair is (110000, 110000);
+    - a first scored beat at 110000 and detections at 108020 and 113000: the next detection
+      is farther from the beat, so the rule at 5:00 does not apply; the detection at 108020
+      is unpaired inside the episode and not scored; the beat is a false negative and the
+      detection at 113000 a false positive;
+    - beats at 107500 and 108500 (none scored) and detections at 108010, 108600 and 109500:
+      the detection at 108010 is not scored (no reference beat is scored), the one at 108600
+      is unpaired inside the episode, the one at 109500 is a false positive.
+    """
+    result = _match(reference, detections, vf=[EPISODE_OVER_5_MIN])
+
+    _check_lists(
+        result, pairs=pairs, false_negatives=false_negatives, false_positives=false_positives
+    )
+
+
+# --------------------------------------------------------------------------------------------
+# The statement on random configurations around 5:00 and around episodes
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.mark.requirement("SRS-008")
+def test_rule_at_5_minutes_of_the_test_helper(
+    five_minute_rule: Callable[..., tuple[int | None, int | None]],
+) -> None:
+    """The helper that applies the two exceptions at 5:00 agrees with the verification cases.
+
+    Input: the configurations of the verification of SRS-008 at 5:00, given to the helper
+    of `conftest.py` that the property test below uses.
+    Expected: the last detection before 5:00 is returned as paired when it is within 150 ms
+    of the first scored beat and closer than the next detection; the first detection after
+    5:00 is returned as not scored when it is within 150 ms of 5:00 and the next detection is
+    closer to the first scored beat, or no beat is scored; otherwise neither.
+    """
+    rule = five_minute_rule
+    assert rule([108020], [107990], START, WINDOW) == (107990, None)
+    assert rule([108053], [107999], START, WINDOW) == (107999, None)
+    assert rule([108054], [107999], START, WINDOW) == (None, None)
+    assert rule([108020], [107990, 108050], START, WINDOW) == (None, None)
+    assert rule([108100], [108030, 108095], START, WINDOW) == (None, 108030)
+    assert rule([108124], [108054, 108120], START, WINDOW) == (None, 108054)
+    assert rule([108125], [108055, 108121], START, WINDOW) == (None, None)
+    assert rule([108050], [108020, 108080], START, WINDOW) == (None, None)
+    assert rule([], [108010], START, WINDOW) == (None, 108010)
+    assert rule([], [108055], START, WINDOW) == (None, None)
+    assert rule([108100], [], START, WINDOW) == (None, None)
+
+
+def _inside(sample: int, episodes: Sequence[tuple[int, int]]) -> bool:
+    """Whether a sample lies inside an episode, onset and offset included."""
+    return any(onset <= sample <= offset for onset, offset in episodes)
+
+
+@pytest.mark.requirement("SRS-008")
+@pytest.mark.parametrize("seed", [1, 2, 3, 4])
+def test_statement_holds_on_random_configurations_around_5_minutes(
+    seed: int,
+    make_matching_cases: Callable[..., list[Any]],
+    five_minute_rule: Callable[..., tuple[int | None, int | None]],
+) -> None:
+    """What the statement fixes about every result, on 500 random configurations per seed.
+
+    Input: reference beats and detections from about 4 s before 5:00 to 8 s after it, 40 to
+    400 samples apart, with 0 to 2 ventricular flutter episodes that may span 5:00 and whose
+    limits often fall on a beat or a detection (generator of `conftest.py`, fixed seeds 1 to
+    4). Expected, for every configuration, from the statement:
+    - each pair is at most 150 ms (54 samples) long, and no beat or detection is in two
+      pairs;
+    - the scored reference beats (at or after 5:00 and outside every episode) are exactly
+      the paired beats and the false negatives; no other beat is in either;
+    - a detection before 5:00 is paired only if it is the last one before 5:00 and the rule
+      at 5:00 pairs it with the first scored beat;
+    - the false positives are exactly the detections at or after 5:00 that are not paired,
+      lie outside every episode and are not the first detection left unscored by the rule
+      at 5:00; that detection is never paired.
+    The random configurations must include each situation of interest (checked at the end).
+    """
+    coverage: Counter[str] = Counter()
+    for index, case in enumerate(make_matching_cases(seed, 500)):
+        episodes = [Episode(start_sample=a, end_sample=b) for a, b in case.episodes]
+        result = _match(case.reference, case.detections, vf=episodes)
+        scored = [r for r in case.reference if r >= START and not _inside(r, case.episodes)]
+        paired_before, dropped = five_minute_rule(scored, case.detections, START, WINDOW)
+        pairs = [(int(r), int(d)) for r, d in result.matched]
+        paired_beats = [r for r, _ in pairs]
+        paired_detections = [d for _, d in pairs]
+        false_negatives = [int(s) for s in result.false_negatives]
+        false_positives = [int(s) for s in result.false_positives]
+        where = f"seed {seed}, case {index}: {case}"
+
+        assert len(set(paired_beats)) == len(pairs), where
+        assert len(set(paired_detections)) == len(pairs), where
+        assert all(abs(r - d) <= WINDOW for r, d in pairs), where
+        assert sorted(paired_beats + false_negatives) == scored, where
+        expected_before = [] if paired_before is None else [(scored[0], paired_before)]
+        assert [p for p in pairs if p[1] < START] == expected_before, where
+        assert dropped is None or dropped not in paired_detections, where
+        expected_false_positives = [
+            d
+            for d in case.detections
+            if d >= START
+            and d not in paired_detections
+            and d != dropped
+            and not _inside(d, case.episodes)
+        ]
+        assert false_positives == expected_false_positives, where
+        assert (result.tp, result.fn, result.fp) == (
+            len(pairs),
+            len(false_negatives),
+            len(false_positives),
+        ), where
+
+        coverage["paired before 5:00"] += paired_before is not None
+        coverage["dropped at 5:00"] += dropped is not None
+        coverage["dropped inside an episode"] += dropped is not None and _inside(
+            dropped, case.episodes
+        )
+        coverage["episode spanning 5:00"] += any(a < START <= b for a, b in case.episodes)
+        coverage["detection on an episode limit"] += any(
+            d in e for d in case.detections for e in case.episodes
+        )
+        coverage["unpaired detection inside, after 5:00"] += any(
+            d >= START and d not in paired_detections and _inside(d, case.episodes)
+            for d in case.detections
+        )
+        coverage["detection inside, paired"] += any(
+            _inside(d, case.episodes) for d in paired_detections
+        )
+
+    assert min(coverage.values()) >= 5 and len(coverage) == 7, coverage
