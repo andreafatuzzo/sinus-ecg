@@ -27,7 +27,7 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 
 | Milestone | Title | Status | Requirements | With a verifying test | Release gate |
 |---|---|---|---|---|---|
-| M0 | Foundations | In progress | 0 | 0 | pass |
+| M0 | Foundations | Released | 0 | 0 | pass |
 | M1 | Python reference | Planned | 16 | 0 | not applied |
 | M2 | Portable C++ DSP library | Planned | 0 | 0 | not applied |
 | M3 | Qt desktop application with replay | Planned | 0 | 0 | not applied |
