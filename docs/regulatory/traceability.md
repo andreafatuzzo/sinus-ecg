@@ -7,21 +7,21 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 | Requirement | Title | Milestone | Verification level | Implemented in | Verified by | Open points |
 |---|---|---|---|---|---|---|
 | SRS-001 | Verified download of the reference database | M1 | Requirement | — | **none** | — |
-| SRS-002 | Loading a reference record | M1 | Requirement | — | **none** | OP-030 |
+| SRS-002 | Loading a reference record | M1 | Requirement | — | **none** | — |
 | SRS-003 | Input validation | M1 | Requirement | — | **none** | OP-020 |
 | SRS-004 | Baseline wander removal | M1 | Requirement | — | **none** | OP-005 |
 | SRS-005 | Mains interference removal | M1 | Requirement | — | **none** | OP-005, OP-022 |
 | SRS-006 | QRS detection | M1 | Requirement | — | **none** | OP-005 |
 | SRS-007 | QRS detection performance | M1 | System | — | **none** | OP-011, OP-029 |
-| SRS-008 | EC57 beat-by-beat matching | M1 | Requirement | — | **none** | OP-030 |
+| SRS-008 | EC57 beat-by-beat matching | M1 | Requirement | — | **none** | — |
 | SRS-009 | Reproducible validation report | M1 | Requirement | — | **none** | — |
 | SRS-010 | QRS detection with baseline wander and mains interference | M1 | Requirement | — | **none** | OP-005, OP-022 |
-| SRS-011 | Detection statistics | M1 | Requirement | — | **none** | OP-030 |
+| SRS-011 | Detection statistics | M1 | Requirement | — | **none** | — |
 | SRS-012 | Validation report content | M1 | Requirement | — | **none** | — |
 | SRS-013 | Verified download of the noise stress test database | M1 | Requirement | — | **none** | — |
 | SRS-014 | Detection performance versus signal-to-noise ratio | M1 | Requirement | — | **none** | OP-029, OP-031 |
 | SRS-015 | Golden-vector export | M1 | Requirement | — | **none** | OP-005 |
-| SRS-016 | Subset validation report in continuous integration | M1 | Requirement | — | **none** | OP-008, OP-030 |
+| SRS-016 | Subset validation report in continuous integration | M1 | Requirement | — | **none** | — |
 
 ## Milestones
 
@@ -41,4 +41,4 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 - Implemented requirements without tests: none
 - Unknown IDs referenced in code/tests: none
 - Open points citing undefined IDs: none
-- Open points still open: 45 (see `open-points.md`)
+- Open points still open: 43 (see `open-points.md`)

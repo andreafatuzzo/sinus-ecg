@@ -1,6 +1,6 @@
 # Cybersecurity
 
-_Inspired by IEC 81001-5-1:2021. Version 0.1, 2026-09-29. Status: draft (Milestone 0)._
+_Inspired by IEC 81001-5-1:2021. Version 0.1.1, 2026-09-29. Status: draft (Milestone 0)._
 
 > Sinus is not a medical device and claims no compliance with IEC 81001-5-1. This document borrows, in a light form, the structure of its security activities: security context, assets, threat model, security controls, software bill of materials (SBOM) and vulnerability handling. The aim is that security is designed in from the first interface, not added at the end.
 
@@ -16,6 +16,7 @@ _Inspired by IEC 81001-5-1:2021. Version 0.1, 2026-09-29. Status: draft (Milesto
 | Version | Date | Changes |
 |---|---|---|
 | 0.1 | 2026-09-29 | First draft: security context, assets, attack surface, threat model TH-1 to TH-21, security controls SC-1 to SC-20 per milestone, SBOM, vulnerability handling, link to the risk analysis |
+| 0.1.1 | 2026-09-29 | SC-5 made concrete by the Milestone 1 detailed design: pinned digest of each checksum list, paths confined to the database folder, HTTPS only |
 
 ## 1. Scope and security context
 
@@ -128,7 +129,7 @@ A cable connected to a worn device is an electrical safety hazard, not a securit
 | SC-2 | Dependencies pinned by lock file and installed with `uv sync --locked`; CI actions pinned to exact versions | TH-19, TH-20 | M0 | In place |
 | SC-3 | An SBOM of each software item is generated in CI (§6) | TH-19 | M0 (`dsp`); later items: OP-046 | In place for `dsp` |
 | SC-4 | Security policy with private vulnerability reporting, dependency alerts, a vulnerability scan of the SBOMs, least-privilege CI token permissions, and the triage of §7 | TH-19, TH-20 | M1 | OP-045 |
-| SC-5 | Reference data verified against published checksums (RC-004: SRS-001, SRS-013, SRS-016); golden vectors regenerated in the same CI run as the checks that use them (`architecture.md` §7.5) | TH-21 | M1 | Specified |
+| SC-5 | Reference data verified against published checksums (RC-004: SRS-001, SRS-013, SRS-016), with the SHA-256 of each published checksum list pinned in the code, listed paths confined to the database folder and downloads over HTTPS only (`architecture.md` §8.3); golden vectors regenerated in the same CI run as the checks that use them (`architecture.md` §7.5) | TH-21 | M1 | Specified |
 | SC-6 | Memory safety of the portable library: no dynamic memory, fixed-size buffers with bounds checks, host tests with AddressSanitizer and UndefinedBehaviorSanitizer, static analysis (OP-043) | TH-8 | M2 | Planned |
 | SC-7 | Test inputs off by default; UDP listens on the local host only unless the user changes it; the data source is always shown (RC-015) | TH-7 | M3 | Planned |
 | SC-8 | File readers check headers, sizes and value ranges, and reject malformed files with an error; tested with malformed and fuzzed inputs | TH-8 | M3 | Planned |
