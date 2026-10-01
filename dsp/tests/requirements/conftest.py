@@ -1,16 +1,23 @@
 """Shared fixtures of the requirement tests.
 
 The helpers here are independent of the software under test: they build the test inputs
-(synthetic ECGs with known QRS positions, sinusoids) and apply the pass criteria of the
-requirements to its outputs. Each helper is exposed as a fixture that returns a function.
+(synthetic ECGs with known QRS positions, sinusoids, WFDB records, database folders with
+their checksum list, a fetch function that serves bytes from a dictionary) and apply the pass
+criteria of the requirements to its outputs. Each helper is exposed as a fixture that returns
+a function or a class.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
-from collections.abc import Callable
+import socket
+import urllib.request
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -206,3 +213,209 @@ def detection_errors() -> Callable[[npt.ArrayLike, npt.ArrayLike, float], list[s
 def ordering_errors() -> Callable[[npt.ArrayLike, float], list[str]]:
     """``ordering_errors(detections, fs_hz)``: see ``_ordering_errors``."""
     return _ordering_errors
+
+
+# --------------------------------------------------------------------------------------------
+# WFDB records written by the tests
+# --------------------------------------------------------------------------------------------
+
+# One annotation: sample index, WFDB symbol, subtype, auxiliary note.
+AnnotationTuple = tuple[int, str, int, str]
+
+
+def _write_wfdb_record(
+    folder: Path,
+    name: str,
+    *,
+    fs_hz: float,
+    signals_mv: npt.ArrayLike,
+    signal_names: Sequence[str],
+    units: Sequence[str] | None = None,
+    fmt: str = "212",
+    adc_gain: Sequence[float] | None = None,
+    baseline: Sequence[int] | None = None,
+    annotations: Sequence[AnnotationTuple] | None = None,
+    annotator: str = "atr",
+) -> Path:
+    """Write a WFDB record with the wfdb package and return its path without extension.
+
+    - ``signals_mv`` has one row per sample and one column per signal, in physical units.
+    - Defaults: units ``mV``, an ADC gain of 200 per mV and a baseline of 1024 for every
+      signal (the values of the MIT-BIH Arrhythmia Database), storage format 212.
+    - With ``annotations``, an annotation file ``<name>.<annotator>`` is written with the
+      given samples, symbols, subtypes and auxiliary notes, in the given order.
+    """
+    import wfdb
+
+    physical = np.asarray(signals_mv, dtype=np.float64)
+    n_signals = physical.shape[1]
+    wfdb.wrsamp(
+        name,
+        fs=fs_hz,
+        units=list(units) if units is not None else ["mV"] * n_signals,
+        sig_name=list(signal_names),
+        p_signal=physical,
+        fmt=[fmt] * n_signals,
+        adc_gain=list(adc_gain) if adc_gain is not None else [200.0] * n_signals,
+        baseline=list(baseline) if baseline is not None else [1024] * n_signals,
+        write_dir=str(folder),
+    )
+    if annotations is not None:
+        wfdb.wrann(
+            name,
+            annotator,
+            np.asarray([a[0] for a in annotations], dtype=np.int64),
+            [a[1] for a in annotations],
+            subtype=np.asarray([a[2] for a in annotations], dtype=np.int64),
+            aux_note=[a[3] for a in annotations],
+            fs=fs_hz,
+            write_dir=str(folder),
+        )
+    return folder / name
+
+
+@pytest.fixture(scope="session")
+def write_wfdb_record() -> Callable[..., Path]:
+    """``write_wfdb_record(folder, name, *, fs_hz, signals_mv, signal_names, ...)``.
+
+    See ``_write_wfdb_record``.
+    """
+    return _write_wfdb_record
+
+
+# --------------------------------------------------------------------------------------------
+# Database folders with their SHA-256 checksum list, and a fetch function without network
+# --------------------------------------------------------------------------------------------
+
+CHECKSUM_LIST_NAME = "SHA256SUMS.txt"
+
+
+@dataclass(frozen=True)
+class DatabaseFolder:
+    """A database folder prepared by a test, and the checksum list of its files."""
+
+    data_root: Path
+    folder: Path
+    files: dict[str, bytes]
+    checksum_list: bytes
+    checksum_list_sha256: str
+
+
+def _sha256_hex(data: bytes) -> str:
+    """SHA-256 of ``data`` as 64 lowercase hexadecimal digits."""
+    return hashlib.sha256(data).hexdigest()
+
+
+def _checksum_list(files: Mapping[str, bytes]) -> bytes:
+    """Checksum list in the format that PhysioNet publishes.
+
+    One line per file, ``<64 hexadecimal digits> <relative path>``, paths with ``/`` and in
+    code-point order, each line ended by a line feed.
+    """
+    lines = [f"{_sha256_hex(files[path])} {path}\n" for path in sorted(files)]
+    return "".join(lines).encode("ascii")
+
+
+def _write_database_folder(
+    data_root: Path,
+    slug: str,
+    files: Mapping[str, bytes],
+    *,
+    with_files: bool = True,
+    with_list: bool = True,
+) -> DatabaseFolder:
+    """Describe a database of ``files`` (relative path -> content) and write it on request.
+
+    The folder is ``data_root / slug``. With ``with_files`` every file is written, in its
+    subfolder if it has one; with ``with_list`` the checksum list ``SHA256SUMS.txt`` is
+    written. The returned object gives the list and its SHA-256, to be pinned in the
+    ``Database`` under test.
+    """
+    folder = data_root / slug
+    checksum_list = _checksum_list(files)
+    if with_files:
+        for path, content in files.items():
+            target = folder.joinpath(*path.split("/"))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+    if with_list:
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / CHECKSUM_LIST_NAME).write_bytes(checksum_list)
+    return DatabaseFolder(
+        data_root=data_root,
+        folder=folder,
+        files=dict(files),
+        checksum_list=checksum_list,
+        checksum_list_sha256=_sha256_hex(checksum_list),
+    )
+
+
+class FakeFetch:
+    """Fetch function that serves bytes from a dictionary, without network.
+
+    ``FakeFetch(contents)`` maps URLs to contents. A call returns the content of the URL, or
+    raises ``OSError`` when the URL is not in the dictionary. ``calls`` lists the URLs asked,
+    in order.
+    """
+
+    def __init__(self, contents: Mapping[str, bytes]) -> None:
+        self.contents = dict(contents)
+        self.calls: list[str] = []
+
+    def __call__(self, url: str) -> bytes:
+        self.calls.append(url)
+        if url not in self.contents:
+            raise OSError(f"nothing is served at {url}")
+        return self.contents[url]
+
+
+@pytest.fixture(scope="session")
+def sha256_hex() -> Callable[[bytes], str]:
+    """``sha256_hex(data)``: SHA-256 as 64 lowercase hexadecimal digits."""
+    return _sha256_hex
+
+
+@pytest.fixture(scope="session")
+def make_checksum_list() -> Callable[[Mapping[str, bytes]], bytes]:
+    """``make_checksum_list(files)``: see ``_checksum_list``."""
+    return _checksum_list
+
+
+@pytest.fixture(scope="session")
+def write_database_folder() -> Callable[..., DatabaseFolder]:
+    """``write_database_folder(data_root, slug, files, *, with_files=True, with_list=True)``.
+
+    See ``_write_database_folder``.
+    """
+    return _write_database_folder
+
+
+@pytest.fixture(scope="session")
+def make_fake_fetch() -> type[FakeFetch]:
+    """``make_fake_fetch(contents)``: see ``FakeFetch``."""
+    return FakeFetch
+
+
+@pytest.fixture
+def forbid_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    """Make any network access fail, and fail the test if one was attempted.
+
+    Name resolution, socket connections and ``urllib.request.urlopen`` raise an error for
+    the duration of the test. The fixture value lists the attempts; the test fails at the
+    end if the list is not empty, even when the software under test caught the error.
+    """
+    attempts: list[str] = []
+
+    def refuse(name: str) -> Callable[..., Any]:
+        def refused(*args: Any, **kwargs: Any) -> Any:
+            attempts.append(name)
+            raise RuntimeError(f"network access attempted ({name}) in a test without network")
+
+        return refused
+
+    monkeypatch.setattr(socket.socket, "connect", refuse("socket.connect"))
+    monkeypatch.setattr(socket, "create_connection", refuse("socket.create_connection"))
+    monkeypatch.setattr(socket, "getaddrinfo", refuse("socket.getaddrinfo"))
+    monkeypatch.setattr(urllib.request, "urlopen", refuse("urllib.request.urlopen"))
+    yield attempts
+    assert attempts == [], f"network access attempted: {attempts}"

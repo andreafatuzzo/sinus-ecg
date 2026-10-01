@@ -23,13 +23,18 @@ class InvalidInputError(SinusError, ValueError):
 
     SRS-003: a signal or a sampling frequency that fails the input checks is rejected with
     this error, and nothing is returned. SRS-005: a mains frequency other than 50 Hz or 60 Hz
-    is rejected with it too. It is also raised for a design argument outside its range
-    (architecture §8.6).
+    is rejected with it too. SRS-002: a channel that the record does not have, and signal
+    units other than mV, are rejected with it. It is also raised for a design argument
+    outside its range (architecture §8.6) and for an invalid record name (architecture §8.3).
     """
 
 
 class DataVerificationError(SinusError):
     """A database, or the requested records of it, is not verified (architecture §8.3).
+
+    SRS-001, SRS-013: a database with a listed file that is missing or whose SHA-256 differs
+    is reported as not verified with this error, which names each such file. It is also
+    raised when the checksum list itself is missing or differs from its pinned digest.
 
     Attributes:
         database: Name and version of the database, e.g. ``mitdb 1.0.0``.
@@ -68,6 +73,10 @@ class DataVerificationError(SinusError):
 
 class MalformedFileError(SinusError, ValueError):
     """A file does not follow its format (architecture §7.3, §8.3, §8.4, §8.11).
+
+    SRS-001: a checksum list with a line that is not an entry, an unsafe path, a duplicate
+    path or no entry is rejected with this error. SRS-002: so is an annotation file whose
+    sample indices decrease.
 
     Attributes:
         path: The file, or the name of the source of the text.

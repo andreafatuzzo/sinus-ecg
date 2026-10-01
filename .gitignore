@@ -1,5 +1,5 @@
-# Datasets are downloaded by script and never committed
-data/
+# Datasets are downloaded by script into data/ at the repository root and never committed
+/data/
 
 # Python
 __pycache__/
