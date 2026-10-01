@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2, 2026-09-29. Status: approved by the project owner on 2026-09-29 (sections 1 to 7 and 9 to 12 in v0.1, the detailed design of §8 in v0.2)._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2.3, 2026-09-30. Status: approved by the project owner (sections 1 to 7 and 9 to 12 in v0.1 and the detailed design of §8 in v0.2 on 2026-09-29; the corrections of v0.2.2 on 2026-09-30)._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;
@@ -28,6 +28,8 @@ The detailed design of each requirement (module, interface, algorithm with refer
 | 0.1 | 2026-09-29 | First version, replacing the Milestone 0 stub: software items, allocation of the functional blocks, interfaces and data flows, constraints of the portable real-time library, outlines of the firmware, desktop application and backend, equivalence principle and golden-vector format (SRS-015), Milestone 1 module structure of `dsp`, SOUP per item, segregation |
 | 0.2 | 2026-09-29 | Detailed design of the Milestone 1 requirements SRS-001 to SRS-016 in §8 (closes OP-008): common conventions and error classes; download and verification against pinned checksum lists; record loading; input validation; filter designs with computed gains and the settling rule for verification; causal Pan–Tompkins detection with delay compensation; EC57 matching as in the WFDB comparator `bxb` (closes OP-030); statistics; evaluation run and report formats; CI subset check and its stability across machines; golden-vector interfaces; implementation order. §7.1 points to the detector initialisation in §8.7.3 |
 | 0.2.1 | 2026-09-29 | Detailed design (§8) approved by the project owner; EC57 scoring as `bxb` confirmed (decision recorded with OP-053) |
+| 0.2.2 | 2026-09-30 | Corrections found while implementing §8.3 to §8.9 (pending approval by the project owner). **OP-058** (closed): §8.2, error table: an empty record selection is an `InvalidInputError`. §8.3: interface comments of `VerificationResult`; `fetch_https` and the new paragraph "Transport and redirects"; `select_files` (selection rule stated for any extension, empty selection rejected, `str` rejected, result sorted); new rule "The record selection is validated first"; `download_database` step 2 (temporary file `<name>.part~`, fetched content written whatever its digest); `describe_verification`; script arguments; edge cases; verification notes. §8.11: the six subset records have 28 listed files, not 24, and the list is given; size of the CI cache. **OP-059** (design side; the requirement wording stays open): §8.8, interface comments of `Episode` and `MatchResult`; §8.8.1: `vf_episodes` rejects annotations out of order, an episode without `]` ends at `max(start_sample, n_samples − 1)`, and the scored part of a record is defined; §8.8.2: step 1 (`reference_excluded` counts only beats at or after the start) and one more difference from `bxb` (episode without `]`); new §8.8.3 (what is not scored and how it is counted, accounting equalities, verification notes); §8.10: `RecordEvaluation` (`vf_episodes_scored` and `vf_samples_scored` replace `vf_samples`), new function `episode_coverage`, the paragraph "Figures on what is not scored", section 6 of the report and the verification notes. **OP-057** (part (b); part (a) stays open): §8.6, edge cases: the mains filter returns a constant input within rounding, not unchanged. §8.13: when the corrections to the modules already implemented are made. §12: OP-057 and OP-059 added |
+| 0.2.3 | 2026-09-30 | Corrections of v0.2.2 approved by the project owner, including following redirects with integrity resting on the pinned checksum lists (OP-058 (e)). OP-059 closed by the SRS-012 wording of `srs.md` v0.5: §8.8.3 and §8.10 cite SRS-012 instead of the open point; §12 updated. OP-055 decided by the project owner (the heart-rate range of SRS-006 is bounded to 30–200 bpm; the detection design is unchanged): §8.7 edge cases state the limitation at short RR intervals and its cause, and the verification notes give the range. §8.2, error table: the `InvalidInputError` row also lists the argument errors of §8.8 and §8.9 |
 
 ## 1. System context
 
@@ -464,7 +466,7 @@ This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requi
 | Class | Bases | Raised when | Attributes | Requirements |
 |---|---|---|---|---|
 | `SinusError` | `Exception` | Never raised directly; lets a caller catch every Sinus error | — | — |
-| `InvalidInputError` | `SinusError`, `ValueError` | An input or argument is rejected: the checks of §8.5, a mains frequency other than 50 or 60 Hz, a channel that the record does not have, signal units other than mV, an invalid record name | — | SRS-003; also SRS-002, SRS-005 |
+| `InvalidInputError` | `SinusError`, `ValueError` | An input or argument is rejected: the checks of §8.5, a mains frequency other than 50 or 60 Hz, a channel that the record does not have, signal units other than mV, an invalid record name or an empty record selection (§8.3), annotation, reference or detection samples out of order and a negative match window or start sample (§8.8), invalid counts or duplicate record names (§8.9) | — | SRS-003; also SRS-002, SRS-005 |
 | `DataVerificationError` | `SinusError` | A database, or the requested records of it, is not verified: a listed file is missing or its SHA-256 differs, or the checksum list itself is missing or differs from its pinned digest (§8.3). Also raised, before anything is written, by every command that needs verified data (§8.10 to §8.12) | `database: str` (e.g. `mitdb 1.0.0`); `missing: tuple[str, ...]` and `mismatched: tuple[str, ...]`, relative paths sorted in code-point order | SRS-001, SRS-012, SRS-013, SRS-014, SRS-016 |
 | `MalformedFileError` | `SinusError`, `ValueError` | A file does not follow its format: a golden-vector file that a reader rejects (§7.3), a checksum list (§8.3), an annotation file whose sample indices decrease (§8.4), a stored subset report that is not UTF-8 text (§8.11) | `path: str`; `line: int | None` (1-based); `reason: str` | SRS-015; also SRS-001, SRS-002, SRS-016 |
 | `SubsetReportMismatchError` | `SinusError` | The regenerated subset report differs from the stored one (§8.11) | `differences: tuple[str, ...]`, one entry per differing line | SRS-016 |
@@ -508,8 +510,10 @@ FetchFunction = Callable[[str], bytes]   # URL -> file content; raises OSError o
 @dataclass(frozen=True)
 class VerificationResult:
     database: Database
-    records: tuple[str, ...] | None      # None: the whole database was verified
-    files: tuple[str, ...]               # relative paths verified, sorted
+    records: tuple[str, ...] | None      # None: the whole database was verified; otherwise the
+                                         # record names, sorted in code-point order, each once
+    files: tuple[str, ...]               # relative paths verified, sorted in code-point order,
+                                         # each once; never empty
 
 def fetch_https(url: str) -> bytes: ...
 def database_url(database: Database) -> str: ...          # ".../files/<slug>/<version>/"
@@ -526,9 +530,14 @@ def describe_verification(result: VerificationResult) -> str: ...
 `data_root` is the data folder (default for scripts: `data/` at the repository root); the database lives in `data_root / database.slug`, e.g. `data/mitdb/`.
 
 **Behaviour.**
-- `fetch_https` accepts only URLs that start with `https://` (otherwise `ValueError`), opens them with `urllib.request.urlopen` and a timeout of 60 s, and returns the whole body. It raises `OSError` (including `urllib.error.URLError` and `HTTPError`) for any failure or a status other than 200. No retries: re-running the command resumes, because verified files are skipped.
+- `fetch_https` accepts only URLs that start with `https://` (otherwise `ValueError`), opens them with `urllib.request.urlopen` and a timeout of 60 s, and returns the whole body. It raises `OSError` (including `urllib.error.URLError` and `HTTPError`) for any failure or a status other than 200. No retries: re-running the command resumes, because verified files are skipped. Redirects are followed, as `urlopen` does; what the design guarantees in that case is stated under "Transport and redirects" below.
 - `parse_checksum_list` reads one entry per non-empty line, matching `^([0-9a-fA-F]{64}) [ *]?(\S+)$` (the `sha256sum` formats); digests are stored in lowercase. Each path must be relative, with `/` separators, and each component must match `[A-Za-z0-9._+-]+` and differ from `.` and `..`. A line that does not match, an unsafe path, a duplicate path or an empty list raise `MalformedFileError` naming `source` and the line. This keeps a listed name from writing outside the database folder.
-- `select_files` returns every listed path when `records` is `None`. Otherwise it returns, for each record name (which must match `[A-Za-z0-9_]+`, else `InvalidInputError`), the listed top-level files named `<record>.<extension>` (e.g. `100.atr`, `100.dat`, `100.hea`, `100.xws`); a record with no such file is reported as missing under the name `<record>.*`.
+- `select_files` returns every listed path when `records` is `None`. Otherwise:
+  - `records` is a sequence of at least one record name, each a `str` that matches `[A-Za-z0-9_]+` in full. A `str` given in place of the sequence, an empty sequence and an invalid name each raise `InvalidInputError`. A name given several times counts once.
+  - For each record, the selection holds every listed top-level path (one without `/`) that starts with `<record>.` and continues with at least one more character, whatever that extension is: `100.atr`, `100.dat`, `100.hea` and `100.xws` for record 100, and also `108.at_` for record 108. The rule selects every file that the database publishes under the name of the record, which is what SRS-016 asks to verify ("each of their files"); it does not list extensions, so it holds for any database.
+  - A record with no such file is reported as missing under the name `<record>.*`, which no listed path can equal (`*` is not allowed in a listed path).
+  - The result is sorted in code-point order and holds each path once. It is never empty: the list has at least one entry, and every record contributes at least one path or its placeholder.
+- **The record selection is validated first.** `verify_database` and `download_database` apply the rules above to `records` before anything else: before the database folder is created, and before the checksum list is read or fetched. An invalid selection therefore raises `InvalidInputError` whatever the state of the data folder and of the network, and neither creates nor changes any file. An empty selection is rejected rather than verified, because "verified: 0 files" would report as verified a database of which nothing was checked.
 - `verify_database` never uses the network:
   1. It reads `data_root/<slug>/SHA256SUMS.txt`. If it is absent, `DataVerificationError` with `missing=("SHA256SUMS.txt",)`. If its SHA-256 differs from `checksum_list_sha256`, `DataVerificationError` with `mismatched=("SHA256SUMS.txt",)`.
   2. It parses the list and selects the files.
@@ -536,15 +545,24 @@ def describe_verification(result: VerificationResult) -> str: ...
   4. If anything is missing or mismatched, it raises `DataVerificationError` naming every such file (both lists complete and sorted). Otherwise it returns the `VerificationResult`.
 - `download_database` creates the database folder, then:
   1. Uses the local `SHA256SUMS.txt` if its digest equals the pin; otherwise fetches it from `database_url(...)`. A failed fetch raises `DataVerificationError` naming the list as missing; a fetched list whose digest differs from the pin raises it naming the list as mismatched, and the fetched list is not written.
-  2. For each selected file, skips it if the local copy already has the listed digest; otherwise fetches it and writes it atomically (write to `<name>.part` in the same folder, then `os.replace`), creating subfolders as needed. A failed fetch (`OSError`) is not raised here: the file stays absent or outdated, and the final verification names it.
+  2. For each selected file, skips it if the local copy already has the listed digest; otherwise fetches it and writes it atomically (write to `<name>.part~` in the same folder, then `os.replace`), creating subfolders as needed. The checksum list of step 1 is written the same way. The suffix contains `~`, which no listed path can contain (`parse_checksum_list`), so a temporary file never has the name of a listed file, and two listed files never share a temporary file. A failed fetch (`OSError`) is not raised here: the file stays absent or outdated, and the final verification names it. The fetched content is written whatever its SHA-256: if it differs from the listed one, the final verification names the file as mismatched, and the next run fetches it again.
   3. Returns `verify_database(database, data_root, records=records)`, which raises if any file is still missing or mismatched. The outcome is therefore always decided by the local verification, never by the download.
   - A `<record>.*` placeholder from `select_files` is never fetched; the verification reports it as missing.
-- `describe_verification` returns the text written in reports: `verified: <n> files match the published SHA-256 checksum list (SHA256SUMS.txt, SHA-256 <digest>)`, followed for a subset by `; records <r1>, <r2>, …`.
-- `scripts/download_data.py [--data-dir PATH] [--database mitdb|nstdb|all] [--records NAME ...]` calls `download_database` for each database (default: both, whole). It prints the outcome of each and exits with status 0 if all are verified, 1 on `DataVerificationError` or `MalformedFileError` (message on standard error), 2 on a usage error.
+- `describe_verification` returns the text written in reports: `verified: <n> files match the published SHA-256 checksum list (SHA256SUMS.txt, SHA-256 <digest>)`, followed for a subset by `; records <r1>, <r2>, …` (the names of `VerificationResult.records`, in their sorted order). `<n>` is the number of files verified, at least 1; it comes from the checksum list and is not a constant of the code.
+- `scripts/download_data.py [--data-dir PATH] [--database mitdb|nstdb|all] [--records NAME ...]` calls `download_database` for each database (default: both, whole). `--records` takes at least one name and needs a single database; an invalid name, or the option without a name, is a usage error. The script prints the outcome of each database and exits with status 0 if all are verified, 1 on `DataVerificationError` or `MalformedFileError` (message on standard error), 2 on a usage error.
 
-**Edge cases.** Stale `.part` files from an interrupted run are overwritten. A file present on disk but not listed is ignored (neither verified nor reported). Names are compared exactly; a case-insensitive file system cannot create a mismatch because PhysioNet names differ by more than case.
+**Transport and redirects.** The integrity of the data does not depend on how it was transported:
+- `fetch_https` requests an `https://` URL under `https://physionet.org/files/`. `urllib` follows the redirects that the server answers with (at most 10, to `http`, `https` or `ftp` URLs), so the body may come from another URL, another host, or a connection that is not HTTPS. The design gives no guarantee on the transport beyond that first request, and needs none.
+- The checksum list is accepted only if its SHA-256 equals the digest pinned in the code. A fetched list with another digest is not written.
+- A database, or a selection of its records, is reported as verified only by `verify_database`, which reads the local files and compares each with the SHA-256 that the accepted list gives for it. Every command that uses the data verifies it first (§8.10 to §8.12).
+- A body that differs from the published file, whatever its origin (an altered response, a redirect to another server, a damaged cache), therefore ends as a checksum mismatch naming the file, never as verified data. It is written only under the listed path of that file, inside the database folder.
+- Refusing redirects, or restricting them to `https://` URLs, was considered and not adopted: it would add no integrity, because no content is accepted without its digest, and it would make the download depend on how PhysioNet serves its files.
 
-**Verification notes.** QA's tests need no network (SRS-001, SRS-013): they write a fixture folder with a few files and their `SHA256SUMS.txt`, build a `Database` whose `checksum_list_sha256` is the digest of that fixture list, and call `verify_database`; `download_database` can be exercised with a fake `FetchFunction` that serves the fixture bytes from a dictionary and raises `OSError` for anything else. The error names both the altered and the missing file in its message and in `mismatched` and `missing`.
+The corresponding security control is SC-5 of `cybersecurity.md`.
+
+**Edge cases.** Stale `.part~` files from an interrupted run are overwritten. A file present on disk but not listed is ignored (neither verified nor reported); this includes a file named `<name>.part` left by a version of the software that used that suffix. Names are compared exactly; a case-insensitive file system cannot create a mismatch because PhysioNet names differ by more than case.
+
+**Verification notes.** QA's tests need no network (SRS-001, SRS-013): they write a fixture folder with a few files and their `SHA256SUMS.txt`, build a `Database` whose `checksum_list_sha256` is the digest of that fixture list, and call `verify_database`; `download_database` can be exercised with a fake `FetchFunction` that serves the fixture bytes from a dictionary and raises `OSError` for anything else. The error names both the altered and the missing file in its message and in `mismatched` and `missing`. The rejection of an invalid or empty record selection is a design behaviour, checked by the developer's unit tests: with a data folder that does not exist and a fetch function that fails the test when called, `download_database` raises `InvalidInputError` and the data folder still does not exist.
 
 ### 8.4 Loading a reference record (SRS-002)
 
@@ -677,7 +695,7 @@ SOS rows are `[b0, b1, b2, 1.0, a1, a2]` (a0 = 1), the layout of `scipy.signal.s
 - Notch at the mains frequency: −6.6 dB (50 Hz) and −7.9 dB (60 Hz) over ten periods (0.2 s), because the notch has not settled; −30.0 and −35.3 dB over 1 s; −55.7 and −65.6 dB over 2 s; −104 and −123 dB over 4 s. Band frequencies stay within ±0.07 dB at any duration of ten periods or more.
 - A notch that settles within ten periods of 50 Hz would need Q ≤ 4.5, which fails the 40 Hz criterion. The design therefore keeps Q = 30, and **the verification inputs of SRS-004 and SRS-005 last at least ten periods and at least 2 s**. This is within the SRS wording ("at least ten periods").
 
-**Edge cases.** A constant input gives exactly 0.0 from the baseline filter and an unchanged value from the notch (whose gain at DC is 1). The functions are linear and time-invariant from the defined initial state, so the output for a given input never depends on earlier calls.
+**Edge cases.** A constant input gives exactly 0.0 from the baseline filter. The notch, whose gain at DC is 1, returns a constant input within rounding, not bit for bit: the designed DC gain `(b0 + b1 + b2) / (1 + a1 + a2)` and the recursion each round, so the output may differ from the input by a relative amount of the order of 10⁻¹⁵ (at most 7 · 10⁻¹⁵ over 60 s in the cases computed: 125, 250, 360, 500 and 1000 Hz, both mains settings, constants from 0.001 mV to 123 mV; exactly equal in most of them). A test of this property compares with a tolerance (a relative 10⁻¹², for example), never with equality (OP-057). The functions are linear and time-invariant from the defined initial state, so the output for a given input never depends on earlier calls.
 
 **Verification notes.** QA measures as above, with inputs of at least 2 s and ten periods. The test of the baseline filter at the offset may see an output of exactly zero; the attenuation is then infinite, and the test should compare the RMS against 1 mV × 10^(−20/20) rather than compute a logarithm of zero.
 
@@ -847,8 +865,9 @@ A single delay constant cannot be exact for every QRS shape, because the band-pa
 - An input shorter than L cannot occur (SRS-003 requires 10 s).
 - A QRS within the first N + 1 samples gets its fiducial from a clipped window; `f` is never negative.
 - The per-sample loop costs a few operations per sample in Python (under a second per 30-minute record). A faster implementation, for example one that jumps between samples where nothing can happen, is allowed only with a unit test showing identical output to the per-sample procedure on the synthetic set and on noise.
+- **Short RR intervals (known limitation).** The refractory period is measured between the integrated peaks `m` and between the fiducial points `f` of consecutive peaks. Neither marks the QRS position exactly: the integrated peak can sit anywhere on the flat top of the integrated pulse, and the fiducial point can move by D samples between two band-pass lobes of similar size. A QRS that follows the previous one by less than about 250 ms can therefore be ignored by step 1 of the classification, and an ignored peak is lost (no level change, no search-back candidate). On the synthetic ECG of §7.2, every QRS is detected exactly once from 20 bpm to 238 bpm at 360 Hz and to 240 bpm at 250 Hz, without and with the interference of SRS-010; above, beats are missed (the second beat of the input from 239 bpm at 360 Hz and 241 bpm at 250 Hz, and more between about 256 and 284 bpm). SRS-006 is bounded to 30–200 bpm accordingly (OP-055, closed). A refractory test on the fiducial point only is assessed with the Milestone 1 validation results (OP-056).
 
-**Verification notes.** SRS-006 and SRS-010 (QA): call `detect_beats` on synthetic ECGs, with the mains setting of the added interference (any setting for clean signals). Within 150 ms means `|index − r_k| ≤ floor(0.150 · fs_hz)` samples (54 at 360 Hz, 37 at 250 Hz). Each true QRS must have exactly one index within that distance, and there must be no other index. The indices must be strictly increasing, with a spacing of at least `ceil(0.200 · fs_hz)` samples. A flat 10 s input returns an empty array. QA may use its own generator of synthetic ECGs; the generator of §7.2 (`sinus_dsp.synthetic`) is verified under SRS-015.
+**Verification notes.** SRS-006 and SRS-010 (QA): call `detect_beats` on synthetic ECGs with heart rates within 30–200 bpm, with the mains setting of the added interference (any setting for clean signals). Within 150 ms means `|index − r_k| ≤ floor(0.150 · fs_hz)` samples (54 at 360 Hz, 37 at 250 Hz). Each true QRS must have exactly one index within that distance, and there must be no other index. The indices must be strictly increasing, with a spacing of at least `ceil(0.200 · fs_hz)` samples. A flat 10 s input returns an empty array. QA may use its own generator of synthetic ECGs; the generator of §7.2 (`sinus_dsp.synthetic`) is verified under SRS-015.
 
 ### 8.8 EC57 beat-by-beat matching (SRS-008)
 
@@ -873,7 +892,7 @@ LEARNING_PERIOD_S: Final = 300
 @dataclass(frozen=True)
 class Episode:
     start_sample: int      # sample of the "[" annotation
-    end_sample: int        # sample of the matching "]", inclusive
+    end_sample: int        # sample of the matching "]", inclusive; never before start_sample
 
 @dataclass(frozen=True)
 class MatchResult:
@@ -883,8 +902,10 @@ class MatchResult:
     matched: tuple[tuple[int, int], ...]     # (reference sample, detection sample), in time order
     false_negatives: tuple[int, ...]         # reference samples
     false_positives: tuple[int, ...]         # detection samples
-    reference_excluded: int                  # reference beats inside VF episodes, never scored
-    detections_excluded: int                 # unpaired detections inside VF episodes, not counted
+    reference_excluded: int                  # reference beats at or after start_sample inside VF
+                                             # episodes (§8.8.3)
+    detections_excluded: int                 # detections at or after start_sample inside VF
+                                             # episodes, not paired (§8.8.3)
 
 def match_window_samples(fs_hz: float) -> int: ...      # floor(150 · fs_hz / 1000)
 def learning_period_samples(fs_hz: float) -> int: ...   # ceil(300 · fs_hz)
@@ -898,13 +919,17 @@ def match_beats(reference_samples: npt.ArrayLike, detection_samples: npt.ArrayLi
 
 - `window_samples = floor(150 · fs_hz / 1000)`: 54 at 360 Hz. "At most 150 ms" (SRS-008) is inclusive, as `bxb`'s `<=`: a detection 54 samples from a reference beat can match, one 55 samples away cannot. `bxb` rounds half up (`strtim`), which gives the same 54 at 360 Hz, the rate of both databases; at rates where `0.15 · fs_hz` has a fraction of one half or more (e.g. 38 samples at 250 Hz, 152 ms), `bxb` would exceed 150 ms, and Sinus keeps the SRS bound.
 - `start_sample = ceil(300 · fs_hz)`: 108000 at 360 Hz. A reference beat at `start_sample` (5:00) is scored; one at `start_sample − 1` is not.
-- `vf_episodes` scans the non-beat annotations in file order. A `[` opens an episode; the next `]` closes it, and the episode covers both samples, inclusive. A `[` while an episode is open and a `]` while none is open are ignored (as `bxb`, which reads and ignores everything up to the next `]`). An episode still open at the end ends at `n_samples − 1`.
+- `vf_episodes` scans the non-beat annotations in file order. Their samples must not decrease (`load_record` guarantees it, §8.4); a sample lower than the previous one raises `InvalidInputError`.
+  - A `[` opens an episode; the next `]` closes it, and the episode covers both samples, inclusive. A `[` while an episode is open and a `]` while none is open are ignored (as `bxb`, which reads and ignores everything up to the next `]`).
+  - An episode still open at the end ends at the last sample of the record: `end_sample = max(start_sample, n_samples − 1)`. The maximum covers a `[` annotated at or beyond `n_samples` (an annotation beyond the end of the signal is kept as it is, §8.4): that episode is the single sample of its `[`, outside the record, and excludes nothing inside the record.
+  - Every episode returned therefore has `start_sample ≤ end_sample`. The episodes are in the order of their onsets, and each starts at or after the end of the previous one (at the same sample only if a `[` follows a `]` at that sample).
+- **Scored part of a record.** The samples from `start_sample` to `n_samples − 1`. It is empty for a record of 5 min or less. The figures on what is not scored (§8.8.3, §8.10) refer to it.
 
 #### 8.8.2 Pairing
 
 Inputs: the reference beat samples (non-decreasing) and the detection samples (strictly increasing); either order violation raises `InvalidInputError`, as do a negative `window_samples` or `start_sample`.
 
-1. **Scored reference sequence.** Remove the reference beats that lie inside any VF episode (`start_sample ≤ s ≤ end_sample`) and count them in `reference_excluded`. Append the sentinel `HUGE = 2**62` to the remaining list R and to the detection list D.
+1. **Scored reference sequence.** Remove the reference beats that lie inside any VF episode (`start_sample ≤ s ≤ end_sample` of the episode). `reference_excluded` is the number of removed beats that lie at or after the `start_sample` of the matching; the removed beats before it are in no count (§8.8.3). Append the sentinel `HUGE = 2**62` to the remaining list R and to the detection list D.
 2. **Cursors.** `T` is the current and `T2` the next element of R; `t` the current and `t2` the next element of D. Advancing the reference moves `T ← T2` and `T2` to the following element (`HUGE` when exhausted); likewise for detections.
 3. **Start.** Set `T` to the first element of R with `T ≥ start_sample`. Set `t2` to the first element of D with `t2 ≥ start_sample`, and `t` to the element before it (if D has no element before `start_sample`, `t` does not exist).
    - If `t` exists, `T − t ≤ window_samples` and `T − t < |T − t2|`: pair `(T, t)`, then advance both. The last detection of the learning period is paired with the first scored beat only under this original `bxb` criterion, without the look-ahead alternative of step 4.
@@ -924,6 +949,7 @@ The second condition of each pairing test is the look-ahead that `bxb` added in 
 - `bxb` stops at the end of the record; Sinus stops when both lists are exhausted. They agree because annotations and detections lie within the record.
 - `bxb` remembers only the two most recent VF episodes of each file when labelling a detection. Sinus checks every episode. They differ only if three VF episodes fall between two consecutive scored reference beats.
 - With no detection before the start, `bxb` compares the first scored beat with a placeholder at time 0; Sinus skips that comparison. They agree whenever `start_sample > window_samples`, which the 5-minute learning period guarantees.
+- An episode without a `]`: `bxb` discards every later reference annotation, as Sinus does. It leaves the later unpaired detections uncounted only when the record has no earlier episode; after an earlier, closed episode it still holds the end of that one, and counts them as false positives. Sinus does not count them in either case, as SRS-008 states (the episode lasts until the end of the record). In the MIT-BIH Arrhythmia Database only record 207 has `[` annotations, and each has its `]`; the 12 noise stress records have none (checked on the annotation files).
 - `!` annotations outside VF episodes, and the match window at rates where `0.15 · fs_hz` has a fraction of one half or more: see §8.8 and §8.8.1.
 
 **Verification notes** (the SRS-008 cases, at 360 Hz with `window_samples = 54` and `start_sample = 108000`; each case assumes no other detection or reference beat within 108 samples, otherwise the look-ahead of step 4 also applies):
@@ -933,6 +959,32 @@ The second condition of each pairing test is the look-ahead that `bxb` added in 
 - A reference beat at 107999 is not scored and one at 108000 is scored. The last detection before 108000 is paired with the first scored beat only under the criterion of step 3.
 - An empty detection list gives every scored reference beat as a false negative. An empty reference list gives every detection at or after 108000 as a false positive, except that the first detection within 54 samples after 108000 is dropped by step 3 (as `bxb` does).
 - Reference beats inside a VF episode are neither true positives nor false negatives. An unpaired detection inside it is not a false positive, but a detection inside it can still be paired with a scored beat outside it within the window.
+
+#### 8.8.3 What is not scored, and how it is counted
+
+`bxb` reports no count of what it leaves out: it discards the reference annotations of an episode while reading them, reads the annotations of the learning period without counting them, and gives an unpaired detection inside an episode a label that its tables do not count. The pairs, the false negatives and the false positives of §8.8.2 are those of `bxb`. The two counts below are defined by Sinus for the report (SRS-012, §8.10), so that they state exactly what the episode rule removes from the scored part of the record (§8.8.1). SRS-012 states them as requirements.
+
+An item is left out of the scoring for one of two reasons, and the learning period comes first:
+
+1. **Learning period.** None of the following is in a list or in a count of `MatchResult`, whether or not it lies inside a VF episode:
+   - every reference beat before `start_sample`;
+   - every detection before `start_sample`, except the one that step 3 pairs with the first scored reference beat, which is a match;
+   - the first detection at or after `start_sample`, when step 3 drops it (at most one per record, at most `window_samples` after `start_sample`).
+2. **VF episodes**, for the items that the learning period does not already leave out:
+   - `reference_excluded` is the number of reference beats at or after `start_sample` that lie inside an episode;
+   - `detections_excluded` is the number of detections at or after `start_sample` that lie inside an episode and are not paired, the detection dropped by step 3 not included. These are the detections for which step 4 finds no pair while they lie inside an episode.
+
+   A detection inside an episode that is paired with a scored reference beat outside it is a match, and is in neither count. A sample equal to the `start_sample` or to the `end_sample` of an episode is inside it, for reference beats and for detections.
+
+**Accounting.** Every reference beat and every detection is in exactly one class, so for any input:
+- `number of reference beats = (reference beats before start_sample) + reference_excluded + tp + fn`;
+- `number of detections = (detections left out by the learning period) + detections_excluded + tp + fp`, where the detections left out by the learning period are those before `start_sample`, minus one if step 3 makes its pair, plus one if step 3 drops the first detection at or after `start_sample`.
+
+**Verification notes** (at 360 Hz, `start_sample = 108000`):
+- An episode that ends before 108000, with reference beats and detections inside it: `reference_excluded = 0` and `detections_excluded = 0`.
+- An episode from 107000 to 109000, reference beats at 107500 and 108500, detections at 107500 and 108500, and nothing else: no pair, `reference_excluded = 1` and `detections_excluded = 1`.
+- An episode from 107000 to 109000, a first scored reference beat at 110000 and detections at 108020 and 110000: the detection at 108020 is dropped by step 3 and `detections_excluded = 0`.
+- The two accounting equalities hold in every case of §8.8.2.
 
 ### 8.9 Detection statistics (SRS-011)
 
@@ -1008,10 +1060,11 @@ class RecordEvaluation:
     signal_name: str
     fs_hz: float
     counts: RecordCounts
-    vf_episodes: int
-    vf_samples: int                  # total length of the VF episodes, samples
-    reference_excluded: int
-    detections_excluded: int
+    vf_episodes: int                 # VF episodes annotated in the record (§8.8.1)
+    vf_episodes_scored: int          # of which with at least one sample in the scored part
+    vf_samples_scored: int           # samples of the scored part inside a VF episode
+    reference_excluded: int          # MatchResult.reference_excluded (§8.8.3)
+    detections_excluded: int         # MatchResult.detections_excluded (§8.8.3)
     flutter_waves_outside_vf: int    # "!" annotations outside every VF episode (§8.8)
 
 @dataclass(frozen=True)
@@ -1024,6 +1077,8 @@ class ValidationResults:
     subset: bool
 
 def read_record_list(database_dir: Path) -> tuple[str, ...]: ...
+def episode_coverage(episodes: Sequence[Episode], first_sample: int,
+                     last_sample: int) -> tuple[int, int]: ...   # (episodes, samples) in the range
 def evaluate_record(record: Record, settings: EvaluationSettings,
                     detector: Detector = detect_beats) -> RecordEvaluation: ...
 def evaluate_records(database_dir: Path, records: Sequence[str], settings: EvaluationSettings, *,
@@ -1073,6 +1128,13 @@ def render_subset_report(results: ValidationResults) -> str: ...
 2. It reads the record list from the `RECORDS` file of the database (one name per line, blank lines ignored; 48 names for MIT-BIH) and evaluates each record: `load_record(path, settings.channel)`; `detector(record.signal_mv, record.fs_hz, settings.mains_hz)`; `vf_episodes(...)`; `match_beats(...)` with the parameters of §8.8.1 at the record's sampling frequency; the counts and the exclusion figures.
 3. It evaluates the 12 noise stress records the same way, with the reference annotations of each (`atr`), and aggregates per SNR from the summed counts of the two records at that SNR. The comparison values are the gross statistics of MIT-BIH Arrhythmia records 118 and 119 from step 2. `snr_db` reads the suffix after `e`: digits give a positive value, `_` followed by digits a negative one; any other name raises `InvalidInputError`.
 4. `write_validation_report` calls `run_validation` and `render_full_report`, then writes the text atomically (temporary file in the same folder, then `os.replace`), UTF-8 with line feeds. The report is written only after everything has succeeded.
+- **Figures on what is not scored** (`evaluate_record`; definitions of §8.8.1 and §8.8.3; requirement SRS-012). With `S = learning_period_samples(fs_hz)`, `n = record.n_samples` and `episodes = vf_episodes(record.other_annotations, n)`:
+  - `vf_episodes = len(episodes)`: every episode annotated in the record, wherever it lies.
+  - `vf_episodes_scored, vf_samples_scored = episode_coverage(episodes, S, n − 1)`: the number of episodes with at least one sample in the scored part `S … n − 1`, and the number of samples of the scored part that lie inside at least one episode. An episode that contains `S` counts from `S`; an episode that ends before `S` counts in neither figure.
+  - `reference_excluded` and `detections_excluded` are those of `match_beats`, which count only items at or after `S` (§8.8.3).
+  - All five figures are integers. The duration shown in the report is `vf_samples_scored / fs_hz` seconds: an episode from `[` at sample `a` to `]` at sample `b`, both in the scored part, lasts `(b − a + 1) / fs_hz`.
+  - Record 207 of the MIT-BIH Arrhythmia Database (checked on its annotation file) has six episodes. Five end before 5:00 (the last one at 280.9 s). One lies in the scored part, from sample 554682 to sample 589926: 35245 samples, 97.9 s. No beat annotation lies inside any of the six, so `reference_excluded` is 0 for this record.
+- `episode_coverage(episodes, first_sample, last_sample)` takes episodes in the order returned by `vf_episodes` and works on integers. With `covered_to = first_sample − 1`, for each episode in order: `hi = min(episode.end_sample, last_sample)`; the episode is counted if `max(episode.start_sample, first_sample) ≤ hi`; then, with `lo = max(episode.start_sample, covered_to + 1)`, if `hi ≥ lo`, `hi − lo + 1` is added to the samples and `covered_to = hi`. A sample shared by two consecutive episodes is therefore counted once. An empty range (`last_sample < first_sample`) gives `(0, 0)`.
 - The detector and loader are injectable: QA's tests of SRS-009, SRS-012 and SRS-014 use fixture databases and a fake detector whose output, and so whose counts, are known.
 - `meets_target` compares exactly on integers: `10000 · tp ≥ target_hundredths · (tp + other)`, i.e. `10000 · tp ≥ 9950 · (tp + other)` for the 99.50% targets, where `other` is FN for Se and FP for +P. A value that is not defined (`tp + other = 0`) fails.
 
@@ -1082,7 +1144,11 @@ def render_subset_report(results: ValidationResults) -> str: ...
 3. **Performance targets**: gross Se and gross +P, each with its value, the target `≥ 99.50` and `pass` or `fail` (`meets_target`).
 4. **Results per record**: record, signal name, TP, FN, FP, Se (%), +P (%), sorted by record name; then a `Gross` row (summed counts and gross values) and an `Average` row (average Se and +P), followed by a sentence giving `n_se_defined` and `n_ppv_defined` out of the number of records.
 5. **Lowest sensitivity** and **Lowest positive predictivity**: rank, record, value, for the five records with the lowest defined value, ties ordered by record name (sort key `(value, record)`). Records whose value is not defined are not ranked.
-6. **Segments not scored**: for each record with at least one VF episode, the number of episodes, their total duration in s (`vf_samples / fs_hz`), the reference beats and detections not scored; otherwise a sentence stating that no episode is annotated. Then the number of flutter-wave annotations outside VF episodes over all records.
+6. **Segments not scored** (content and definitions: §8.8.3 and "Figures on what is not scored" above; requirement SRS-012), in this order:
+   - the sentence `The first 5 min of each record are not scored. Ventricular flutter and fibrillation episodes are not scored either. The durations and counts below cover the part of each record from 5:00 to its end.`;
+   - if at least one record has `vf_episodes ≥ 1`, a table with one row per such record, sorted by record name, with the columns `Record`, `Episodes in the record` (`vf_episodes`), `Episodes from 5:00` (`vf_episodes_scored`), `Duration from 5:00 (s)` (`vf_samples_scored / fs_hz`, one decimal), `Reference beats not scored` (`reference_excluded`) and `Detections not scored` (`detections_excluded`). A record whose episodes all end before 5:00 has its row, with 0 episodes from 5:00, a duration of `0.0` and counts of 0;
+   - otherwise, the sentence `No ventricular flutter or fibrillation episode is annotated in these records.`;
+   - the sentence `Flutter-wave annotations outside ventricular flutter and fibrillation episodes, in all records: <n>.`, with the sum of `flutter_waves_outside_vf`.
 7. **Noise stress test** (full report only): database title and version and the verification outcome; a table per record in `NOISE_STRESS_RECORDS` order (record, SNR in dB, TP, FN, FP, Se, +P); a table per SNR in decreasing order (SNR, summed TP, FN, FP, gross Se, gross +P) with a last row for records 118 and 119 without added noise; and the sentence `No pass threshold is set for these results (OP-031).`
 
 The rendered text contains no requirement ID, so the report module does not need to cite SRS-007 for its text; the modules cite the requirements they implement.
@@ -1092,7 +1158,7 @@ The rendered text contains no requirement ID, so the report module does not need
 **Determinism** (SRS-009). The report depends only on the verified data, the software version and the settings: records are sorted, every number comes from integer counts through the correctly rounded operations of §8.9, and nothing depends on time or environment. Two runs on the same inputs therefore give byte-identical reports.
 
 **Verification notes.**
-- SRS-009, SRS-012 and SRS-014 (QA): fixture databases under a temporary `data_root` (records written with `wfdb`, `RECORDS` files, checksum lists, and `Database` values pinned to the fixture lists), a fake detector with known output, `fetch=None`. The noise stress fixture uses the 12 names of `NOISE_STRESS_RECORDS`, and the MIT-BIH fixture includes records 118 and 119. Records must be longer than 5 min for beats to be scored.
+- SRS-009, SRS-012 and SRS-014 (QA): fixture databases under a temporary `data_root` (records written with `wfdb`, `RECORDS` files, checksum lists, and `Database` values pinned to the fixture lists), a fake detector with known output, `fetch=None`. The noise stress fixture uses the 12 names of `NOISE_STRESS_RECORDS`, and the MIT-BIH fixture includes records 118 and 119. Records must be longer than 5 min for beats to be scored. For the section on what is not scored, a fixture record with one episode that ends before 5:00 and one after it, each with reference beats and detections inside, shows that only the second one enters the figures from 5:00, while both count in the episodes of the record.
 - SRS-007 (test engineer): a `needs_data` system test calls `run_validation(data_root, fetch=None)` on the full local databases and checks `meets_target` for gross Se and +P; the test engineer runs `validate.py` for the milestone report.
 
 ### 8.11 Subset report in continuous integration (SRS-016)
@@ -1117,14 +1183,17 @@ def check_subset_report(stored_path: Path, data_root: Path, *,
 ```
 
 **Behaviour.**
-- `run_subset` obtains the six records as in §8.3 with `records=SUBSET_RECORDS` (their `.atr`, `.dat`, `.hea` and `.xws` files, 24 in all, plus the checksum list), verifies them, and evaluates them with the settings of SRS-007. The result has `subset=True` and no noise stress.
+- `run_subset` obtains the six records as in §8.3 with `records=SUBSET_RECORDS`, verifies them, and evaluates them with the settings of SRS-007. The result has `subset=True` and no noise stress.
+  - The selection rule of §8.3 gives **28 files** in the published list of the database, plus the checksum list itself: the `.atr`, `.dat`, `.hea` and `.xws` files of the six records (24 files), and `108.at_`, `119.at_`, `203.at-` and `203.at_`, which are further annotation files that the database publishes for records 108, 119 and 203. The evaluation reads only the `.hea`, `.dat` and `.atr` files (§8.4).
+  - The selection is not restricted to the files that the evaluation reads. SRS-016 requires each file of the six records to be verified, the four additional files are small (the six `.dat` files hold nearly all of the 12 MB), and a list of extensions would be a second selection rule tied to one database.
+  - The number 28 is not a constant of the code. It appears in the subset report through `describe_verification` (`verified: 28 files match …; records 100, 105, 108, 119, 203, 207`), so the stored report states how many files were verified.
 - `render_subset_report` produces the full report's sections 1, 2, 4, 5 and 6 with the title `# QRS detection: EC57 subset report for regression checking` and, after the SRS-012 statement, the paragraph `This report covers records 100, 105, 108, 119, 203 and 207 of the MIT-BIH Arrhythmia Database. It is a regression check run on every change, not the performance evaluation against the targets, which uses all 48 records (qrs-ec57-report.md).` There is no targets section and no noise stress section (SRS-016).
 - `compare_reports` compares the bytes of the stored report with the UTF-8 encoding of the regenerated one. If they differ, it raises `SubsetReportMismatchError`, whose `differences` name each differing line as `line <n>: stored <text>, regenerated <text>` (lines only in one of the two are named too), at most 20 entries and then `… and <k> more`. If the lines are equal but the bytes differ (line endings, final line feed), the difference says so. A stored report that is absent is one difference; a stored report that is not UTF-8 raises `MalformedFileError`.
 - `check_subset_report` runs `run_subset` (a `DataVerificationError` stops it before any report is rendered or written), renders the report, writes it to `regenerated_path` if given, and calls `compare_reports`.
 - `scripts/subset_check.py [--data-dir PATH] [--stored PATH] [--write-regenerated PATH] [--update] [--offline]`: default stored report `docs/validation/qrs-ec57-subset-report.md`. `--update` replaces the stored report with the regenerated one (after a successful verification) and exits 0. Exit status 1 on a mismatch, with the differences on standard error, or on a verification failure.
 
 **CI** (`.github/workflows/ci.yml`, job `dsp`, after the traceability check):
-1. `actions/cache` (pinned to an exact version, like the other actions) with path `data/mitdb` and a fixed key, e.g. `mitdb-1.0.0-subset-v1`. The cache is only a copy: every run verifies it against the pinned checksum list, and a corrupted file is downloaded again.
+1. `actions/cache` (pinned to an exact version, like the other actions) with path `data/mitdb` and a fixed key, e.g. `mitdb-1.0.0-subset-v1`. The cache holds the checksum list and the 28 files of the subset, about 12 MB. It is only a copy: every run verifies it against the pinned checksum list, and a corrupted file is downloaded again. With a complete cache the step uses no network.
 2. `uv run python scripts/subset_check.py --write-regenerated "${{ runner.temp }}/qrs-ec57-subset-report.md"`.
 3. `actions/upload-artifact` with `if: always()`, artifact name `subset-report`, so that the report regenerated in CI is always available.
 
@@ -1264,6 +1333,10 @@ Suggested order for the developer, one pull request into `develop` per group, ea
 
 Groups 1 to 3 go into one pull request, because the verification of SRS-003 calls the functions of SRS-004 to SRS-006. Groups 4 to 6 do not depend on groups 1 to 3 and can proceed in parallel. Group 7 needs all earlier groups; group 8 needs group 7; group 9 needs groups 1 to 5 and the constant `SUBSET_RECORDS` of group 8.
 
+**Corrections of v0.2.2 to modules already implemented.** They are implemented, with their unit tests, before the group that relies on them:
+- `evaluation.matching` (§8.8.1: `vf_episodes`; §8.8.2 step 1 and §8.8.3: `reference_excluded`): before group 7, which reports these figures.
+- `data.physionet` (§8.3: validation of the record selection first, empty selection rejected, temporary file `<name>.part~`): before group 8, which is the first user of a record selection.
+
 ## 9. SOUP per software item
 
 | Item | Runtime SOUP | Recorded |
@@ -1303,4 +1376,4 @@ Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, Google
 
 ## 12. Open points referenced
 
-OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050. See [`open-points.md`](open-points.md).
+OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-056, OP-057. See [`open-points.md`](open-points.md).

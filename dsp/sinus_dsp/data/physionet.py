@@ -32,7 +32,9 @@ CHECKSUM_LIST_NAME: Final = "SHA256SUMS.txt"
 
 _FETCH_TIMEOUT_S: Final = 60
 _HASH_BLOCK_BYTES: Final = 1024 * 1024
-_PART_SUFFIX: Final = ".part"
+# Suffix of the temporary file of an atomic write. ``~`` is not allowed in a listed path
+# (``_PATH_COMPONENT``), so a temporary file never has the name of a listed file.
+_PART_SUFFIX: Final = ".part~"
 
 # One entry of a checksum list, in the formats written by ``sha256sum``.
 _ENTRY: Final = re.compile(r"^([0-9a-fA-F]{64}) [ *]?(\S+)$")
@@ -87,9 +89,10 @@ class VerificationResult:
 
     Attributes:
         database: The database verified.
-        records: The record names the verification was restricted to, sorted and without
-            repetition, or ``None`` when the whole database was verified.
-        files: Relative paths of the files verified, sorted in code-point order.
+        records: The record names the verification was restricted to, sorted in code-point
+            order, each once, or ``None`` when the whole database was verified.
+        files: Relative paths of the files verified, sorted in code-point order, each once;
+            never empty.
     """
 
     database: Database
@@ -102,6 +105,10 @@ def fetch_https(url: str) -> bytes:
 
     SRS-001, SRS-013: the default way of obtaining a file from PhysioNet. There is no retry:
     running the download again resumes it, because verified files are skipped.
+
+    Redirects are followed, as ``urllib.request.urlopen`` does, so the body may come from
+    another URL. The integrity of the data does not rest on the transport: the checksum list
+    is accepted only with its pinned SHA-256, and every file is verified against the list.
 
     Args:
         url: The URL. It must start with ``https://``.
@@ -143,7 +150,8 @@ def parse_checksum_list(text: str, source: str) -> dict[str, str]:
     by ``sha256sum``: one space, two spaces, or a space and ``*`` before the path). A path is
     relative, with ``/`` separators, and each of its components matches ``[A-Za-z0-9._+-]+``
     and differs from ``.`` and ``..``, so that a listed name cannot designate a file outside
-    the database folder.
+    the database folder. ``~`` is not allowed either, so that no listed path can be the name
+    of a temporary file of the download (``<name>.part~``).
 
     Lines end with a line feed; a carriage return before it is not part of the line.
 
@@ -186,21 +194,28 @@ def select_files(checksums: Mapping[str, str], records: Sequence[str] | None) ->
     """Select the listed files of the whole database or of some of its records.
 
     SRS-001, SRS-013: with ``records`` equal to ``None``, every listed file is selected.
-    Otherwise the selection holds, for each record, the listed top-level files named
-    ``<record>.<extension>`` (e.g. ``100.atr``, ``100.dat``, ``100.hea``, ``100.xws``). A
-    record with no such file is selected under the placeholder ``<record>.*``, which no file
-    can have as its name, so that the verification reports it as missing.
+    Otherwise ``records`` holds at least one record name, and a name given several times
+    counts once. For each record, the selection holds every listed top-level path (one
+    without ``/``) that starts with ``<record>.`` and continues with at least one more
+    character, whatever that extension is: ``100.atr``, ``100.dat``, ``100.hea`` and
+    ``100.xws`` for record 100, and also ``108.at_`` for record 108. A record with no such
+    file is selected under the placeholder ``<record>.*``, which no listed path can equal, so
+    that the verification reports it as missing.
+
+    For a list given by :func:`parse_checksum_list` the result is never empty: the list has
+    at least one entry, and every record contributes at least one path or its placeholder.
 
     Args:
         checksums: The parsed checksum list.
-        records: Record names, each matching ``[A-Za-z0-9_]+``, or ``None`` for the whole
-            database.
+        records: At least one record name, each matching ``[A-Za-z0-9_]+``, or ``None`` for
+            the whole database.
 
     Returns:
         The relative paths, sorted in code-point order, each one once.
 
     Raises:
-        InvalidInputError: If a record name is invalid.
+        InvalidInputError: If ``records`` is a ``str`` in place of a sequence of names, if it
+            is empty, or if a record name is invalid.
     """
     if records is None:
         return tuple(sorted(checksums))
@@ -227,6 +242,9 @@ def verify_database(
     SRS-001, SRS-013: every selected file listed in the checksum list must be present with
     the listed SHA-256. The checksum list itself must be present with its pinned SHA-256.
 
+    The record selection is validated first, before anything is read, so that an invalid or
+    empty selection raises ``InvalidInputError`` whatever the state of the data folder. Then:
+
     1. ``data_root/<slug>/SHA256SUMS.txt`` is read; it is missing if absent and mismatched if
        its SHA-256 differs from ``database.checksum_list_sha256``.
     2. The list is parsed and the files are selected (:func:`select_files`).
@@ -239,17 +257,21 @@ def verify_database(
     Args:
         database: The database to verify.
         data_root: The data folder; the database is in ``data_root / database.slug``.
-        records: Record names to restrict the verification to, or ``None`` for every file.
+        records: At least one record name to restrict the verification to, or ``None`` for
+            every file.
 
     Returns:
         The database, the records and the files verified.
 
     Raises:
+        InvalidInputError: If ``records`` is a ``str``, is empty or holds an invalid record
+            name. Raised before anything is read.
         DataVerificationError: If the checksum list or a selected file is missing or does not
             have the expected SHA-256. ``missing`` and ``mismatched`` are complete and sorted.
         MalformedFileError: If the checksum list does not follow its format.
-        InvalidInputError: If a record name is invalid.
     """
+    # The record selection is validated first (architecture §8.3).
+    names = None if records is None else _record_names(records)
     folder = Path(data_root) / database.slug
     list_path = folder / CHECKSUM_LIST_NAME
     content = _read_if_file(list_path)
@@ -258,7 +280,7 @@ def verify_database(
     if _sha256_bytes(content) != database.checksum_list_sha256:
         raise DataVerificationError(_database_name(database), mismatched=(CHECKSUM_LIST_NAME,))
     checksums = _parse_list_content(content, list_path)
-    files = select_files(checksums, records)
+    files = select_files(checksums, names)
 
     missing: list[str] = []
     mismatched: list[str] = []
@@ -272,11 +294,7 @@ def verify_database(
             mismatched.append(path)
     if missing or mismatched:
         raise DataVerificationError(_database_name(database), missing, mismatched)
-    return VerificationResult(
-        database=database,
-        records=None if records is None else _record_names(records),
-        files=files,
-    )
+    return VerificationResult(database=database, records=names, files=files)
 
 
 def download_database(
@@ -291,32 +309,40 @@ def download_database(
     SRS-001, SRS-013: the files are obtained from PhysioNet and the outcome is the one of
     :func:`verify_database`, which this function calls last.
 
-    The database folder ``data_root / database.slug`` is created, then:
+    The record selection is validated first: an invalid or empty selection raises
+    ``InvalidInputError`` before any folder is created and before anything is read or
+    fetched. Then the database folder ``data_root / database.slug`` is created, and:
 
     1. The local ``SHA256SUMS.txt`` is used if its SHA-256 equals the pinned one. Otherwise
        the list is fetched; it is written only if its SHA-256 equals the pinned one.
     2. Each selected file whose local copy does not have the listed SHA-256 is fetched and
-       written atomically (to ``<name>.part`` in the same folder, then renamed), with its
-       subfolders. A fetch that fails with ``OSError`` is not raised: the file stays absent
-       or outdated. The placeholder of a record without files is never fetched.
+       written atomically (to ``<name>.part~`` in the same folder, then renamed), with its
+       subfolders; the checksum list of step 1 is written the same way. The fetched content
+       is written whatever its SHA-256: the final verification names a file whose content
+       differs. A fetch that fails with ``OSError`` is not raised: the file stays absent or
+       outdated. The placeholder of a record without files is never fetched.
     3. The local copy is verified.
 
     Args:
         database: The database to obtain.
         data_root: The data folder.
-        records: Record names to restrict the download to, or ``None`` for every file.
+        records: At least one record name to restrict the download to, or ``None`` for every
+            file.
         fetch: Function returning the content of a URL; it raises ``OSError`` on failure.
 
     Returns:
         The result of the final verification.
 
     Raises:
+        InvalidInputError: If ``records`` is a ``str``, is empty or holds an invalid record
+            name. Raised before any folder is created and before any fetch.
         DataVerificationError: If the checksum list cannot be fetched (it is named as
             missing), if the fetched list does not have the pinned SHA-256 (it is named as
             mismatched, and is not written), or if the final verification fails.
         MalformedFileError: If the checksum list does not follow its format.
-        InvalidInputError: If a record name is invalid.
     """
+    # The record selection is validated first (architecture §8.3).
+    names = None if records is None else _record_names(records)
     folder = Path(data_root) / database.slug
     folder.mkdir(parents=True, exist_ok=True)
     base_url = database_url(database)
@@ -335,7 +361,7 @@ def download_database(
         _write_atomically(list_path, content)
     checksums = _parse_list_content(content, list_path)
 
-    for path in select_files(checksums, records):
+    for path in select_files(checksums, names):
         expected = checksums.get(path)
         if expected is None:
             continue
@@ -349,7 +375,7 @@ def download_database(
             continue
         _write_atomically(local, body)
 
-    return verify_database(database, data_root, records=records)
+    return verify_database(database, data_root, records=names)
 
 
 def describe_verification(result: VerificationResult) -> str:
@@ -382,13 +408,20 @@ def _is_safe_path(path: str) -> bool:
 
 
 def _record_names(records: Sequence[str]) -> tuple[str, ...]:
-    """Check the record names and return them sorted, each one once."""
+    """Check a record selection and return its names sorted, each one once.
+
+    The checks come in this order: a ``str`` in place of the sequence, an empty sequence,
+    then each name (architecture §8.3).
+    """
     if isinstance(records, str):
         raise InvalidInputError(f"records is a string, not a sequence of record names: {records!r}")
-    for record in records:
+    names = list(records)
+    if not names:
+        raise InvalidInputError("no record name given: the record selection is empty")
+    for record in names:
         if not isinstance(record, str) or _RECORD_NAME.fullmatch(record) is None:
             raise InvalidInputError(f"invalid record name: {record!r}")
-    return tuple(sorted(set(records)))
+    return tuple(sorted(set(names)))
 
 
 def _local_path(folder: Path, relative_path: str) -> Path:
@@ -427,7 +460,7 @@ def _sha256_file(path: Path) -> str:
 
 
 def _write_atomically(path: Path, content: bytes) -> None:
-    """Write a file through ``<name>.part`` in the same folder, creating the folders."""
+    """Write a file through ``<name>.part~`` in the same folder, creating the folders."""
     path.parent.mkdir(parents=True, exist_ok=True)
     part = path.with_name(path.name + _PART_SUFFIX)
     part.write_bytes(content)

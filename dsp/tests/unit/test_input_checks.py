@@ -188,8 +188,10 @@ def test_list_input_and_integer_frequency() -> None:
 
 
 def test_numpy_scalar_frequency_is_accepted() -> None:
+    # A NumPy integer is not a ``float`` for the type checker, but the check accepts it.
+    int32_frequency: Any = np.int32(360)
     assert validate_input(np.zeros(3600), np.float64(360.0)).shape == (3600,)
-    assert validate_input(np.zeros(3600), np.int32(360)).shape == (3600,)
+    assert validate_input(np.zeros(3600), int32_frequency).shape == (3600,)
 
 
 # --- mains setting ----------------------------------------------------------------------------

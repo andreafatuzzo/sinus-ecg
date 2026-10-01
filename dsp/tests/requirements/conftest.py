@@ -2,9 +2,9 @@
 
 The helpers here are independent of the software under test: they build the test inputs
 (synthetic ECGs with known QRS positions, sinusoids, WFDB records, database folders with
-their checksum list, a fetch function that serves bytes from a dictionary) and apply the pass
-criteria of the requirements to its outputs. Each helper is exposed as a fixture that returns
-a function or a class.
+their checksum list, a fetch function that serves bytes from a dictionary, random beat and
+detection lists around 5:00) and apply the pass criteria of the requirements to its outputs.
+Each helper is exposed as a fixture that returns a function or a class.
 """
 
 from __future__ import annotations
@@ -394,6 +394,140 @@ def write_database_folder() -> Callable[..., DatabaseFolder]:
 def make_fake_fetch() -> type[FakeFetch]:
     """``make_fake_fetch(contents)``: see ``FakeFetch``."""
     return FakeFetch
+
+
+# --------------------------------------------------------------------------------------------
+# Beat matching around 5:00 (SRS-008, SRS-012): random configurations and the rule at 5:00
+# --------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MatchingCase:
+    """Reference beats, detections and ventricular flutter episodes of one random case.
+
+    Samples are at 360 Hz; both lists are strictly increasing. Each episode is a pair
+    (onset sample, offset sample), both included, in increasing order and not overlapping.
+    """
+
+    reference: tuple[int, ...]
+    detections: tuple[int, ...]
+    episodes: tuple[tuple[int, int], ...]
+
+
+def _matching_cases(
+    seed: int, count: int, *, start: int = 108000, window: int = 54
+) -> list[MatchingCase]:
+    """``count`` random configurations around 5:00 (``start``), with a fixed seed.
+
+    - Reference beats from up to 1500 samples before ``start`` to 3000 samples after it,
+      40 to 400 samples apart (so closer than twice the match window at times).
+    - A detection near 80% of the beats (up to 80 samples before or after), plus 0 to 5
+      detections anywhere; with probability 0.3 each, a detection from 0 to ``window + 1``
+      samples after ``start`` and one from 1 to 60 samples before it.
+    - 0 to 2 episodes of 0 to 1500 samples, whose onset and offset fall on a beat, on a
+      detection or on ``start`` in some cases, so that items lie on their limits.
+    """
+    rng = np.random.default_rng(seed)
+    cases: list[MatchingCase] = []
+    for _ in range(count):
+        beats: list[int] = []
+        position = start - int(rng.integers(0, 1500))
+        while position <= start + 3000:
+            beats.append(position)
+            position += int(rng.integers(40, 401))
+
+        detections = {b + int(rng.integers(-80, 81)) for b in beats if rng.random() < 0.8}
+        low, high = start - 1600, start + 3100
+        detections.update(int(d) for d in rng.integers(low, high, size=int(rng.integers(0, 6))))
+        if rng.random() < 0.3:
+            detections.add(start + int(rng.integers(0, window + 2)))
+        if rng.random() < 0.3:
+            detections.add(start - int(rng.integers(1, 61)))
+        items = sorted(set(beats) | detections)
+
+        episodes: list[tuple[int, int]] = []
+        for _ in range(int(rng.integers(0, 3))):
+            draw = rng.random()
+            if draw < 0.3:
+                onset = items[int(rng.integers(0, len(items)))]
+            elif draw < 0.4:
+                onset = start
+            else:
+                onset = int(rng.integers(start - 1200, start + 2500))
+            offset = onset + int(rng.integers(0, 1500))
+            if rng.random() < 0.3:
+                later = [s for s in items if s >= onset]
+                offset = later[int(rng.integers(0, len(later)))] if later else offset
+            episodes.append((onset, offset))
+        episodes.sort()
+        kept: list[tuple[int, int]] = []
+        for onset, offset in episodes:
+            if not kept or onset > kept[-1][1]:
+                kept.append((onset, offset))
+
+        cases.append(
+            MatchingCase(
+                reference=tuple(beats),
+                detections=tuple(sorted(detections)),
+                episodes=tuple(kept),
+            )
+        )
+    return cases
+
+
+def _five_minute_rule(
+    scored_reference: Sequence[int], detections: Sequence[int], start: int, window: int
+) -> tuple[int | None, int | None]:
+    """The two exceptions of SRS-008 at 5:00, from its statement.
+
+    ``scored_reference`` are the scored reference beats in order (at or after ``start`` and
+    outside every episode); ``detections`` all detections in order. Returns:
+
+    - the last detection before 5:00, if it is paired with the first scored reference beat
+      (they can match, and it is closer to that beat than the next detection is), else None;
+    - otherwise, the first detection at or after 5:00 if it is not scored (at most ``window``
+      samples after ``start``, and either the next detection is closer to the first scored
+      reference beat or no reference beat is scored), else None.
+    """
+    first_scored = scored_reference[0] if scored_reference else None
+    before = [d for d in detections if d < start]
+    after = [d for d in detections if d >= start]
+    last_before = before[-1] if before else None
+    first_after = after[0] if after else None
+    second_after = after[1] if len(after) > 1 else None
+
+    if first_scored is not None and last_before is not None:
+        distance = first_scored - last_before
+        if distance <= window and (
+            first_after is None or distance < abs(first_scored - first_after)
+        ):
+            return last_before, None
+    if first_after is not None and first_after - start <= window:
+        if first_scored is None:
+            return None, first_after
+        if second_after is not None and abs(first_scored - second_after) < abs(
+            first_scored - first_after
+        ):
+            return None, first_after
+    return None, None
+
+
+@pytest.fixture(scope="session")
+def make_matching_cases() -> Callable[..., list[MatchingCase]]:
+    """``make_matching_cases(seed, count, *, start=108000, window=54)``.
+
+    See ``_matching_cases``.
+    """
+    return _matching_cases
+
+
+@pytest.fixture(scope="session")
+def five_minute_rule() -> Callable[..., tuple[int | None, int | None]]:
+    """``five_minute_rule(scored_reference, detections, start, window)``.
+
+    See ``_five_minute_rule``.
+    """
+    return _five_minute_rule
 
 
 @pytest.fixture
