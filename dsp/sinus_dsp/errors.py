@@ -37,6 +37,8 @@ class DataVerificationError(SinusError):
     SRS-001, SRS-013: a database with a listed file that is missing or whose SHA-256 differs
     is reported as not verified with this error, which names each such file. It is also
     raised when the checksum list itself is missing or differs from its pinned digest.
+    SRS-012, SRS-014: the command that writes the validation report raises it, before
+    anything is written, when either database is not verified (architecture §8.10).
 
     Attributes:
         database: Name and version of the database, e.g. ``mitdb 1.0.0``.

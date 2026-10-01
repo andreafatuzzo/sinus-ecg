@@ -1,13 +1,28 @@
-"""Helpers of the unit tests: a small synthetic ECG with known R-wave centres."""
+"""Helpers of the unit tests.
 
+- A small synthetic ECG with known R-wave centres.
+- Fixture WFDB records and databases for the evaluation: a record whose signal is 1 mV at
+  the samples that the fake detector must report and 0 elsewhere, its annotation file, and a
+  ``SHA256SUMS.txt`` with a ``Database`` pinned to it.
+"""
+
+import hashlib
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 import pytest
+import wfdb
+
+from sinus_dsp.data.physionet import CHECKSUM_LIST_NAME, Database
 
 EcgFactory = Callable[..., tuple[npt.NDArray[np.float64], npt.NDArray[np.int64]]]
+
+#: Sampling frequency of the fixture records: 5:00 is sample 6000, the match window 3 samples.
+FIXTURE_FS_HZ = 20
+FIXTURE_ADC_GAIN = 200.0
 
 # (offset from the R centre in s, amplitude in mV, width in s, scales with sqrt(RR / 1 s))
 _WAVES = (
@@ -59,3 +74,169 @@ def _synthetic_ecg(
 def synthetic_ecg() -> EcgFactory:
     """The synthetic ECG generator of the unit tests."""
     return _synthetic_ecg
+
+
+def _write_fixture_record(
+    folder: Path,
+    name: str,
+    *,
+    n_samples: int,
+    beats: Sequence[int] = (),
+    beat_symbol: str = "N",
+    others: Sequence[tuple[int, str]] = (),
+    detections: Sequence[int] = (),
+    fs_hz: float = FIXTURE_FS_HZ,
+    units: str = "mV",
+    signal_name: str = "MLII",
+) -> None:
+    """Write a two-channel record and its ``atr`` annotations into ``folder``.
+
+    Channel 0 is 1 mV at the samples of ``detections`` and 0 elsewhere; channel 1 is 0.5 mV
+    everywhere. The annotations are the beats (all with ``beat_symbol``) and the non-beat
+    annotations ``others`` given as ``(sample, symbol)``, written in the order of their
+    samples (beats first at equal samples). A record without any annotation gets a ``+`` at
+    sample 0, because wfdb does not write an empty annotation file.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    first = np.zeros(n_samples)
+    first[list(detections)] = 1.0
+    second = np.full(n_samples, 0.5)
+    wfdb.wrsamp(
+        name,
+        fs=fs_hz,
+        units=[units, units],
+        sig_name=[signal_name, "V1"],
+        p_signal=np.column_stack([first, second]),
+        fmt=["16", "16"],
+        adc_gain=[FIXTURE_ADC_GAIN, FIXTURE_ADC_GAIN],
+        baseline=[0, 0],
+        write_dir=str(folder),
+    )
+    entries = [(sample, 0, beat_symbol) for sample in beats]
+    entries += [(sample, 1, symbol) for sample, symbol in others]
+    entries.sort()
+    if not entries:
+        entries = [(0, 1, "+")]
+    wfdb.wrann(
+        name,
+        "atr",
+        np.array([sample for sample, _, _ in entries], dtype=np.int64),
+        symbol=[symbol for _, _, symbol in entries],
+        write_dir=str(folder),
+    )
+
+
+def _pin_database(
+    folder: Path, title: str, *, records_file: Sequence[str] | None = None
+) -> Database:
+    """Write ``SHA256SUMS.txt`` for every file of ``folder`` and return a Database pinned to it.
+
+    With ``records_file`` given, a ``RECORDS`` file listing those names is written first. The
+    slug of the database is the name of ``folder``; its version is ``1.0.0``.
+    """
+    if records_file is not None:
+        (folder / "RECORDS").write_bytes("".join(f"{name}\n" for name in records_file).encode())
+    paths = sorted(
+        path.relative_to(folder).as_posix()
+        for path in folder.rglob("*")
+        if path.is_file() and path.name != CHECKSUM_LIST_NAME
+    )
+    lines = [
+        f"{hashlib.sha256((folder / path).read_bytes()).hexdigest()}  {path}\n" for path in paths
+    ]
+    content = "".join(lines).encode()
+    (folder / CHECKSUM_LIST_NAME).write_bytes(content)
+    return Database(
+        slug=folder.name,
+        version="1.0.0",
+        title=title,
+        checksum_list_sha256=hashlib.sha256(content).hexdigest(),
+    )
+
+
+def _fake_detector(
+    signal_mv: npt.NDArray[np.float64], fs_hz: float, mains_hz: int
+) -> npt.NDArray[np.int64]:
+    """The detections of a fixture record: the samples where its signal is above 0.5 mV."""
+    return np.flatnonzero(np.asarray(signal_mv) > 0.5).astype(np.int64)
+
+
+@pytest.fixture(scope="session")
+def write_fixture_record() -> Callable[..., None]:
+    """Writer of a fixture WFDB record (see ``_write_fixture_record``)."""
+    return _write_fixture_record
+
+
+@pytest.fixture(scope="session")
+def pin_database() -> Callable[..., Database]:
+    """Writer of the checksum list of a fixture database folder (see ``_pin_database``)."""
+    return _pin_database
+
+
+@pytest.fixture(scope="session")
+def fake_detector() -> Callable[[npt.NDArray[np.float64], float, int], npt.NDArray[np.int64]]:
+    """A detector that reports the samples where the fixture signal is 1 mV."""
+    return _fake_detector
+
+
+#: Noise stress record names, by record and by decreasing SNR (24, 18, 12, 6, 0, -6 dB).
+_NOISE_STRESS_NAMES = tuple(
+    f"{record}e{snr}" for record in ("118", "119") for snr in ("24", "18", "12", "06", "00", "_6")
+)
+
+
+def _write_fixture_databases(data_root: Path) -> tuple[Database, Database]:
+    """Write a small arrhythmia database and a noise stress database under ``data_root``.
+
+    With the fake detector (20 Hz, 5:00 = sample 6000, match window 3 samples):
+
+    - ``mitdb``: ``RECORDS`` lists 207, 100, 119, 118 (not sorted), plus ``mitdbdir/notes.txt``.
+      Counts (TP, FN, FP): 100 (2, 1, 1); 118 (2, 0, 0); 119 (3, 1, 0); 207 (2, 0, 0). Record
+      207 has two episodes, one before 5:00 and one from 6200 to 6300 (101 samples), one
+      reference beat and two unpaired detections inside the second, and one ``!`` outside.
+    - ``nstdb``: the 12 noise stress records, plus ``RECORDS`` and ``old/readme.txt``. At the
+      SNR index ``j`` (0 for 24 dB … 5 for -6 dB): TP 2, FN 0 for ``j < 3``, else TP 1, FN 1;
+      FP 1 for ``j >= 4``, else 0.
+    """
+    mitdb_dir = data_root / "mitdb"
+    write = _write_fixture_record
+    write(mitdb_dir, "100", n_samples=6600, beats=[6100, 6200, 6300], detections=[6100, 6201, 6400])
+    write(mitdb_dir, "118", n_samples=6600, beats=[6100, 6200], detections=[6100, 6200])
+    write(
+        mitdb_dir,
+        "119",
+        n_samples=6600,
+        beats=[6100, 6200, 6300, 6400],
+        detections=[6101, 6199, 6300],
+    )
+    write(
+        mitdb_dir,
+        "207",
+        n_samples=6600,
+        beats=[100, 6100, 6250, 6400],
+        others=[(50, "["), (150, "]"), (6200, "["), (6300, "]"), (6500, "!")],
+        detections=[120, 6100, 6260, 6280, 6401],
+    )
+    (mitdb_dir / "mitdbdir").mkdir()
+    (mitdb_dir / "mitdbdir" / "notes.txt").write_bytes(b"documentation\n")
+    mitdb = _pin_database(
+        mitdb_dir, "Fixture Arrhythmia Database", records_file=["207", "100", "119", "118"]
+    )
+
+    nstdb_dir = data_root / "nstdb"
+    for index, name in enumerate(_NOISE_STRESS_NAMES):
+        j = index % 6
+        detections = [6100, *([6200] if j < 3 else []), *([6400] if j >= 4 else [])]
+        write(nstdb_dir, name, n_samples=6600, beats=[6100, 6200], detections=detections)
+    (nstdb_dir / "old").mkdir()
+    (nstdb_dir / "old" / "readme.txt").write_bytes(b"older files\n")
+    nstdb = _pin_database(
+        nstdb_dir, "Fixture Noise Stress Database", records_file=_NOISE_STRESS_NAMES
+    )
+    return mitdb, nstdb
+
+
+@pytest.fixture(scope="session")
+def write_fixture_databases() -> Callable[[Path], tuple[Database, Database]]:
+    """Writer of the two fixture databases (see ``_write_fixture_databases``)."""
+    return _write_fixture_databases
