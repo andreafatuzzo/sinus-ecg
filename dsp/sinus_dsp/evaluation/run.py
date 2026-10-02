@@ -85,9 +85,10 @@ class EvaluationSettings:
     mains_hz: int = 60
 
 
-# The default settings. A module-level instance, so that no call is made in an argument
-# default; it equals ``EvaluationSettings()``.
-_DEFAULT_SETTINGS: Final = EvaluationSettings()
+#: The settings of SRS-007, ``EvaluationSettings()``: the default of every ``settings``
+#: argument. An argument default is never a call; the instance is frozen, so sharing it is
+#: safe (architecture §8.2, argument defaults).
+DEFAULT_SETTINGS: Final = EvaluationSettings()
 
 
 @dataclass(frozen=True)
@@ -95,8 +96,7 @@ class RecordEvaluation:
     """Evaluation of one record (SRS-011, SRS-012).
 
     The figures on what is not scored cover the scored part of the record, from 5:00 to its
-    end (architecture §8.8.1, §8.8.3), except ``vf_episodes`` and
-    ``flutter_waves_outside_vf``, which cover the whole record.
+    end (architecture §8.8.1, §8.8.3), except ``vf_episodes``, which covers the whole record.
 
     Attributes:
         record: Name of the record.
@@ -109,7 +109,7 @@ class RecordEvaluation:
         vf_samples_scored: Samples of the scored part that lie inside an episode.
         reference_excluded: Reference beats at or after 5:00 inside an episode.
         detections_excluded: Detections at or after 5:00 inside an episode and not paired.
-        flutter_waves_outside_vf: ``!`` annotations outside every episode.
+        flutter_waves_outside_vf: ``!`` annotations from 5:00 outside every episode.
     """
 
     record: str
@@ -238,8 +238,10 @@ def evaluate_record(
     and ``n`` the number of samples: every episode annotated in the record; the episodes
     with at least one sample in ``S … n - 1`` and the samples of that range inside an
     episode (:func:`episode_coverage`); and the reference beats and the unpaired detections
-    at or after ``S`` inside an episode (from the matching). The ``!`` annotations outside
-    every episode are counted over the whole record.
+    at or after ``S`` inside an episode (from the matching). The ``!`` annotations are
+    counted over the same range ``S … n - 1``, outside every episode (architecture §8.8):
+    the only part where a ``!`` can change a count. Only the number of episodes covers the
+    whole record.
 
     Args:
         record: The record, loaded with the channel of ``settings``.
@@ -283,7 +285,9 @@ def evaluate_record(
         vf_samples_scored=samples_scored,
         reference_excluded=result.reference_excluded,
         detections_excluded=result.detections_excluded,
-        flutter_waves_outside_vf=_flutter_waves_outside(record.other_annotations, episodes),
+        flutter_waves_outside_vf=_flutter_waves_outside(
+            record.other_annotations, episodes, start, n_samples - 1
+        ),
     )
 
 
@@ -358,7 +362,7 @@ def run_validation(
     *,
     mitdb: Database = MITDB,
     nstdb: Database = NSTDB,
-    settings: EvaluationSettings = _DEFAULT_SETTINGS,
+    settings: EvaluationSettings = DEFAULT_SETTINGS,
     detector: Detector = detect_beats,
     loader: RecordLoader = load_record,
     fetch: FetchFunction | None = fetch_https,
@@ -437,7 +441,7 @@ def write_validation_report(
     *,
     mitdb: Database = MITDB,
     nstdb: Database = NSTDB,
-    settings: EvaluationSettings = _DEFAULT_SETTINGS,
+    settings: EvaluationSettings = DEFAULT_SETTINGS,
     detector: Detector = detect_beats,
     loader: RecordLoader = load_record,
     fetch: FetchFunction | None = fetch_https,
@@ -499,12 +503,22 @@ def _checked_names(records: Sequence[str]) -> tuple[str, ...]:
     return names
 
 
-def _flutter_waves_outside(annotations: Sequence[Annotation], episodes: Sequence[Episode]) -> int:
-    """Number of ``!`` annotations outside every episode, bounds included."""
+def _flutter_waves_outside(
+    annotations: Sequence[Annotation],
+    episodes: Sequence[Episode],
+    first_sample: int,
+    last_sample: int,
+) -> int:
+    """Number of ``!`` annotations from ``first_sample`` to ``last_sample`` outside every episode.
+
+    Both bounds of the range are included, and so are the onset and offset samples of an
+    episode: a ``!`` on either is inside the episode. An empty range gives 0.
+    """
     return sum(
         1
         for annotation in annotations
         if annotation.symbol == _FLUTTER_WAVE
+        and first_sample <= annotation.sample <= last_sample
         and not any(
             episode.start_sample <= annotation.sample <= episode.end_sample for episode in episodes
         )

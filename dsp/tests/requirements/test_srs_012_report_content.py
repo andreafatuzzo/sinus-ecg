@@ -9,24 +9,49 @@ the detections, and therefore every count, are known (SRS-008 decides them; the 
 values are worked out in the docstring of each record builder of `conftest.py`). The command
 tests run the script of the software in a separate process, without network.
 
-What the tests check, from the statement of SRS-012:
+What the tests check, from the statement of SRS-012 (v0.6):
 - the per-record and aggregate statistics of SRS-011, with values matching the fixture;
-- the five records with the lowest Se and with the lowest +P, ties ordered by record name;
-- the pass or fail of each SRS-007 threshold (99.50%), decided on the exact counts;
+- the five records with the lowest Se and with the lowest +P, among the records whose value
+  is defined (fewer if fewer are defined), ties ordered by record name;
+- the pass or fail of each SRS-007 threshold (99.50%), decided on the exact counts; a
+  threshold whose value is not defined is reported as fail;
 - the database name and version and the outcome of its verification (SRS-001);
 - the software version and the settings used (channel, mains frequency);
-- what was not scored because of ventricular flutter or fibrillation episodes, from 5:00:
-  episodes in the record, episodes that reach 5:00 or later, their duration from 5:00 with
-  the onset and offset samples, reference beats and unpaired detections inside them without
-  the detection dropped by the rule at 5:00; a statement when no record has an episode. The
-  verification fixture of SRS-012 is record 207 (one episode ending before 5:00, one after);
-  record 209 holds an episode that contains 5:00 and a detection dropped by the rule at 5:00
-  inside it (two further cases that follow the approved design, architecture section 8.8.3);
+- what was not scored because of ventricular flutter or fibrillation episodes: the episodes
+  in the record, over the whole record; from 5:00 to the end of the record, the episodes that
+  reach 5:00 or later, their duration from 5:00 with the onset and offset samples (a sample
+  shared by two episodes counted once), the reference beats and the unpaired detections
+  inside them, without the detection dropped by the rule at 5:00; a statement when no record
+  has an episode;
 - the statement that the results are a technical evaluation only;
 - no report, and an error, when the verification of the database fails.
 
+The cases of the verification of SRS-012 and their tests:
+- the report contains each listed item, with values matching the fixture, the worst records
+  in the expected order: the tests on the standard fixture below;
+- two episodes, one that ends before 5:00 and one after it: record 207 of the standard
+  fixture (`test_episode_before_5_minutes_counts_only_in_the_episodes_of_the_record`) and
+  the case `one-before-and-one-after-5min` of the figures of one record;
+- an episode that contains 5:00, with beats and unpaired detections before and after 5:00:
+  record 209 (`test_episode_that_contains_5_minutes_counts_from_5_minutes`) and the case
+  `contains-5min`;
+- a detection left unscored by the rule at 5:00 inside an episode: record 209
+  (`test_detection_dropped_by_the_rule_at_5_minutes_is_not_counted`) and the cases
+  `dropped-at-5min-inside-an-episode` and `dropped-at-5min-no-scored-beat`;
+- two episodes that share a sample: `test_sample_shared_by_two_episodes_is_counted_once` and
+  the case `two-episodes-sharing-a-sample`;
+- fewer than five records whose Se or +P is defined:
+  `test_ranking_lists_only_the_records_whose_value_is_defined` and
+  `test_ranking_is_empty_when_no_record_has_a_defined_value`;
+- a gross Se or +P that is not defined: the cases `no-detection` and `nothing` of
+  `test_threshold_outcome_is_decided_on_the_exact_counts`;
+- fixtures without episodes: `test_report_says_so_when_no_record_has_an_episode`;
+- a fixture database that fails verification: the tests of the last group.
+
 The text formats (headings, table columns, sentences) are those of the documented report
-format (architecture, section 8.10).
+format (architecture, section 8.10). The count of flutter-wave annotations outside the
+episodes is a design figure of the same section of the report (architecture, sections 8.8
+and 8.10), tested here with it.
 """
 
 from __future__ import annotations
@@ -71,7 +96,8 @@ NSTDB_TITLE = "MIT-BIH Noise Stress Test Database"
 NOT_SCORED_SENTENCE = (
     "The first 5 min of each record are not scored. Ventricular flutter and fibrillation "
     "episodes are not scored either. The durations and counts below cover the part of each "
-    "record from 5:00 to its end."
+    "record from 5:00 to its end, except the episodes in the record, which are counted over "
+    "the whole record."
 )
 NO_EPISODE_SENTENCE = (
     "No ventricular flutter or fibrillation episode is annotated in these records."
@@ -532,9 +558,11 @@ def _evaluation(
     *,
     fs_hz: float = 360.0,
     figures: tuple[int, int, int, int, int] = (0, 0, 0, 0, 0),
+    flutter_waves: int = 0,
 ) -> RecordEvaluation:
-    """Evaluation results of one record: counts and (episodes, episodes from 5:00, samples
-    from 5:00, reference beats not scored, detections not scored)."""
+    """Evaluation results of one record: counts, (episodes, episodes from 5:00, samples
+    from 5:00, reference beats not scored, detections not scored) and flutter waves outside
+    the episodes."""
     episodes, scored, samples, reference, detections = figures
     return RecordEvaluation(
         record=name,
@@ -546,7 +574,7 @@ def _evaluation(
         vf_samples_scored=samples,
         reference_excluded=reference,
         detections_excluded=detections,
-        flutter_waves_outside_vf=0,
+        flutter_waves_outside_vf=flutter_waves,
     )
 
 
@@ -586,13 +614,16 @@ def _results(evaluations: Sequence[RecordEvaluation]) -> ValidationResults:
 def test_ranking_lists_only_the_records_whose_value_is_defined(
     parse_report: Callable[[str], Any],
 ) -> None:
-    """The rankings with fewer than five defined values.
+    """The rankings with fewer than five defined values (a case of the SRS-012 verification).
 
+    SRS-012 (v0.6): the lowest-value lists are among the records whose value is defined,
+    fewer than five if fewer records have a defined value.
     Input: rendered results of four records: 100 (TP 0, FN 0, FP 3: Se not defined, +P
     0.00), 101 (10, 0, 0: 100.00, 100.00), 102 (9, 1, 0: 90.00, 100.00), 103 (9, 1, 1:
     90.00, 90.00).
-    Expected: lowest Se: 102 90.00, 103 90.00, 101 100.00 (100 not ranked); lowest +P: 100
-    0.00, 103 90.00, 101 100.00, 102 100.00 (ties by record name).
+    Expected: lowest Se: 102 90.00, 103 90.00, 101 100.00 (three records; 100 not ranked);
+    lowest +P: 100 0.00, 103 90.00, 101 100.00, 102 100.00 (four records; ties by record
+    name).
     """
     results = _results(
         [
@@ -615,6 +646,52 @@ def test_ranking_lists_only_the_records_whose_value_is_defined(
         (3, "101", "100.00"),
         (4, "102", "100.00"),
     ]
+
+
+@pytest.mark.requirement("SRS-012")
+@pytest.mark.parametrize(
+    ("counts", "empty", "ranked"),
+    [
+        pytest.param(
+            [("100", 0, 0, 3), ("101", 0, 0, 1)],
+            ("lowest sensitivity", "Se"),
+            ("lowest positive predictivity", [(1, "100", "0.00"), (2, "101", "0.00")]),
+            id="no-defined-se",
+        ),
+        pytest.param(
+            [("100", 0, 2, 0), ("101", 0, 1, 0)],
+            ("lowest positive predictivity", "+P"),
+            ("lowest sensitivity", [(1, "100", "0.00"), (2, "101", "0.00")]),
+            id="no-defined-ppv",
+        ),
+    ],
+)
+def test_ranking_is_empty_when_no_record_has_a_defined_value(
+    counts: list[tuple[str, int, int, int]],
+    empty: tuple[str, str],
+    ranked: tuple[str, list[tuple[int, str, str]]],
+    parse_report: Callable[[str], Any],
+) -> None:
+    """The lowest-value list when none of the records has a defined value.
+
+    The limit of the SRS-012 case "fewer than five records whose Se, or +P, is defined": none.
+    Input: rendered results of two records whose Se is not defined (TP 0, FN 0, FP 3 and 1:
+    +P 0.00 for both); then of two records whose +P is not defined (TP 0, FN 2 and 1, FP 0:
+    Se 0.00 for both).
+    Expected: the list of the measure that is never defined ranks no record: its section has
+    no table, and the paragraph of the documented format "No record has a defined Se." (or
+    "+P"); the list of the other measure ranks both records, 100 then 101 (a tie, by record
+    name).
+    """
+    results = _results([_evaluation(name, tp, fn, fp) for name, tp, fn, fp in counts])
+    report = parse_report(render_full_report(results))
+    keyword, measure = empty
+    section = report.section(keyword)
+
+    assert section.tables() == []
+    assert f"No record has a defined {measure}." in _non_table_lines(section)
+    assert not any(re.search(r"\b10[01]\b", line) for line in section.lines)
+    assert _ranking(report, ranked[0]) == ranked[1]
 
 
 # --------------------------------------------------------------------------------------------
@@ -702,10 +779,14 @@ def test_threshold_outcome_is_decided_on_the_exact_counts(
 ) -> None:
     """The pass or fail around the 99.50% thresholds of SRS-007 ("at least 99.5%").
 
+    SRS-012 (v0.6): a threshold whose value is not defined (SRS-011) is reported as fail; the
+    cases `no-detection` (gross +P not defined) and `nothing` (gross Se and +P not defined)
+    are the verification case "a gross Se or +P that is not defined".
     Input: rendered results of one record with the given TP, FN and FP (so the gross values
     are those of the record).
     Expected: exactly 99.50% passes; 198 of 199 (99.497%, shown as 99.50) fails; 99.49%
-    fails; a value that is not defined fails; the value shown with two decimals.
+    fails; a value that is not defined is shown as "not defined" and fails; the value shown
+    with two decimals.
     """
     tp, fn, fp = counts
     report = parse_report(render_full_report(_results([_evaluation("100", tp, fn, fp)])))
@@ -768,11 +849,13 @@ def test_report_states_what_was_not_scored_for_each_record_with_an_episode(
 
     Input: the report of the standard fixture; records 207 to 211 have episodes, the others
     none.
-    Expected, in the section "Segments not scored": the sentence that the first 5 min are not
-    scored and that the figures cover the part of each record from 5:00 to its end; a table
-    with one row per record that has an episode, in order of record name (207 to 211 only):
-    record, episodes in the record, episodes from 5:00, duration from 5:00 (s, one decimal),
-    reference beats not scored, detections not scored.
+    Expected, in the section "Segments not scored": the documented sentence that the first
+    5 min are not scored and that the figures cover the part of each record from 5:00 to its
+    end, except the episodes in the record, counted over the whole record (architecture
+    section 8.10, SRS-012 v0.6); a table with one row per record that has an episode, in
+    order of record name (207 to 211 only): record, episodes in the record, episodes from
+    5:00, duration from 5:00 (s, one decimal), reference beats not scored, detections not
+    scored.
     """
     section = parse_report(standard_run.text).section("segments not scored")
     table = section.table_with_row("207")
@@ -793,9 +876,9 @@ def test_episode_before_5_minutes_counts_only_in_the_episodes_of_the_record(
     beats, 21 unpaired detections inside); episode 2 from 115200 to 124350 (25 reference
     beats and 2 unpaired detections inside; a third detection inside it is paired with a
     scored beat outside it).
-    Expected: 2 episodes in the record; 1 from 5:00; the duration of the second episode,
-    9151 samples = 25.4 s; 25 reference beats and 2 detections not scored, those of the
-    second episode only.
+    Expected: 2 episodes in the record (the whole record: the episode before 5:00 counts);
+    1 from 5:00; the duration of the second episode, 9151 samples = 25.4 s; 25 reference
+    beats and 2 detections not scored, those of the second episode only.
     """
     row = _not_scored_table(standard_run, parse_report).row("207")
 
@@ -806,31 +889,33 @@ def test_episode_before_5_minutes_counts_only_in_the_episodes_of_the_record(
 def test_episode_that_contains_5_minutes_counts_from_5_minutes(
     standard_run: Run, parse_report: Callable[[str], Any]
 ) -> None:
-    """An episode that contains 5:00 (a case of architecture section 8.8.3).
+    """An episode that contains 5:00 (a case of the SRS-012 verification, v0.6).
 
     Input: record 209 of the standard fixture: one episode from 107000 to 109000, with the
-    reference beats 107100, 107460 and 107820 before 5:00 and 108180, 108540 and 108900 after.
+    reference beats 107100, 107460 and 107820 before 5:00 and 108180, 108540 and 108900 after;
+    unpaired detections inside it at 107103, 107463 and 107823 before 5:00 and at 108543 and
+    108903 after (and 108020, the detection dropped by the rule at 5:00: see the next test).
     Expected: 1 episode in the record, 1 from 5:00; duration from 5:00 to its offset,
-    109000 - 108000 + 1 = 1001 samples = 2.8 s; 3 reference beats not scored (those at or
-    after 5:00 only).
+    109000 - 108000 + 1 = 1001 samples = 2.8 s; 3 reference beats and 2 detections not scored
+    (those at or after 5:00 only: counting the items before 5:00 would give 6 and 5).
     """
     row = _not_scored_table(standard_run, parse_report).row("209")
 
-    assert row[:5] == ("209", "1", "1", "2.8", "3")
+    assert row == ("209", "1", "1", "2.8", "3", "2")
 
 
 @pytest.mark.requirement("SRS-012")
 def test_detection_dropped_by_the_rule_at_5_minutes_is_not_counted(
     standard_run: Run, parse_report: Callable[[str], Any]
 ) -> None:
-    """The detection left unscored by the rule at 5:00 inside an episode (architecture 8.8.3).
+    """The detection left unscored by the rule at 5:00 inside an episode (SRS-012 v0.6 case).
 
     Input: record 209 of the standard fixture: inside the episode from 107000 to 109000,
     detections at 108020 (the first after 5:00, within 150 ms of it, and the next detection
     is closer to the first scored beat 109260: dropped by the rule at 5:00 of SRS-008),
     108543 and 108903 (not paired).
     Expected: 2 detections not scored, in the report and in the results; the dropped one is
-    not included.
+    not included (3 if it were).
     """
     row = _not_scored_table(standard_run, parse_report).row("209")
     evaluation = next(r for r in standard_run.results.records if r.record == "209")
@@ -910,10 +995,14 @@ def test_flutter_waves_outside_episodes_are_counted(
 ) -> None:
     """The count of flutter-wave annotations outside the episodes (architecture 8.8, 8.10).
 
-    Input: the standard fixture (a flutter wave `!` inside an episode of record 207, one
-    outside any episode in record 210) and the fixture without episodes (none).
+    A design figure of the section on what is not scored: the `!` annotations from 5:00 to
+    the end of each record that lie outside every episode, summed over the records.
+    Input: the standard fixture (a flutter wave `!` inside an episode of record 207, after
+    5:00; in record 210, one at 60090, before 5:00, and one at 120240, after 5:00, both
+    outside any episode) and the fixture without episodes (none).
     Expected: "Flutter-wave annotations outside ventricular flutter and fibrillation
-    episodes, in all records: 1." and, for the fixture without episodes, ": 0.".
+    episodes, in all records: 1." (only the one at 120240 in record 210) and, for the fixture
+    without episodes, ": 0.".
     """
     standard = parse_report(standard_run.text).section("segments not scored")
     no_episode = parse_report(no_episode_run.text).section("segments not scored")
@@ -1000,15 +1089,16 @@ def _record(
     detections: Sequence[int],
     others: Sequence[tuple[int, str]],
     n_samples: int = 151200,
+    fs_hz: float = 360.0,
 ) -> Record:
-    """A record at 360 Hz whose channel has a 1 mV spike at each detection sample."""
+    """A record (360 Hz by default) whose channel has a 1 mV spike at each detection sample."""
     signal = np.zeros(n_samples, dtype=np.float64)
     signal[list(detections)] = 1.0
     return Record(
         name="900",
         channel=0,
         signal_name="MLII",
-        fs_hz=360.0,
+        fs_hz=fs_hz,
         signal_mv=signal,
         beat_samples=np.asarray(beats, dtype=np.int64),
         beat_symbols=tuple("N" for _ in beats),
@@ -1088,6 +1178,38 @@ def _record(
             id="record-of-exactly-5min",
         ),
         pytest.param([], [110000], [110003], 151200, (1, 0, 0, 0, 0, 0, 0, 0), id="no-episode"),
+        pytest.param(
+            [(107000, "["), (109000, "]")],
+            [107100, 107460, 108180, 108540, 110000],
+            [107103, 107463, 108183, 108543, 110003],
+            151200,
+            (1, 0, 0, 1, 1, 1001, 2, 2),
+            id="contains-5min",
+        ),
+        pytest.param(
+            [(107000, "["), (109000, "]")],
+            [110000],
+            [108020, 110000],
+            151200,
+            (1, 0, 0, 1, 1, 1001, 0, 0),
+            id="dropped-at-5min-inside-an-episode",
+        ),
+        pytest.param(
+            [(107000, "[")],
+            [108180],
+            [108020, 108183],
+            151200,
+            (0, 0, 0, 1, 1, 43200, 1, 1),
+            id="dropped-at-5min-no-scored-beat",
+        ),
+        pytest.param(
+            [(0, "["), (1000, "]"), (50000, "["), (60000, "]"), (120000, "["), (121000, "]")],
+            [500, 55000, 110000, 120500],
+            [503, 55003, 110003, 120503],
+            151200,
+            (1, 0, 0, 3, 1, 1001, 1, 1),
+            id="episodes-over-the-whole-record",
+        ),
     ],
 )
 def test_figures_of_what_was_not_scored_are_counted_from_5_minutes(
@@ -1112,7 +1234,22 @@ def test_figures_of_what_was_not_scored_are_counted_from_5_minutes(
       shared sample counted once, 5001 + 1001 - 1 = 6001 samples, the beat on it once;
     - one episode ending before 5:00 and one after it (the verification configuration);
     - a record of exactly 5 min with an episode: no scored part, nothing from 5:00;
-    - no episode.
+    - no episode;
+    - an episode from 107000 to 109000, which contains 5:00, with the beats 107100 and 107460
+      and unpaired detections 3 samples after them before 5:00, and the beats 108180 and
+      108540 and unpaired detections 3 samples after them from 5:00; a scored beat at 110000
+      and its detection: only the 2 beats and 2 detections from 5:00 counted (SRS-012 v0.6);
+    - the same episode, a first scored beat at 110000 and detections at 108020 and 110000:
+      108020 is dropped by the rule at 5:00 of SRS-008 (the next detection is closer to the
+      first scored beat) and is not counted although it lies inside the episode;
+    - an episode from 107000 without an offset, the beat 108180 inside it (so no reference
+      beat is scored) and detections at 108020 and 108183: 108020 is dropped by the rule at
+      5:00 (no reference beat is scored) and not counted, 108183 is counted; the episode lasts
+      from 5:00 to the last sample, 151199 - 108000 + 1 = 43200 samples;
+    - three episodes, from sample 0 (the first sample of the record) to 1000, from 50000 to
+      60000 and from 120000 to 121000, each with a beat and a detection inside: all three are
+      episodes in the record (the whole record, SRS-012 v0.6); only the last one is from 5:00,
+      with its beat and its detection.
     Expected: (TP, FN, FP, episodes in the record, episodes from 5:00, samples from 5:00
     inside an episode, reference beats not scored, detections not scored) as given.
     """
@@ -1131,6 +1268,155 @@ def test_figures_of_what_was_not_scored_are_counted_from_5_minutes(
         result.reference_excluded,
         result.detections_excluded,
     ) == expected
+
+
+@pytest.mark.requirement("SRS-012")
+def test_sample_shared_by_two_episodes_is_counted_once(
+    make_spike_detector: Callable[[], Any], parse_report: Callable[[str], Any]
+) -> None:
+    """Two episodes that share a sample (a case of the SRS-012 verification, v0.6).
+
+    At 250 Hz one sample changes the duration shown with one decimal here, which it cannot
+    do at 360 Hz (every rounding limit of 0.1 s falls on a whole sample there).
+    Input: a record of 7 min at 250 Hz (105000 samples; 5:00 = sample 75000, match window
+    37 samples) with an episode from 80000 to 81500 and one from 81500 to 82511 (the offset
+    of the first and the onset of the second on the same sample); reference beats at 78000,
+    81500 (the shared sample) and 90000; detections (spikes) at 78002, 81500 and 90002. The
+    record is evaluated with the default settings and its results rendered as the report.
+    Expected: TP 2, FN 0, FP 0; 2 episodes in the record and 2 from 5:00; 82511 - 80000 + 1 =
+    2512 samples inside an episode, the shared sample counted once, shown as 10.0 s (2512 /
+    250 = 10.048; counted twice, 2513 samples would show 10.1 s); the beat and the detection
+    on the shared sample counted once each: 1 reference beat and 1 detection not scored.
+    """
+    record = _record(
+        beats=[78000, 81500, 90000],
+        detections=[78002, 81500, 90002],
+        others=[(80000, "["), (81500, "]"), (81500, "["), (82511, "]")],
+        n_samples=105000,
+        fs_hz=250.0,
+    )
+
+    evaluation = evaluate_record(record, EvaluationSettings(), detector=make_spike_detector())
+    report = parse_report(render_full_report(_results([evaluation])))
+    row = report.section("segments not scored").table_with_row("900").row("900")
+
+    assert (evaluation.counts.tp, evaluation.counts.fn, evaluation.counts.fp) == (2, 0, 0)
+    assert (evaluation.vf_episodes, evaluation.vf_episodes_scored) == (2, 2)
+    assert evaluation.vf_samples_scored == 2512
+    assert (evaluation.reference_excluded, evaluation.detections_excluded) == (1, 1)
+    assert row == ("900", "2", "2", "10.0", "1", "1")
+
+
+@pytest.mark.requirement("SRS-012")
+@pytest.mark.parametrize(
+    ("others", "counted"),
+    [
+        pytest.param([(60090, "!")], 0, id="before-5min"),
+        pytest.param([(107999, "!")], 0, id="one-sample-before-5min"),
+        pytest.param([(108000, "!")], 1, id="at-5min"),
+        pytest.param([(120240, "!")], 1, id="after-5min"),
+        pytest.param([(151199, "!")], 1, id="on-the-last-sample"),
+        pytest.param([(151200, "!")], 0, id="after-the-last-sample"),
+        pytest.param([(119999, "!"), (120000, "["), (121000, "]")], 1, id="before-an-onset"),
+        pytest.param([(120000, "["), (120000, "!"), (121000, "]")], 0, id="on-the-onset"),
+        pytest.param([(120000, "["), (120500, "!"), (121000, "]")], 0, id="inside-an-episode"),
+        pytest.param([(120000, "["), (121000, "!"), (121000, "]")], 0, id="on-the-offset"),
+        pytest.param([(120000, "["), (121000, "]"), (121001, "!")], 1, id="after-an-offset"),
+        pytest.param(
+            [(107000, "["), (108500, "!"), (109000, "]")], 0, id="inside-an-episode-over-5min"
+        ),
+        pytest.param([(140000, "["), (151199, "!")], 0, id="inside-an-episode-without-offset"),
+        pytest.param(
+            [(50000, "["), (55000, "!"), (60000, "]")], 0, id="inside-an-episode-before-5min"
+        ),
+        pytest.param(
+            [
+                (60090, "!"),
+                (107999, "!"),
+                (108000, "!"),
+                (120000, "["),
+                (120500, "!"),
+                (121000, "]"),
+                (130000, "!"),
+                (151199, "!"),
+            ],
+            3,
+            id="several",
+        ),
+    ],
+)
+def test_flutter_waves_are_counted_from_5_minutes_outside_every_episode(
+    others: list[tuple[int, str]], counted: int, make_spike_detector: Callable[[], Any]
+) -> None:
+    """The limits of the count of flutter waves outside the episodes (a design figure).
+
+    Architecture sections 8.8 and 8.10: the report counts the `!` annotations from 5:00 to
+    the last sample of the record (the scored part, the only part where a `!` could change a
+    count) that lie outside every episode; a `!` on the onset or the offset sample of an
+    episode is inside it. A `!` is not a reference beat.
+    Input: a record of 7 min at 360 Hz (151200 samples, 5:00 = sample 108000) with a beat at
+    110000 and its detection at 110003, and the given `!` and episode annotations: a `!`
+    before 5:00, one sample before it, at 5:00, after it, on the last sample (151199), one
+    sample after it (an annotation beyond the end of the signal is kept by the loader); one
+    sample before the onset of an episode from 120000 to 121000, on its onset, inside it, on
+    its offset, one sample after it; inside an episode that contains 5:00, inside an episode
+    without an offset, inside an episode before 5:00; eight annotations together.
+    Expected: TP 1, FN 0, FP 0 in every case; flutter waves outside the episodes: 1 for a
+    `!` outside every episode from 108000 to 151199, 0 otherwise; 3 for the eight together
+    (108000, 130000 and 151199).
+    """
+    record = _record(beats=[110000], detections=[110003], others=others)
+
+    result = evaluate_record(record, EvaluationSettings(), detector=make_spike_detector())
+
+    assert (result.counts.tp, result.counts.fn, result.counts.fp) == (1, 0, 0)
+    assert result.flutter_waves_outside_vf == counted
+
+
+@pytest.mark.requirement("SRS-012")
+@pytest.mark.parametrize(
+    ("evaluations", "total", "with_episodes"),
+    [
+        pytest.param(
+            [
+                _evaluation("100", 10, 0, 0, flutter_waves=2),
+                _evaluation("101", 10, 0, 0),
+                _evaluation("102", 10, 0, 0, figures=(1, 1, 360, 1, 1), flutter_waves=3),
+            ],
+            5,
+            True,
+            id="with-episodes",
+        ),
+        pytest.param(
+            [_evaluation("100", 10, 0, 0, flutter_waves=1), _evaluation("101", 10, 0, 0)],
+            1,
+            False,
+            id="without-episodes",
+        ),
+    ],
+)
+def test_report_gives_the_flutter_waves_of_all_records(
+    evaluations: list[RecordEvaluation],
+    total: int,
+    with_episodes: bool,
+    parse_report: Callable[[str], Any],
+) -> None:
+    """The flutter-wave sentence gives the sum over the records (a design figure, 8.10).
+
+    Input: rendered results of three records with 2, 0 and 3 flutter waves outside the
+    episodes, one of which has an episode; then of two records with 1 and 0 flutter waves and
+    no episode.
+    Expected: "Flutter-wave annotations outside ventricular flutter and fibrillation
+    episodes, in all records: 5." after the table, and ": 1." after the sentence that no
+    record has an episode; the introduction sentence of the section in both reports.
+    """
+    section = parse_report(render_full_report(_results(evaluations))).section("segments not scored")
+    text = " ".join(_non_table_lines(section))
+
+    assert NOT_SCORED_SENTENCE in text
+    assert FLUTTER_SENTENCE.format(n=total) in text
+    assert (NO_EPISODE_SENTENCE in text) is not with_episodes
+    assert bool(section.tables()) is with_episodes
 
 
 # --------------------------------------------------------------------------------------------

@@ -862,18 +862,25 @@ def _record_209() -> FixtureRecord:
 
 
 def _record_210() -> FixtureRecord:
-    """An episode that ends before 5:00 only, and a flutter wave outside any episode.
+    """An episode that ends before 5:00 only, and two flutter waves outside any episode.
 
     Beats every 360 samples from 180, each with a spike 3 samples later. An episode from 36000
-    to 43200 (20 beats and their spikes inside it). A flutter wave ``!`` at 60090, outside it.
+    to 43200 (20 beats and their spikes inside it). Two flutter waves ``!`` outside it: one at
+    60090, before 5:00, and one at 120240, after 5:00, halfway between the beats 120060 and
+    120420 (177 samples from the nearest spike). A ``!`` is not a reference beat, so neither
+    changes the counts.
     Expected: TP 120, FN 0, FP 0; 1 episode in the record, 0 from 5:00, duration 0 samples,
-    no reference beat and no detection not scored; 1 flutter wave outside the episodes.
+    no reference beat and no detection not scored; 1 flutter wave outside the episodes: the
+    one at 120240. The one at 60090 is not counted, because the flutter waves are counted from
+    5:00 to the end of the record (architecture sections 8.8 and 8.10, a design figure of the
+    report).
     """
     beats = _every_360()
     others: list[AnnotationTuple] = [
         (36000, "[", 0, ""),
         (43200, "]", 0, ""),
         (60090, "!", 0, ""),
+        (120240, "!", 0, ""),
     ]
     return FixtureRecord(
         name="210",

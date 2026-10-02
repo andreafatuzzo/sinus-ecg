@@ -45,7 +45,8 @@ _N_LOWEST: Final = 5
 _NOT_SCORED_INTRODUCTION: Final = (
     "The first 5 min of each record are not scored. Ventricular flutter and fibrillation "
     "episodes are not scored either. The durations and counts below cover the part of each "
-    "record from 5:00 to its end."
+    "record from 5:00 to its end, except the episodes in the record, which are counted over "
+    "the whole record."
 )
 _NO_EPISODE: Final = "No ventricular flutter or fibrillation episode is annotated in these records."
 _NO_THRESHOLD: Final = "No pass threshold is set for these results (OP-031)."
@@ -111,10 +112,14 @@ def render_subset_report(results: ValidationResults) -> str:
         The report, ending with one line feed.
 
     Raises:
-        InvalidInputError: If ``results`` does not cover a subset of the records.
+        InvalidInputError: If ``results`` does not cover a subset of the records, or holds
+            noise stress results.
     """
-    if not results.subset:
-        raise InvalidInputError("the subset report needs the results of a subset of the records")
+    if not results.subset or results.noise_stress is not None:
+        raise InvalidInputError(
+            "the subset report needs the results of a subset of the records, without the "
+            "noise stress test"
+        )
     records = _sorted_records(results.records)
     statistics = [record_statistics(record.counts) for record in records]
     aggregate = aggregate_statistics([record.counts for record in records])

@@ -1,4 +1,4 @@
-"""Requirement tests of SRS-002: loading a reference record.
+"""Requirement tests of SRS-002: loading a reference record (risk control RC-003).
 
 Each test writes a synthetic WFDB record in a temporary folder with the wfdb package (signal
 file, header and annotation file) and loads it through the public loader. The written record
@@ -11,8 +11,11 @@ and others.
 Pass criteria (SRS-002): the signal equals the written one within one quantization step of
 the record (1 / ADC gain, read from the written header); the sampling frequency is equal; the
 beat annotations are equal and hold no non-beat annotation; every non-beat annotation is in
-the separate list. A request for a channel that the record does not have, or for a channel
-whose units in the header are not mV, raises an explicit error, so that nothing is returned.
+the separate list. A record whose header states no units for the channel is loaded in the
+same way, with the signal in mV (SRS-002 v0.6: units that the header does not state are mV).
+A request for a channel that the record does not have, or for a channel whose units in the
+header are not mV, raises an explicit error, so that nothing is returned (RC-003: invalid
+input is rejected, not processed).
 """
 
 from __future__ import annotations
@@ -684,23 +687,40 @@ def test_header_without_units_is_read_as_millivolts(
     write_wfdb_record: Callable[..., Path],
     channel: int,
 ) -> None:
-    """A header that gives no units, as the headers of the MIT-BIH Arrhythmia Database.
+    """A header that states no units, as the headers of the MIT-BIH Arrhythmia Database.
 
-    In the WFDB header format, a signal whose units field is absent is in millivolts; the
-    headers of the reference database give only the ADC gain (e.g. `200`). The rejection of
-    units other than mV must not reject them.
-    Input: the reference record written in `mV`, whose header is then rewritten without the
-    units field (`200.0(1024)` instead of `200.0(1024)/mV`), requested for channel 0 and 1.
-    Expected: the record is loaded; the signal equals the written one within one quantization
-    step (0.005 mV for channel 0, 0.01 mV for channel 1).
+    SRS-002 (v0.6): signal units that the record header does not state are mV. Verification:
+    the same record with a header that states no units is loaded in the same way, with the
+    signal in mV. The headers of the reference databases give only the ADC gain (e.g. `200`),
+    so the rejection of units other than mV must not reject them.
+    Input: the reference record written in `mV` (30 s at 360 Hz, two signals, 37 beat and 12
+    non-beat annotations), whose header is then rewritten without the units field
+    (`200.0(1024)` instead of `200.0(1024)/mV`), requested for channel 0 and for channel 1.
+    Expected: the record is loaded, with no error, and meets every pass criterion of the
+    record with units: the signal of the channel, in mV, equals the written millivolt signal
+    within one quantization step (0.005 mV for channel 0, 0.01 mV for channel 1; a signal
+    read in µV or V would be off by a factor of 1000); the name of the record and of the
+    signal, the channel, the sampling frequency (360 Hz) and the number of samples (10800)
+    are those written; the beat annotations equal the written ones; the non-beat annotations
+    equal the written ones, in the separate list.
     """
     written = _write_reference(tmp_path, make_synthetic_ecg, write_wfdb_record)
     header = written.path.with_suffix(".hea")
     content = header.read_bytes()
     assert content.count(b"/mV") == 2
     header.write_bytes(content.replace(b"/mV", b""))
+    assert b"/" not in header.read_bytes(), "the rewritten header still states units"
 
     record = load_record(written.path, channel)
 
     step_mv = 1.0 / ADC_GAIN[channel]
     assert float(np.max(np.abs(record.signal_mv - written.signals_mv[:, channel]))) <= step_mv
+    assert record.signal_mv.dtype == np.float64
+    assert record.n_samples == 10800
+    assert record.name == "rec1"
+    assert record.channel == channel
+    assert record.signal_name == SIGNAL_NAMES[channel]
+    assert record.fs_hz == FS_HZ
+    assert record.beat_samples.tolist() == [sample for sample, _ in written.beats]
+    assert list(record.beat_symbols) == [code for _, code in written.beats]
+    assert _other_tuples(record) == list(written.others)

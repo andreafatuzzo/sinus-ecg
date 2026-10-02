@@ -1,12 +1,14 @@
 """Requirement tests of SRS-010: QRS detection with baseline wander and mains interference.
 
 Risk control RC-002: detection meets all the criteria of SRS-006, including exactly one index
-for each QRS complex and no other index, on an ECG with a heart rate between 30 and 200 bpm
-(bounds included) and 1 mV QRS amplitude, to which a 0.3 Hz sinusoid of 1 mV and a sinusoid
-of 0.2 mV at the mains frequency are added. The inputs are the synthetic ECGs of the SRS-006
-tests (known QRS positions) at 30, 40, 75, 180 and 200 bpm; the mains setting matches the
-interference. The pass criteria are those of SRS-006, applied in samples with exact bounds
-(see the SRS-006 tests).
+for each QRS complex and no other index, on an ECG with a regular rhythm between 30 and
+200 bpm (bounds included) and 1 mV QRS amplitude, to which a 0.3 Hz sinusoid of 1 mV and a
+sinusoid of 0.2 mV at the mains frequency are added (SRS v0.6). The inputs are the synthetic
+ECGs of the SRS-006 tests (a regular rhythm, known QRS positions) at 30, 40, 75, 180 and
+200 bpm; the mains setting matches the interference. The pass criteria are those of SRS-006,
+applied in samples with exact bounds (see the SRS-006 tests): with exactly one index for each
+QRS complex and no other index, every index is the index of a detected QRS complex and must
+lie within 150 ms of it.
 """
 
 from __future__ import annotations

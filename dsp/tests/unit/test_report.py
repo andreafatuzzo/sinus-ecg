@@ -16,7 +16,12 @@ from sinus_dsp.evaluation.noise_stress import (
     snr_db,
 )
 from sinus_dsp.evaluation.report import render_full_report, render_subset_report
-from sinus_dsp.evaluation.run import EvaluationSettings, RecordEvaluation, ValidationResults
+from sinus_dsp.evaluation.run import (
+    DEFAULT_SETTINGS,
+    EvaluationSettings,
+    RecordEvaluation,
+    ValidationResults,
+)
 
 MITDB_VERIFICATION = VerificationResult(
     Database("mitdb", "1.0.0", "Fixture Arrhythmia Database", "a" * 64),
@@ -26,7 +31,6 @@ MITDB_VERIFICATION = VerificationResult(
 NSTDB_VERIFICATION = VerificationResult(
     Database("nstdb", "1.0.0", "Fixture Noise Database", "b" * 64), None, ("118e24.dat",)
 )
-DEFAULT_SETTINGS = EvaluationSettings()
 
 
 def evaluation(
@@ -187,7 +191,8 @@ EXPECTED_FULL_REPORT = (
                 "",
                 "The first 5 min of each record are not scored. Ventricular flutter and "
                 "fibrillation episodes are not scored either. The durations and counts below "
-                "cover the part of each record from 5:00 to its end.",
+                "cover the part of each record from 5:00 to its end, except the episodes in the "
+                "record, which are counted over the whole record.",
                 "",
                 "| Record | Episodes in the record | Episodes from 5:00 | Duration from 5:00 (s) "
                 "| Reference beats not scored | Detections not scored |",
@@ -481,7 +486,8 @@ def test_no_episode_in_any_record() -> None:
     assert section.split("\n\n") == [
         "The first 5 min of each record are not scored. Ventricular flutter and fibrillation "
         "episodes are not scored either. The durations and counts below cover the part of "
-        "each record from 5:00 to its end.",
+        "each record from 5:00 to its end, except the episodes in the record, which are "
+        "counted over the whole record.",
         "No ventricular flutter or fibrillation episode is annotated in these records.",
         "Flutter-wave annotations outside ventricular flutter and fibrillation episodes, in "
         "all records: 0.",
@@ -568,3 +574,18 @@ def test_full_report_needs_the_whole_evaluation() -> None:
 def test_subset_report_needs_a_subset() -> None:
     with pytest.raises(InvalidInputError, match="needs the results of a subset"):
         render_subset_report(full_results())
+    with pytest.raises(InvalidInputError, match="needs the results of a subset"):
+        render_subset_report(dataclasses.replace(subset_results(), subset=False))
+
+
+def test_subset_report_refuses_results_with_a_noise_stress_test() -> None:
+    results = dataclasses.replace(subset_results(), noise_stress=noise_stress())
+    assert results.subset is True
+    with pytest.raises(
+        InvalidInputError,
+        match=(
+            "^the subset report needs the results of a subset of the records, without the "
+            "noise stress test$"
+        ),
+    ):
+        render_subset_report(results)

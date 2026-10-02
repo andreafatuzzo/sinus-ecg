@@ -193,7 +193,8 @@ def _write_fixture_databases(data_root: Path) -> tuple[Database, Database]:
     - ``mitdb``: ``RECORDS`` lists 207, 100, 119, 118 (not sorted), plus ``mitdbdir/notes.txt``.
       Counts (TP, FN, FP): 100 (2, 1, 1); 118 (2, 0, 0); 119 (3, 1, 0); 207 (2, 0, 0). Record
       207 has two episodes, one before 5:00 and one from 6200 to 6300 (101 samples), one
-      reference beat and two unpaired detections inside the second, and one ``!`` outside.
+      reference beat and two unpaired detections inside the second, and two ``!`` outside
+      the episodes: one before 5:00 (not counted) and one after it (counted).
     - ``nstdb``: the 12 noise stress records, plus ``RECORDS`` and ``old/readme.txt``. At the
       SNR index ``j`` (0 for 24 dB … 5 for -6 dB): TP 2, FN 0 for ``j < 3``, else TP 1, FN 1;
       FP 1 for ``j >= 4``, else 0.
@@ -214,7 +215,7 @@ def _write_fixture_databases(data_root: Path) -> tuple[Database, Database]:
         "207",
         n_samples=6600,
         beats=[100, 6100, 6250, 6400],
-        others=[(50, "["), (150, "]"), (6200, "["), (6300, "]"), (6500, "!")],
+        others=[(50, "["), (150, "]"), (300, "!"), (6200, "["), (6300, "]"), (6500, "!")],
         detections=[120, 6100, 6260, 6280, 6401],
     )
     (mitdb_dir / "mitdbdir").mkdir()

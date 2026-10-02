@@ -292,14 +292,14 @@ def test_counts_equal_the_matching() -> None:
 
 def test_figures_on_what_is_not_scored() -> None:
     others = [
-        (50, "!"),  # outside every episode
+        (50, "!"),  # outside every episode, before 5:00: not counted
         (100, "["),
         (150, "!"),  # inside the first episode
         (200, "]"),
         (6500, "["),
         (6550, "!"),  # inside the second episode
         (6600, "]"),
-        (6700, "!"),  # outside
+        (6700, "!"),  # outside, from 5:00: counted
         (6700, "+"),
     ]
     record = make_record(beats=[120, 180, 6300, 6520, 6580, 6900], others=others)
@@ -311,7 +311,103 @@ def test_figures_on_what_is_not_scored() -> None:
     assert evaluation.vf_samples_scored == 101
     assert evaluation.reference_excluded == 2
     assert evaluation.detections_excluded == 1
+    assert evaluation.flutter_waves_outside_vf == 1
+
+
+# Records of 7000 samples at 20 Hz: the scored part is 6000 (5:00) to 6999.
+@pytest.mark.parametrize(
+    ("sample", "expected"),
+    [
+        (0, 0),  # first sample of the record, before 5:00
+        (START - 1, 0),  # the sample before 5:00
+        (START, 1),  # 5:00
+        (START + 1, 1),
+        (6999, 1),  # the last sample of the record
+        (7000, 0),  # the first sample after the record
+        (7500, 0),  # beyond the end of the record
+    ],
+)
+def test_flutter_wave_counted_only_in_the_scored_part(sample: int, expected: int) -> None:
+    record = make_record(n_samples=7000, others=[(sample, "!")])
+    evaluation = evaluate_record(record, EvaluationSettings(), RecordingDetector())
+    assert evaluation.flutter_waves_outside_vf == expected
+
+
+@pytest.mark.parametrize(
+    ("sample", "expected"),
+    [
+        (6499, 1),  # the sample before the onset
+        (6500, 0),  # the onset sample
+        (6550, 0),  # inside
+        (6600, 0),  # the offset sample
+        (6601, 1),  # the sample after the offset
+    ],
+)
+def test_flutter_wave_inside_an_episode_from_five_minutes_is_not_counted(
+    sample: int, expected: int
+) -> None:
+    others = sorted([(6500, "["), (6600, "]"), (sample, "!")], key=lambda entry: entry[0])
+    record = make_record(n_samples=7000, others=others)
+    evaluation = evaluate_record(record, EvaluationSettings(), RecordingDetector())
+    assert evaluation.flutter_waves_outside_vf == expected
+
+
+def test_flutter_waves_around_an_episode_that_contains_five_minutes() -> None:
+    # The episode from 5900 to 6100 contains 5:00: a "!" inside it is not counted on either
+    # side of 5:00; a "!" outside it is counted only from 5:00.
+    others = [(5800, "!"), (5900, "["), (5950, "!"), (6000, "!"), (6100, "]"), (6101, "!")]
+    record = make_record(n_samples=7000, others=others)
+    evaluation = evaluate_record(record, EvaluationSettings(), RecordingDetector())
+    assert evaluation.flutter_waves_outside_vf == 1
+
+
+def test_flutter_waves_inside_an_episode_without_offset_are_not_counted() -> None:
+    # An episode without "]" lasts until the last sample of the record (6999).
+    others = [(6200, "!"), (6500, "["), (6800, "!"), (6999, "!"), (7000, "!")]
+    record = make_record(n_samples=7000, others=others)
+    evaluation = evaluate_record(record, EvaluationSettings(), RecordingDetector())
+    assert evaluation.flutter_waves_outside_vf == 1
+
+
+def test_flutter_waves_of_a_record_of_five_minutes_or_less_are_not_counted() -> None:
+    others = [(0, "!"), (3000, "!"), (START - 1, "!"), (START, "!")]
+    for n_samples in (START, START - 100):
+        record = make_record(n_samples=n_samples, others=others)
+        evaluation = evaluate_record(record, EvaluationSettings(), RecordingDetector())
+        assert evaluation.flutter_waves_outside_vf == 0
+
+
+def test_only_flutter_waves_are_counted() -> None:
+    # Other non-beat annotations at the same samples are not flutter waves.
+    others = [(6100, "!"), (6100, "+"), (6200, "~"), (6300, "x"), (6400, "!"), (6400, "|")]
+    record = make_record(n_samples=7000, beats=[6150], others=others)
+    evaluation = evaluate_record(record, EvaluationSettings(), RecordingDetector([6150]))
     assert evaluation.flutter_waves_outside_vf == 2
+
+
+def _flutter_oracle(annotations: Sequence[Annotation], n_samples: int, start: int) -> int:
+    """The flutter-wave count from its definition, with sets of samples."""
+    covered: set[int] = set()
+    for episode in vf_episodes(annotations, n_samples):
+        covered |= set(range(episode.start_sample, episode.end_sample + 1))
+    scored = set(range(start, n_samples)) - covered
+    return sum(
+        1 for annotation in annotations if annotation.symbol == "!" and annotation.sample in scored
+    )
+
+
+def test_flutter_wave_count_agrees_with_the_definition_on_random_records() -> None:
+    generator = random.Random(20261001)
+    for _ in range(2000):
+        n_samples = generator.randint(START - 10, START + 40)
+        samples = sorted(
+            generator.randint(START - 20, START + 50) for _ in range(generator.randint(0, 10))
+        )
+        others = [(sample, generator.choice("[]!!+")) for sample in samples]
+        record = make_record(n_samples=n_samples, others=others)
+        evaluation = evaluate_record(record, EvaluationSettings(), RecordingDetector())
+        expected = _flutter_oracle(record.other_annotations, n_samples, START)
+        assert evaluation.flutter_waves_outside_vf == expected
 
 
 def test_episode_that_contains_five_minutes_counts_from_five_minutes() -> None:

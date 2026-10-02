@@ -1,4 +1,4 @@
-"""Requirement tests of SRS-005: mains interference removal (risk control RC-002).
+"""Requirement tests of SRS-005: mains interference removal (risk controls RC-002, RC-003).
 
 Each gain is measured as SRS-005 states: the input lasts at least ten periods of its
 frequency and at least 2 s, and the amplitude is the RMS of the second half of the signal.
@@ -8,7 +8,8 @@ both conditions at every frequency tested.
 A setting other than 50 Hz or 60 Hz must be rejected with an explicit error and no filtered
 signal. It is checked on the mains filter and on the two public functions that configure it
 from a mains setting (the processing pipeline and the beat detection built on it), with an
-otherwise valid input, so that the setting is the only reason to reject it.
+otherwise valid input, so that the setting is the only reason to reject it (RC-003: an
+invalid setting is rejected, not processed).
 """
 
 from __future__ import annotations

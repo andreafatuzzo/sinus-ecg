@@ -1,21 +1,27 @@
 """Requirement tests of SRS-006: QRS detection (risk control RC-001).
 
-The inputs are synthetic ECGs whose QRS positions are known by construction (generator in
-`conftest.py`, independent of the software under test). The pass criteria are applied in
-samples, keeping the bounds of the requirement exact:
+The inputs are synthetic ECGs with a regular rhythm (a constant heart rate) whose QRS
+positions are known by construction (generator in `conftest.py`, independent of the software
+under test). The pass criteria are applied in samples, keeping the bounds of the requirement
+exact:
 
 - "within 150 ms": |index - QRS| <= floor(0.150 * fs) samples (54 at 360 Hz, 37 at 250 Hz);
 - "no closer than 200 ms": spacing >= ceil(0.200 * fs) samples (72 at 360 Hz, 50 at 250 Hz).
 
-The statement has two parts, and the tests follow them:
+The statement (SRS v0.6) has two parts, and the tests follow them:
 
 - for every input accepted by SRS-003, the indices are strictly increasing, no two are closer
-  than 200 ms, and each lies within 150 ms of the QRS complex it represents;
-- for a noise-free input with a heart rate between 30 and 200 bpm (bounds included), there is
-  exactly one index for each QRS complex and no other index.
+  than 200 ms, and the index of each detected QRS complex lies within 150 ms of that complex;
+- for a noise-free input with a regular rhythm between 30 and 200 bpm (bounds included),
+  there is exactly one index for each QRS complex and no other index.
 
-No test requires exactly one index per QRS complex outside 30-200 bpm. The detection is
-exercised through each of its public entry points.
+The 150 ms criterion concerns the QRS complexes that are detected; it does not by itself
+exclude an index that marks no QRS complex (a false detection, measured by SRS-007). From
+the output alone, an index more than 150 ms from every QRS complex cannot be told apart from
+such a false detection, so the criterion is checked where the second part applies: there,
+every index must be the one index of a QRS complex, within 150 ms of it. No test requires
+exactly one index per QRS complex, or every index within 150 ms of a QRS complex, outside
+those inputs. The detection is exercised through each of its public entry points.
 """
 
 from __future__ import annotations
@@ -88,12 +94,12 @@ def _assert_index_array(beats: Any, n_samples: int) -> None:
 def test_synthetic_ecg_has_qrs_complexes_at_the_known_positions(
     fs_hz: int, heart_rate_bpm: int, make_synthetic_ecg: Callable[..., Any]
 ) -> None:
-    """The test input is an ECG whose QRS positions are known.
+    """The test input is an ECG with a regular rhythm whose QRS positions are known.
 
     Input: the synthetic ECG of 30 s at 360 Hz and at 250 Hz, at 30, 40, 75, 180 and 200 bpm.
     Expected: 15, 20, 37, 88 and 97 known positions, spaced by 60 / heart rate (within one
-    sample), the first at 0.5 s; at each of them the signal has its R wave: a local maximum
-    of about 1 mV, which is also the largest sample within 150 ms.
+    sample: a regular rhythm), the first at 0.5 s; at each of them the signal has its R wave:
+    a local maximum of about 1 mV, which is also the largest sample within 150 ms.
     """
     ecg = make_synthetic_ecg(fs_hz, heart_rate_bpm)
     signal, qrs = ecg.signal_mv, ecg.qrs_samples
@@ -187,9 +193,10 @@ def test_each_qrs_has_exactly_one_detection_within_150_ms_and_no_other(
 ) -> None:
     """On a noise-free ECG, the output has exactly one index per QRS and no other index.
 
-    Input: the noise-free synthetic ECG of 30 s at 360 Hz and at 250 Hz, at 30, 40, 75, 180
-    and 200 bpm (15, 20, 37, 88 and 97 known QRS; 30 and 200 bpm are the limits of the range
-    of the statement, both included), with the mains setting 50 Hz and 60 Hz.
+    Input: the noise-free synthetic ECG of 30 s with a regular rhythm, at 360 Hz and at
+    250 Hz, at 30, 40, 75, 180 and 200 bpm (15, 20, 37, 88 and 97 known QRS; 30 and 200 bpm
+    are the limits of the range of the statement, both included), with the mains setting
+    50 Hz and 60 Hz.
     Expected: a one-dimensional int64 array of indices of input samples (index 0 = first input
     sample); every known QRS has exactly one index within 150 ms (54 samples at 360 Hz, 37 at
     250 Hz), and no index lies further than that from every known QRS.
@@ -218,8 +225,8 @@ def test_indices_are_strictly_increasing_and_at_least_200_ms_apart(
 ) -> None:
     """The output indices are strictly increasing and no two are closer than 200 ms.
 
-    Input: the noise-free synthetic ECG of 30 s at 360 Hz and at 250 Hz, at 30, 40, 75, 180
-    and 200 bpm, with the mains setting 50 Hz and 60 Hz.
+    Input: the noise-free synthetic ECG of 30 s with a regular rhythm, at 360 Hz and at
+    250 Hz, at 30, 40, 75, 180 and 200 bpm, with the mains setting 50 Hz and 60 Hz.
     Expected: a non-empty output in which every index is larger than the previous one by at
     least 200 ms (72 samples at 360 Hz, 50 at 250 Hz).
     """
@@ -241,9 +248,9 @@ def test_flat_input_of_10_s_gives_no_detection_and_no_error(
 ) -> None:
     """A flat input of 10 s produces no detections and no error.
 
-    A case named by the verification of SRS-006. A flat input has no QRS complex, so no
-    index can lie within 150 ms of a QRS complex that it represents (a criterion of every
-    accepted input); the output must be empty.
+    A case named by the verification of SRS-006 ("A flat input of 10 s produces no
+    detections and no error"): the expected result is taken from that line. A flat input is
+    accepted by SRS-003 and has no QRS complex, so any index would mark no QRS complex.
     Input: a constant signal of exactly 10 s (3600 samples at 360 Hz, 2500 at 250 Hz), at
     0 mV, 1 mV and -0.5 mV, with the mains setting 50 Hz and 60 Hz.
     Expected: no error, and an empty int64 array of indices.
@@ -327,12 +334,6 @@ def test_criteria_hold_on_the_shortest_accepted_input(
 # --- Criteria of every accepted input, outside the heart-rate range and on noise ------------
 
 
-def _indices_far_from_every_qrs(beats: Any, qrs_samples: Any, window: int) -> list[int]:
-    """The indices that lie more than ``window`` samples from every known QRS."""
-    qrs = np.asarray(qrs_samples, dtype=np.int64)
-    return [d for d in np.asarray(beats).tolist() if not np.any(np.abs(qrs - d) <= window)]
-
-
 @pytest.mark.requirement("SRS-006")
 @pytest.mark.parametrize("detector", DETECTORS)
 @pytest.mark.parametrize("fs_hz", SAMPLING_FREQUENCIES_HZ)
@@ -342,29 +343,30 @@ def test_outside_30_to_200_bpm_the_criteria_of_every_accepted_input_hold(
     fs_hz: int,
     heart_rate_bpm: int,
     make_synthetic_ecg: Callable[..., Any],
-    match_window_samples: Callable[[float], int],
     ordering_errors: Callable[..., list[str]],
 ) -> None:
     """Outside 30-200 bpm, only the criteria of every accepted input are required.
 
-    One index per QRS complex is required only from 30 to 200 bpm; the order, the spacing
-    and the 150 ms criterion apply to every input accepted by SRS-003.
-    Input: the noise-free synthetic ECG of 30 s at 360 Hz and at 250 Hz, at 20 and 29 bpm
-    (below the range) and at 201, 240 and 300 bpm (above it; at 300 bpm the QRS complexes are
-    exactly 200 ms apart), with the mains setting 50 Hz.
-    Expected: a non-empty int64 array of indices of input samples, strictly increasing and at
-    least 200 ms apart; every index within 150 ms of a known QRS. The number of indices per
-    QRS complex is not checked.
+    One index for each QRS complex, and no other index, is required only for a regular
+    rhythm from 30 to 200 bpm. The first sentence of the statement applies to every input
+    accepted by SRS-003: indices of input samples, strictly increasing and at least 200 ms
+    apart, and the index of each detected QRS complex within 150 ms of that complex. On these
+    inputs a QRS complex may be missed and an index may mark no QRS complex (SRS v0.6), so an
+    index more than 150 ms from every known QRS is not a failure: the 150 ms criterion is
+    checked where the second sentence applies (the tests above).
+    Input: the noise-free synthetic ECG of 30 s with a regular rhythm, at 360 Hz and at
+    250 Hz, at 20 and 29 bpm (below the range) and at 201, 240 and 300 bpm (above it; at
+    300 bpm the QRS complexes are exactly 200 ms apart), with the mains setting 50 Hz.
+    Expected: no error; a one-dimensional int64 array of indices of input samples, strictly
+    increasing and at least 200 ms apart (72 samples at 360 Hz, 50 at 250 Hz). The number of
+    indices, and where each lies, are not checked.
     """
     ecg = make_synthetic_ecg(fs_hz, heart_rate_bpm)
 
     beats = detector(ecg.signal_mv, ecg.fs_hz, 50)
 
     _assert_index_array(beats, ecg.signal_mv.size)
-    assert beats.size > 0
     assert ordering_errors(beats, ecg.fs_hz) == []
-    window = match_window_samples(ecg.fs_hz)
-    assert _indices_far_from_every_qrs(beats, ecg.qrs_samples, window) == []
 
 
 NOISE_KINDS = ["white", "spikes", "ecg+noise", "steps"]

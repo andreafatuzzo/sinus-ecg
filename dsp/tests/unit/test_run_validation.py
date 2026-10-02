@@ -6,7 +6,9 @@ Downloads use a fake fetch function that serves the fixture files. No test uses 
 or the real databases.
 """
 
+import dataclasses
 import hashlib
+import inspect
 import shutil
 import subprocess
 import sys
@@ -29,10 +31,12 @@ from sinus_dsp.data.physionet import (
 )
 from sinus_dsp.data.records import Record, load_record
 from sinus_dsp.errors import DataVerificationError, InvalidInputError, MalformedFileError
+from sinus_dsp.evaluation import run as run_module
 from sinus_dsp.evaluation.metrics import RecordCounts
 from sinus_dsp.evaluation.noise_stress import NOISE_STRESS_RECORDS
 from sinus_dsp.evaluation.report import render_full_report
 from sinus_dsp.evaluation.run import (
+    DEFAULT_SETTINGS,
     EvaluationSettings,
     ValidationResults,
     run_validation,
@@ -152,6 +156,16 @@ def test_defaults() -> None:
     assert write_validation_report.__kwdefaults__ == run_validation.__kwdefaults__
 
 
+def test_default_settings_are_the_public_constant() -> None:
+    """One frozen instance, the settings of the evaluation, is the default of both functions."""
+    assert DEFAULT_SETTINGS == EvaluationSettings(channel=0, mains_hz=60)
+    for function in (run_validation, write_validation_report):
+        assert inspect.signature(function).parameters["settings"].default is DEFAULT_SETTINGS
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        DEFAULT_SETTINGS.mains_hz = 50  # type: ignore[misc]
+    assert "_DEFAULT_SETTINGS" not in vars(run_module)
+
+
 def test_offline_run(data: tuple[Path, Database, Database], fake_detector: Detector) -> None:
     root, mitdb, nstdb = data
     loader = RecordingLoader()
@@ -186,6 +200,7 @@ def test_offline_run(data: tuple[Path, Database, Database], fake_detector: Detec
     assert (record_207.vf_episodes, record_207.vf_episodes_scored) == (2, 1)
     assert record_207.vf_samples_scored == 101
     assert (record_207.reference_excluded, record_207.detections_excluded) == (1, 2)
+    # Two "!" outside the episodes: at 300 (before 5:00, not counted) and at 6500 (counted).
     assert record_207.flutter_waves_outside_vf == 1
     # MIT-BIH records in name order, then the noise stress records in their order.
     mitdb_calls = [(root / "mitdb" / name, 0) for name in ("100", "118", "119", "207")]
