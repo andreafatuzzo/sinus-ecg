@@ -1,6 +1,6 @@
 # Software development plan
 
-_Inspired by IEC 62304 §5.1. Version 0.3.1, 2026-09-29. Status: draft (Milestone 0)._
+_Inspired by IEC 62304 §5.1. Version 0.4, 2026-10-02. Status: draft (Milestone 0); the changes of version 0.4 are pending approval by the project owner._
 
 > Sinus is not a medical device and claims no compliance with IEC 62304. This plan borrows the standard's structure so that the project is developed the way medical device software is.
 >
@@ -14,6 +14,7 @@ _Inspired by IEC 62304 §5.1. Version 0.3.1, 2026-09-29. Status: draft (Mileston
 | 0.2 | 2026-09-28 | Repository URL, reviewer role, detailed design scope |
 | 0.3 | 2026-09-29 | Software items aligned with the roadmap M0 to M6:<br>- portable C++17 library;<br>- Qt 6 desktop application;<br>- ESP32-S3 firmware in C++17 on ESP-IDF with FreeRTOS;<br>- backend.<br>Also:<br>- no quality management system;<br>- traceability gates and milestone register (ADR 0004);<br>- tools in use and planned per milestone, including the SBOM;<br>- development with AI assistance;<br>- equivalence, integration-by-replay and usability verification levels;<br>- definition of done per component |
 | 0.3.1 | 2026-09-29 | §6: rule for parameters tuned on the evaluation data |
+| 0.4 | 2026-10-02 | Software version and identification of `dsp` (OP-061; pending approval by the project owner). §4: the version follows the milestones, and every report and golden vector states the version and a digest of the package source; tags of correction releases. §3, activity 7: the release sets the version and regenerates the validation reports from the released code. §5.1: the release check of the reports. §6: results apply to the software they state; tuned parameters are recorded with the software identity before and after. §9: validation reports regenerated at each release |
 
 ## 1. Purpose and scope
 
@@ -64,7 +65,8 @@ Development is **incremental**: one milestone per increment (see the roadmap in 
    - the traceability matrix has no other gaps for the increment's requirements;
    - no open point still targets the milestone (enforced by the release gate, ADR 0004);
    - the process compliance review (Reviewer role, §3.1) reports no blocking findings;
-   - the pull request sets the milestone to `Released` in [`milestones.md`](milestones.md), and the project owner merges it into `main` and tags it (§4).
+   - the pull request sets the milestone to `Released` in [`milestones.md`](milestones.md) and the release version (§4), and the validation reports in `docs/validation/` are regenerated from the code being released. CI checks on the pull request into `main` that the version is not a development version and that every report states the released software;
+   - the project owner merges it into `main` and tags it (§4).
 
 ### 3.1 Roles
 
@@ -97,6 +99,14 @@ The same rules apply to work drafted with AI assistance (§5.3).
 - **Releases**:
   - [`milestones.md`](milestones.md) is the release register. A milestone becomes `In progress` when its work starts on `develop`, and the pull request that merges it into `main` sets it to `Released`.
   - After the merge, the project owner tags `main` as `m<N>` (e.g. `m1`). The tag identifies the exact code, documents and validation results of that increment.
+  - A correction released into `main` between milestone releases raises the patch number of the version (below) and is tagged `m<N>.<P>` (e.g. `m1.1` for version `0.1.1`).
+- **Software version and identification of `dsp`** (rule and checks: [`architecture.md`](architecture.md) §8.14):
+  - The version is written in `dsp/pyproject.toml` and `sinus_dsp/__init__.py`, always equal, and follows the milestone register: `0.N.0.dev0` while milestone N is `In progress` (the lowest one, if several are); `0.N.0` when milestone N is released; `0.N.P`, with P raised by 1, for each correction released into `main` before the next milestone starts. Milestone 0 was released as `0.0.1`.
+  - The version changes only with the milestone register. Changes within a milestone keep the same version, and are told apart by the **source digest**: a SHA-256 digest of the source files of the package, computed when a report or golden vector is produced. The same version and digest mean the same source code.
+  - Every validation report and golden vector states the version and the source digest. The reports also state the versions of Python and of the runtime SOUP.
+  - The stored subset report (SRS-016) states them too and is compared byte for byte on every push. A change to the package, its version, the Python version or a runtime SOUP version therefore updates the stored subset report in the same change, as for the traceability matrix.
+  - Checks: on every push, `traceability.py --check` fails if the two version strings differ or if the version does not follow the register, and `uv sync --locked` fails if `dsp/uv.lock` was not regenerated; on a pull request into `main`, the release gate rejects a development version, and `dsp/scripts/software_check.py` fails unless every report in `docs/validation/` that states the software states the code being released. That the patch number is raised for a correction release is checked by the release review.
+  - The versioning of the C++ items is defined with their detailed design, from Milestone 2.
 - **Dependencies**:
   - `dsp/uv.lock` pins every Python dependency to an exact version, and CI installs with `uv sync --locked`;
   - for the C++ items, the versions of the SDKs and toolchains (ESP-IDF and its container image, Qt, CMake minimum version) are pinned in the item's build files;
@@ -114,7 +124,8 @@ The same rules apply to work drafted with AI assistance (§5.3).
 | Tests | pytest with `--strict-markers` |
 | Environment | uv, Python 3.11 pinned in `dsp/.python-version` |
 | CI | GitHub Actions (`.github/workflows/ci.yml`) |
-| Traceability | `dsp/scripts/traceability.py`: generated matrix, `--check` on every push, `--release-gate` on pull requests into `main` ([ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md)) |
+| Traceability | `dsp/scripts/traceability.py`: generated matrix, `--check` on every push (including the version rule of §4), `--release-gate` on pull requests into `main` ([ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md)) |
+| Software identity of the reports | `dsp/scripts/software_check.py`, on pull requests into `main`: every report in `docs/validation/` states the software being released (§4; [`architecture.md`](architecture.md) §8.14) |
 | SBOM | CycloneDX JSON of the `dsp` runtime environment, generated in CI with `cyclonedx-py` from the `cyclonedx-bom` package (a development tool), published as a build artifact ([`cybersecurity.md`](cybersecurity.md) §6) |
 
 ### 5.2 Planned, introduced with the milestone that first needs them
@@ -149,11 +160,13 @@ Development is assisted by Claude Code (an AI coding assistant). All AI-generate
 | Equivalence (from Milestone 2) | The real-time C++ library runs on the golden vectors exported by the Python reference (SRS-015), and its outputs are compared with the reference within the tolerances of OP-005 (RC-012). This runs on the host in CI on every change, and on the ESP32-S3 in Espressif's QEMU emulator in CI (OP-051 closed) | CI log; equivalence section of the milestone verification report |
 | Integration (from Milestone 3) | By replay (OP-007): reference records and recorded sessions are replayed through the desktop application (M3), then through the device, the desktop application and the backend (M4, M5). The results are compared with the offline reference on the same records | Milestone verification report |
 | Usability (from Milestone 3) | Formative evaluation of the hazard-related use scenarios ([`usability.md`](usability.md) §5, OP-040) | Milestone verification report |
-| Process | `traceability.py --check` on every push and `--release-gate` on pull requests into `main` (ADR 0004); process compliance review (Reviewer role) before merging into `main` | CI log; pull request |
+| Process | `traceability.py --check` on every push and `--release-gate` on pull requests into `main` (ADR 0004); `software_check.py` on pull requests into `main` (§4); process compliance review (Reviewer role) before merging into `main` | CI log; pull request |
 
 A requirement counts as verified only when at least one test checks its pass criterion and that test passes in CI. Tests that need the complete reference databases run locally, and their output is captured in the validation report of the milestone. CI obtains a subset of records and checks the subset report on every push (SRS-016).
 
-**Tuning on evaluation data** (decided by the project owner, 2026-09-29). The algorithm parameters are fixed in the approved detailed design before the first run on the full MIT-BIH Arrhythmia Database. Any parameter change made after results on that database, or on the Noise Stress Test Database, have been seen is recorded in the milestone verification report as *tuned on the evaluation data*, with the parameters before and after and the results of both. Results after such a change are reported as such, and independent evidence on a database not used during development (OP-029) is needed before claiming generalisation.
+Every validation report and golden vector states the software that produced it: version and source digest (§4). Its results apply to that code. A released report states the released code (§3, activity 7).
+
+**Tuning on evaluation data** (decided by the project owner, 2026-09-29). The algorithm parameters are fixed in the approved detailed design before the first run on the full MIT-BIH Arrhythmia Database. Any parameter change made after results on that database, or on the Noise Stress Test Database, have been seen is recorded in the milestone verification report as *tuned on the evaluation data*, with the parameters before and after, the results of both, and the software identity (version and source digest, §4) of both runs. Results after such a change are reported as such, and independent evidence on a database not used during development (OP-029) is needed before claiming generalisation.
 
 ## 7. SOUP management
 
@@ -184,7 +197,7 @@ A requirement counts as verified only when at least one test checks its pass cri
 | `milestones.md` | When a milestone starts (`In progress`) and in the pull request that releases it (`Released`) |
 | `traceability.md` | Generated on every change |
 | SBOM | Generated by CI on every build |
-| `docs/validation/` reports | Generated for every milestone with algorithms |
+| `docs/validation/` reports | Generated for every milestone with algorithms, and regenerated from the released code at each release (§3, activity 7); the stored subset report whenever the software it states changes (§4) |
 
 ## 10. Definition of done
 

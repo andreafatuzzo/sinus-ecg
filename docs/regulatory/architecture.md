@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2.5, 2026-10-01. Status: approved by the project owner (sections 1 to 7 and 9 to 12 in v0.1 and the detailed design of §8 in v0.2 on 2026-09-29; the corrections of v0.2.2 on 2026-09-30; the corrections of v0.2.4 on 2026-10-01)._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2.6, 2026-10-02. Status: approved by the project owner (sections 1 to 7 and 9 to 12 in v0.1 and the detailed design of §8 in v0.2 on 2026-09-29; the corrections of v0.2.2 on 2026-09-30; the corrections of v0.2.4 on 2026-10-01); the software identity and versioning rule of v0.2.6 is pending approval by the project owner._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;
@@ -32,6 +32,7 @@ The detailed design of each requirement (module, interface, algorithm with refer
 | 0.2.3 | 2026-09-30 | Corrections of v0.2.2 approved by the project owner, including following redirects with integrity resting on the pinned checksum lists (OP-058 (e)). OP-059 closed by the SRS-012 wording of `srs.md` v0.5: §8.8.3 and §8.10 cite SRS-012 instead of the open point; §12 updated. OP-055 decided by the project owner (the heart-rate range of SRS-006 is bounded to 30–200 bpm; the detection design is unchanged): §8.7 edge cases state the limitation at short RR intervals and its cause, and the verification notes give the range. §8.2, error table: the `InvalidInputError` row also lists the argument errors of §8.8 and §8.9 |
 | 0.2.4 | 2026-10-01 | Corrections found while implementing §8.10 (pending approval by the project owner). (1) §8.10: `evaluate_noise_stress` takes the verification outcome of the noise stress database as the keyword argument `nstdb`, which the results carry into the report; the database is still verified only by `run_validation`, before anything is evaluated. (2) §8.13: the dependency graph shows the two imports made inside a function (`evaluation.run` calls `evaluation.noise_stress` and `evaluation.report`, which import it), and states which imports it draws. (3) §8.2: new paragraph "Argument defaults" (no call in an argument default; a frozen default instance is a module-level constant); §8.10, §8.11: the public constant `DEFAULT_SETTINGS` is the default of every `settings` argument. (4) §8.11: the subset report names `subset_check.py` as its origin, and its paragraph is built from the evaluated record names and the database title. (5) §8.10: the format of sampling frequencies is removed (no section shows one). (6) §8.10, §8.8: the count of flutter-wave annotations outside the episodes covers the scored part of each record, like the other figures of the section on what is not scored; the introduction sentence of that section states that the episodes in the record are counted over the whole record. (7) §8.2: the error table lists the checks of the evaluation run, the noise stress test and the report rendering, which are design behaviours; §8.10 gives each check with its function, and the subset renderer also rejects results that hold a noise stress test. (8) §8.10: the complete text format of the report (headings, sentences, table columns, row labels, alignment and table syntax), so that the stored subset report of §8.11 is fully specified. (9) §8.4, edge cases: wfdb reads a header as ASCII text and drops other characters, and a header without units gives mV; the first stored signal is MLII in 45 records of the MIT-BIH Arrhythmia Database and V5 in records 102, 104 and 114 (v0.2.3 stated 46 records and 102 and 104). §8.2 Types: the type aliases are in the private module `_types`. §8.13: when the corrections of v0.2.4 are made |
 | 0.2.5 | 2026-10-01 | Corrections of v0.2.4 approved by the project owner, including the count of flutter waves limited to the scored part of each record and the reworded introduction of report section 6. OP-056 decided by the project owner: no change of the detection rules in Milestone 1, so the Milestone 1 results stay untuned (`sdp.md` §6); a refractory test on the fiducial point only is not adopted; the age of the search-back candidate and the two-lobe fiducial are assessed in Milestone 2, with a listing of every false negative and false positive of the evaluation as input |
+| 0.2.6 | 2026-10-02 | Software identity and versioning (OP-061; pending approval by the project owner). New §8.14: every report and golden vector states the package version and the SHA-256 digest of the package source, computed when it is produced, and the reports also state the versions of Python and of the runtime SOUP; the version follows the milestones (`0.N.0.dev0` while milestone N is in progress, `0.N.0` at its release, `0.N.P` for a later correction); checks in `traceability.py`, in the new release check `scripts/software_check.py` and, through the stored subset report, on every push. §7.3: header key `source_sha256`. §7.4: determinism stated with the software identity. §8.1: module `version` and script `software_check.py`. §8.10: `ValidationResults.software` replaces `software_version`; report section 2 gains the source digest in the row `Software` and a new row `Runtime`; determinism and verification notes. §8.11: `run_subset` states the software identity; when the stored subset report must be updated; stability across machines. §8.12: `GoldenVector.source_sha256`, `golden_vector` takes the software identity. §8.13: module `version` in the graph; when the changes of v0.2.6 are made. §12: OP-061 |
 
 ## 1. System context
 
@@ -333,6 +334,7 @@ input_parameters=duration_s=30;heart_rate_bpm=75;baseline_wander_hz=0.3;baseline
 sampling_frequency_hz=360.0
 mains_frequency_hz=60
 software_version=0.1.0
+source_sha256=d7cc8c5224968a1bb510508d3d14f62bbe6d228927713144e02dc00a6d443e29
 stages=baseline,mains
 n_samples=10800
 n_beats=37
@@ -363,7 +365,8 @@ sample_index
 | `input_parameters` | `name=value` pairs separated by `;`, in a fixed order. Synthetic: the generator parameters. Records: `database=mitdb;database_version=1.0.0;record=<name>;signal=0;start_sample=0;duration_s=60` |
 | `sampling_frequency_hz` | Sampling frequency, float |
 | `mains_frequency_hz` | Mains setting, 50 or 60 |
-| `software_version` | `sinus_dsp.__version__` |
+| `software_version` | `sinus_dsp.__version__`, which follows the version rule of §8.14 |
+| `source_sha256` | SHA-256 digest of the package source (§8.14), 64 lowercase hexadecimal digits. With `software_version` it identifies the code that wrote the file |
 | `stages` | Names of the conditioning stages in the order applied. Version 1 contains `baseline,mains`. A later milestone may add stages, which then get their own columns |
 | `n_samples`, `n_beats`, `n_reference_beats` | Number of rows in `[signals]`, `[beats]` and `[reference_beats]` |
 
@@ -388,11 +391,12 @@ sample_index
 - whose column headers do not match `stages`;
 - whose row counts differ from the header;
 - that contains a value that does not parse or is not finite, or a sample index that is not increasing or lies outside `[0, n_samples)`;
+- whose `source_sha256` is not 64 lowercase hexadecimal digits;
 - that lacks `[end]`.
 
 ### 7.4 Determinism and exact read-back
 
-- **Determinism.** The content depends only on the input, the settings and the software version. The file contains no dates, times, host names, user names, paths or random numbers, and nothing depends on the iteration order of an unordered collection. Two runs on the same inputs and software version, on the same machine, therefore give byte-identical files (SRS-015).
+- **Determinism.** The content depends only on the input, the settings and the software identity (version and source digest, §8.14). The file contains no dates, times, host names, user names, paths or random numbers, and nothing depends on the iteration order of an unordered collection. Two runs on the same inputs and software version, on the same machine, therefore give byte-identical files (SRS-015). The same version and source digest mean the same source code (§8.14).
 - **Exact read-back.** Python's `float()` is correctly rounded, so reading back gives exactly the values computed (SRS-015). The C++ reader converts with `std::from_chars` (C++17), which the supported toolchains implement with correct rounding. Its unit tests check exact read-back of edge values: the smallest subnormal and the largest finite value, negative zero, and values that need 17 significant digits.
 - **Across machines.** NumPy and SciPy results may differ in the last bits between machines or library builds. The tolerances of OP-005 absorb this, and CI always compares the C++ library with vectors generated in the same run from the same commit (§7.5).
 
@@ -407,13 +411,14 @@ sample_index
 
 ## 8. Milestone 1 detailed design of `dsp`
 
-This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requirement, SRS-001 to SRS-016. §8.1 fixes the modules; §8.2 the conventions and errors shared by all of them; §8.3 to §8.12 give, per requirement, the module, the public interface, the errors, the algorithm with its references and parameter values, the edge cases, and what verification can rely on; §8.13 gives the implementation order.
+This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requirement, SRS-001 to SRS-016. §8.1 fixes the modules; §8.2 the conventions and errors shared by all of them; §8.3 to §8.12 give, per requirement, the module, the public interface, the errors, the algorithm with its references and parameter values, the edge cases, and what verification can rely on; §8.13 gives the implementation order; §8.14 the software identity that the reports and golden vectors state, and the versioning rule.
 
 ### 8.1 Module structure
 
 | Module (`dsp/sinus_dsp/`) | Responsibility | Requirements |
 |---|---|---|
-| `__init__.py` | Package version (`__version__`), written into reports and golden vectors | — |
+| `__init__.py` | Package version (`__version__`, rule of §8.14) | — |
+| `version.py` | Software identity written into reports and golden vectors: package version, SHA-256 digest of the package source, versions of Python and of the runtime SOUP (§8.14) | SRS-009, SRS-012; used for SRS-015, SRS-016 |
 | `errors.py` | Exception hierarchy: one base class for all Sinus errors, and one subclass per error behaviour in the SRS (rejected input, failed data verification, malformed file, subset report mismatch) and in §7.3 (non-finite output), §8.2 | SRS-001, SRS-003, SRS-013, SRS-015, SRS-016 |
 | `input_checks.py` | Input validation before filtering or detection | SRS-003 |
 | `filters.py` | Design of the second-order sections and causal filtering: baseline wander and mains interference | SRS-004, SRS-005 |
@@ -436,7 +441,8 @@ This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requi
 | `validate.py` | The full validation report, `docs/validation/qrs-ec57-report.md` (SRS-009) |
 | `subset_check.py` | The CI subset check: regenerates the subset report and compares it with `docs/validation/qrs-ec57-subset-report.md` (SRS-016) |
 | `export_golden.py` | The golden-vector export (SRS-015) |
-| `traceability.py` | The traceability matrix, its checks and the release gate (ADR 0004) |
+| `software_check.py` | The release check that every report in `docs/validation/` states the current software (§8.14) |
+| `traceability.py` | The traceability matrix, its checks (including the version rule of §8.14) and the release gate (ADR 0004) |
 
 **Rules for `dsp`.**
 - Scripts are thin command-line wrappers: argument parsing, paths, messages, exit codes. The logic they run lives in `sinus_dsp`, where tests import it without running a command.
@@ -1084,7 +1090,7 @@ class RecordEvaluation:
 
 @dataclass(frozen=True)
 class ValidationResults:
-    software_version: str
+    software: SoftwareIdentity                  # §8.14
     settings: EvaluationSettings
     mitdb: VerificationResult
     records: tuple[RecordEvaluation, ...]       # sorted by record name
@@ -1136,6 +1142,9 @@ def evaluate_noise_stress(nstdb_dir: Path, mitdb_records: Sequence[RecordEvaluat
 # evaluation/report.py
 def render_full_report(results: ValidationResults) -> str: ...
 def render_subset_report(results: ValidationResults) -> str: ...
+def software_rows(software: SoftwareIdentity) -> tuple[str, str]: ...   # the table lines
+                                                # "| Software | … |" and "| Runtime | … |"
+def stale_software_rows(text: str, software: SoftwareIdentity) -> tuple[str, ...]: ...
 ```
 
 **Run.**
@@ -1146,7 +1155,8 @@ def render_subset_report(results: ValidationResults) -> str: ...
    - It then evaluates the 12 noise stress records with `evaluate_records`, in the order of `NOISE_STRESS_RECORDS`, with the reference annotations of each (`atr`). It aggregates per SNR from the summed counts of the two records at that SNR, in decreasing order of SNR.
    - The comparison values (`clean`) are the gross statistics of MIT-BIH Arrhythmia records 118 and 119.
    - It neither verifies nor downloads anything. The verification outcome that the results carry, and the report states, is the one `run_validation` obtained in step 1, before anything was evaluated.
-4. `write_validation_report` calls `run_validation` and `render_full_report`, then writes the text atomically: the UTF-8 bytes, with line feeds, go to `<name>.part~` in the folder of the report, which is replaced into `<name>` with `os.replace`. The folder is created if it does not exist. The report is written only after everything has succeeded.
+4. `run_validation` calls `software_identity()` (§8.14) once and puts the result in `ValidationResults.software`.
+5. `write_validation_report` calls `run_validation` and `render_full_report`, then writes the text atomically: the UTF-8 bytes, with line feeds, go to `<name>.part~` in the folder of the report, which is replaced into `<name>` with `os.replace`. The folder is created if it does not exist. The report is written only after everything has succeeded.
 
 `evaluation.run` imports `evaluation.noise_stress` and `evaluation.report` inside `run_validation` and `write_validation_report`, because both modules import `evaluation.run` (§8.13).
 
@@ -1202,7 +1212,8 @@ Sections of the full report, in this order:
    - the statement of SRS-012, verbatim: `Technical evaluation only. Sinus is not a medical device; these results are not a clinical validation.`;
    - `Generated by dsp/scripts/validate.py; do not edit by hand.`
 2. **Software, data and settings.** The heading `## Software, data and settings`, then a table with the columns `Item` and `Value` and these rows:
-   - `Software`: `sinus-dsp <software_version>`;
+   - `Software`: `sinus-dsp <version>, source SHA-256 <source_sha256>`, with the version and the 64-digit source digest of `results.software` (§8.14), e.g. `sinus-dsp 0.1.0.dev0, source SHA-256 d7cc8c52…6d443e29` (shortened here; the report gives all 64 digits);
+   - `Runtime`: `Python <python>, ` followed by `<distribution> <version>` for each runtime SOUP package of `results.software.runtime`, in the order of `RUNTIME_DISTRIBUTIONS`, separated by `, `; e.g. `Python 3.11, numpy 2.4.6, scipy 1.17.1, wfdb 4.3.1`;
    - `Database`: `<title>, version <version>` of `results.mitdb.database`;
    - `Verification`: `describe_verification(results.mitdb)`;
    - `Records`: the number of evaluated records;
@@ -1239,10 +1250,10 @@ The rendered text contains no requirement ID, so the report module does not need
 
 **Script.** `scripts/validate.py [--data-dir PATH] [--output PATH] [--offline]`: default data folder `data/`, default output `docs/validation/qrs-ec57-report.md`. Without `--offline` it downloads what is missing (SRS-001, SRS-013); with it, it only verifies. Exit status 0 on success; 1 on `DataVerificationError` or `MalformedFileError`, with the message on standard error and no report written; 2 on a usage error.
 
-**Determinism** (SRS-009). The report depends only on the verified data, the software version and the settings: records are sorted, every number comes from integer counts through the correctly rounded operations of §8.9, and nothing depends on time or environment. Two runs on the same inputs therefore give byte-identical reports.
+**Determinism** (SRS-009). The report depends only on the verified data, the software identity (version, source digest and runtime versions, §8.14) and the settings: records are sorted, every number comes from integer counts through the correctly rounded operations of §8.9, and nothing depends on time or environment. Two runs on the same inputs therefore give byte-identical reports. "The same software version" of SRS-009 is the same version and source digest, which means the same source code of the package (§8.14).
 
 **Verification notes.**
-- SRS-009, SRS-012 and SRS-014 (QA): fixture databases under a temporary `data_root` (records written with `wfdb`, `RECORDS` files, checksum lists, and `Database` values pinned to the fixture lists), a fake detector with known output, `fetch=None`. The noise stress fixture uses the 12 names of `NOISE_STRESS_RECORDS`, and the MIT-BIH fixture includes records 118 and 119. Records must be longer than 5 min for beats to be scored. For the section on what is not scored, a fixture record with one episode that ends before 5:00 and one after it, each with reference beats and detections inside, shows that only the second one enters the figures from 5:00, while both count in the episodes of the record. A `!` before 5:00 and one after 5:00, both outside the episodes, show that only the second one is counted (a design behaviour, §8.8). The sentences and table columns of §8.10 are the documented format, and tests may compare them literally.
+- SRS-009, SRS-012 and SRS-014 (QA): fixture databases under a temporary `data_root` (records written with `wfdb`, `RECORDS` files, checksum lists, and `Database` values pinned to the fixture lists), a fake detector with known output, `fetch=None`. The noise stress fixture uses the 12 names of `NOISE_STRESS_RECORDS`, and the MIT-BIH fixture includes records 118 and 119. Records must be longer than 5 min for beats to be scored. For the section on what is not scored, a fixture record with one episode that ends before 5:00 and one after it, each with reference beats and detections inside, shows that only the second one enters the figures from 5:00, while both count in the episodes of the record. A `!` before 5:00 and one after 5:00, both outside the episodes, show that only the second one is counted (a design behaviour, §8.8). The sentences and table columns of §8.10 are the documented format, and tests may compare them literally. For the software version of SRS-012, the test computes the source digest itself from the package files with the steps of §8.14 (not by calling `source_digest`) and compares the row `Software` with it; the row `Runtime` is compared with `sys.version_info` and `importlib.metadata.version` of each runtime SOUP package.
 - SRS-007 (test engineer): a `needs_data` system test calls `run_validation(data_root, fetch=None)` on the full local databases and checks `meets_target` for gross Se and +P; the test engineer runs `validate.py` for the milestone report.
 
 ### 8.11 Subset report in continuous integration (SRS-016)
@@ -1267,7 +1278,7 @@ def check_subset_report(stored_path: Path, data_root: Path, *,
 ```
 
 **Behaviour.**
-- `run_subset` obtains the six records as in §8.3 with `records=SUBSET_RECORDS`, verifies them, and evaluates them with the settings of SRS-007. The result has `subset=True` and no noise stress.
+- `run_subset` obtains the six records as in §8.3 with `records=SUBSET_RECORDS`, verifies them, and evaluates them with the settings of SRS-007. The result has `subset=True`, no noise stress, and the software identity `software_identity()` (§8.14).
   - The selection rule of §8.3 gives **28 files** in the published list of the database, plus the checksum list itself: the `.atr`, `.dat`, `.hea` and `.xws` files of the six records (24 files), and `108.at_`, `119.at_`, `203.at-` and `203.at_`, which are further annotation files that the database publishes for records 108, 119 and 203. The evaluation reads only the `.hea`, `.dat` and `.atr` files (§8.4).
   - The selection is not restricted to the files that the evaluation reads. SRS-016 requires each file of the six records to be verified, the four additional files are small (the six `.dat` files hold nearly all of the 12 MB), and a list of extensions would be a second selection rule tied to one database.
   - The number 28 is not a constant of the code. It appears in the subset report through `describe_verification` (`verified: 28 files match …; records 100, 105, 108, 119, 203, 207`), so the stored report states how many files were verified.
@@ -1289,17 +1300,28 @@ def check_subset_report(stored_path: Path, data_root: Path, *,
 
 The step runs on every push and pull request, like the rest of the job, and fails the job on a mismatch or a verification failure (SRS-016).
 
+**When the stored report changes.** The stored subset report states the software identity (§8.10, section 2; §8.14), and the comparison makes no exception for it. A change of any of the following therefore changes the stored report, which is updated in the same change, like `traceability.md`:
+- any file of the package `dsp/sinus_dsp/` (the row `Software`, through the source digest), even a comment;
+- the version (`dsp/pyproject.toml`, `sinus_dsp/__init__.py`);
+- the Python minor version (`dsp/.python-version`) or the version of a runtime SOUP package in `dsp/uv.lock` (the row `Runtime`);
+- the counts, when the change alters detection or evaluation.
+
+The reviewer of the pull request sees which rows changed: the software rows alone (the change did not alter any result on the six records), or the counts too. A pull request that changes the package and does not update the stored report fails CI, and the difference names the row `Software`. Two branches that both change the package conflict on that row; after the merge the report is regenerated, as the matrix is.
+
+Rejected alternatives: leaving the software rows out of the comparison (SRS-016 requires any difference to fail, and the stored report would state a software that did not produce it); leaving them out of the subset report only (SRS-016 requires the items of SRS-012, so the two reports would identify the software differently); a commit identifier (a stored file cannot contain the identifier of the commit that contains it).
+
 Two supporting changes:
 - `.gitattributes` gets `docs/validation/*.md text eol=lf`, so that a checkout on Windows keeps the stored reports byte-identical.
 - The `needs_data` marker (`dsp/tests/conftest.py`) must not be satisfied by the CI subset. The check becomes: `data/mitdb/RECORDS` exists and every record it lists has its `.hea`, `.dat` and `.atr` files (the subset download does not fetch `RECORDS`). Tests that also need the noise stress database use a second marker, `needs_nstdb`, checked the same way on `data/nstdb/` for the 12 records of `NOISE_STRESS_RECORDS`.
 
 **Stability across machines.** The stored subset report must equal the one regenerated in CI, byte for byte, although it may be produced on another machine:
 - The report contains only text, integer counts, and values computed from those counts by correctly rounded operations (§8.9) and formatted by Python's correctly rounded formatting. These are identical on every machine for the same counts. No signal value appears in it.
+- The software rows are identical on every machine for the same commit: the source digest is computed from the package files with line feeds (§8.14; the checkout keeps line feeds through `.gitattributes`), and the runtime versions follow from `dsp/.python-version` (Python minor version only) and `dsp/uv.lock`, which both the local environment and CI use (`uv sync --locked`).
 - The counts depend on detection decisions made in float64. The operations of §8.2 remove the known sources of machine dependence in NumPy (summation order). Two remain outside the software's control: the platform's mathematical library (`tan` and `cos` in the filter design, §8.6) and floating-point contraction in the SciPy build. They change results by a few units in the last place, which changes a count only if a peak lies within that distance of a threshold: possible, but rare.
 - **Decision.** The CI environment is the authority: `ubuntu-latest`, Python from `dsp/.python-version`, dependencies from `uv.lock`. The stored report is the one CI regenerates. A developer normally updates it locally with `subset_check.py --update`; if CI then still reports a difference, the stored report is replaced with the `subset-report` artifact of that CI run, and the pull request shows the change for review.
 - Rejected alternatives: comparing parsed values within a tolerance (it could hide a changed count, and SRS-016 requires any difference to fail); leaving the counts out of the report (it would no longer be a regression check).
 
-**Verification notes.** QA's SRS-016 tests call `check_subset_report` (or `compare_reports`) with fixture records named as the subset, a fixture checksum list and a fake detector; `fetch=None`. Inspection of `ci.yml` covers "on every push".
+**Verification notes.** QA's SRS-016 tests call `check_subset_report` (or `compare_reports`) with fixture records named as the subset, a fixture checksum list and a fake detector; `fetch=None`. Inspection of `ci.yml` covers "on every push". A stored report that differs from the regenerated one only in the row `Software` fails the check like any other difference.
 
 ### 8.12 Golden-vector export (SRS-015)
 
@@ -1339,7 +1361,8 @@ class GoldenVector:
     input_parameters: str
     fs_hz: float
     mains_hz: int
-    software_version: str
+    software_version: str                  # SoftwareIdentity.version (§8.14)
+    source_sha256: str                     # SoftwareIdentity.source_sha256 (§8.14)
     stages: tuple[str, ...]                # ("baseline", "mains")
     coefficients: tuple[FloatArray, ...]   # SOS matrix of each stage, shape (n_sections, 6), a0 = 1
     input_mv: FloatArray
@@ -1354,7 +1377,8 @@ class ExportSummary:
     skip_reason: str | None
 
 def golden_vector(input_id: str, input_source: str, input_parameters: str, signal_mv: FloatArray,
-                  fs_hz: float, mains_hz: int, reference_beats: IndexArray) -> GoldenVector: ...
+                  fs_hz: float, mains_hz: int, reference_beats: IndexArray, *,
+                  software: SoftwareIdentity) -> GoldenVector: ...
 def render_golden_vector(vector: GoldenVector) -> str: ...
 def parse_golden_vector(text: str, source: str) -> GoldenVector: ...
 def read_golden_vector(path: Path) -> GoldenVector: ...
@@ -1366,7 +1390,7 @@ def export_golden_vectors(output_dir: Path, *, data_root: Path | None,
 
 **Behaviour.**
 - `synthetic_ecg` follows §7.2 exactly: sample instants `n / fs_hz`; beats `k` with `0.5 + k · RR ≤ 29.5 s`; each Gaussian evaluated with NumPy on the whole time axis, added in increasing `k` and in the order P, Q, R, S, T; the interference added last. `parameters` is `duration_s=30;heart_rate_bpm=<hr>;baseline_wander_hz=0.3;baseline_wander_mv=<a>;mains_hz=<mains>;mains_mv=<m>` with `<a>`, `<m>` = `1.0`, `0.2` for the interference variants and `0.0`, `0.0` for `clean` (floats with `repr`, integers in decimal). Arguments outside the listed values raise `InvalidInputError`.
-- `golden_vector` runs `run_pipeline` (§8.7) once and takes the conditioning outputs, the beats and the SOS matrices from its result, so a file holds exactly what the public functions compute (SRS-015 verification). Record segments have the identifier `<slug>-<record>-first60s` and carry `input_parameters = database=<slug>;database_version=<version>;record=<name>;signal=0;start_sample=0;duration_s=60`, from the `Database` given (for the real data: `mitdb-100-first60s`, `database=mitdb;database_version=1.0.0;…`).
+- `golden_vector` runs `run_pipeline` (§8.7) once and takes the conditioning outputs, the beats and the SOS matrices from its result, so a file holds exactly what the public functions compute (SRS-015 verification). It takes `software_version` and `source_sha256` from `software`; `export_golden_vectors` calls `software_identity()` (§8.14) once and passes the result for every input. Record segments have the identifier `<slug>-<record>-first60s` and carry `input_parameters = database=<slug>;database_version=<version>;record=<name>;signal=0;start_sample=0;duration_s=60`, from the `Database` given (for the real data: `mitdb-100-first60s`, `database=mitdb;database_version=1.0.0;…`).
 - `render_golden_vector` writes §7.3 exactly (floats with `repr`, integers in decimal) and raises `NonFiniteOutputError` if any value is not finite. `parse_golden_vector` applies every reader rule of §7.3 and raises `MalformedFileError` with the line number.
 - `export_golden_vectors` writes the 18 synthetic files, then the record segments (by default the six records of SRS-016): it calls `verify_database(database, data_root, records=records)`; if `data_root` is `None` or the verification fails, the record segments are skipped with the reason (the error message) and the synthetic files are still written. Otherwise each record is loaded (channel 0), cut to its first `round_samples(60, fs_hz)` samples (21600 at 360 Hz), with the reference beats inside the segment, and processed with mains 60 Hz. Files are written atomically; files already in `output_dir` with other names are left untouched.
 - `scripts/export_golden.py [--output DIR] [--data-dir PATH]`: default output `data/golden/`. It prints the written and skipped inputs and exits 0, or 1 on an error.
@@ -1390,7 +1414,9 @@ flowchart BT
   matching["evaluation.matching"] --> records
   matching --> units
   metrics["evaluation.metrics"] --> errors
+  version["version"]
   run["evaluation.run"] --> pipeline
+  run --> version
   run --> physionet
   run --> records
   run --> matching
@@ -1408,7 +1434,7 @@ flowchart BT
 ```
 
 An arrow points from a module to a module it imports.
-- A solid arrow is an import at the top of the module. An import that a path of solid arrows already implies is not drawn again: for example, `evaluation.report` also imports `evaluation.run`, `evaluation.metrics`, `evaluation.matching` and `data.physionet`. The private module `_types` (§8.2) is imported by most modules and is not drawn.
+- A solid arrow is an import at the top of the module. An import that a path of solid arrows already implies is not drawn again: for example, `evaluation.report` also imports `evaluation.run`, `evaluation.metrics`, `evaluation.matching` and `data.physionet`. The private module `_types` (§8.2) is imported by most modules and is not drawn. `version` imports only the package itself (`sinus_dsp.__version__`) and the standard library. `golden` also imports `version`, an import that the path `golden` → `evaluation.subset` → … → `evaluation.run` → `version` implies.
 - A dotted arrow is an import inside a function. `evaluation.noise_stress` and `evaluation.report` import `evaluation.run` (its types and functions). `evaluation.run` imports `NoiseStressResults` only for type checking. It imports `evaluate_noise_stress` inside `run_validation`, and `render_full_report` inside `write_validation_report`, so that importing any of the three modules first works without a cycle at import time. A unit test imports each of them first, in a new interpreter.
 - No other import inside a function is allowed. `evaluation.subset` (group 8) imports `evaluation.run` and `evaluation.report` at the top; only `golden` imports it.
 
@@ -1435,6 +1461,121 @@ Groups 1 to 3 go into one pull request, because the verification of SRS-003 call
 **Corrections of v0.2.4 to modules already implemented** (group 7). They are implemented with their unit tests, and with the corresponding changes to QA's tests of SRS-012, before group 8 stores the first subset report, whose text they change:
 - `evaluation.run`: the public constant `DEFAULT_SETTINGS` as the default of `settings` (§8.2, §8.10); `flutter_waves_outside_vf` counts only the scored part (§8.10, "Figures on what is not scored").
 - `evaluation.report`: the first paragraph of section 6 (§8.10); `render_subset_report` also rejects results that hold a noise stress test.
+
+**Changes of v0.2.6** (software identity, §8.14). They are implemented with their unit tests, and with the corresponding changes to QA's tests of SRS-012, before group 8 stores the first subset report, whose section 2 they change:
+- new module `version`; the version set to `0.1.0.dev0` in `dsp/pyproject.toml` and `sinus_dsp/__init__.py`, then `uv lock`;
+- `evaluation.run`: `ValidationResults.software`, set by `run_validation`;
+- `evaluation.report`: the rows `Software` and `Runtime` of section 2, `software_rows` and `stale_software_rows`;
+- `scripts/software_check.py`, and its step in the release-gate workflow;
+- `scripts/traceability.py`: the version rule in `--check`, the development-version check in `--release-gate`.
+
+Group 8 sets `software` in `run_subset`; group 9 writes and reads `source_sha256`.
+
+### 8.14 Software identity and versioning (SRS-009, SRS-012, SRS-015, SRS-016)
+
+**Purpose.** The reports (SRS-009, SRS-012, SRS-016) and the golden vectors (SRS-015) state the software that produced them. The package version alone does not identify the code: it changes at releases, while the code changes with every pull request (OP-061). The identity therefore has two parts:
+- a **version**, which a person reads and which names the milestone;
+- a **source digest**, which identifies the exact code of the package without depending on git.
+
+The reports also state the versions of Python and of the runtime SOUP, because the versions of NumPy and SciPy that `dsp/uv.lock` installs depend on the Python version (the lock holds two versions of each), and the digest covers only the package.
+
+**Module.** `sinus_dsp.version`. Script: `scripts/software_check.py`. Checks in `scripts/traceability.py`. The rule is also stated in `sdp.md` §4.
+
+**Interface.**
+
+```python
+# version.py
+RUNTIME_DISTRIBUTIONS: Final = ("numpy", "scipy", "wfdb")   # runtime SOUP of dsp (soup.md)
+
+@dataclass(frozen=True)
+class SoftwareIdentity:
+    version: str                           # sinus_dsp.__version__, e.g. "0.1.0.dev0"
+    source_sha256: str                     # 64 lowercase hexadecimal digits
+    python: str                            # "<major>.<minor>", e.g. "3.11"
+    runtime: tuple[tuple[str, str], ...]   # (distribution, version), in RUNTIME_DISTRIBUTIONS order
+
+def package_dir() -> Path: ...                            # folder of the running package
+def source_files(package_dir: Path) -> tuple[str, ...]: ...   # names, sorted (step 2 below)
+def source_manifest(package_dir: Path) -> str: ...
+def source_digest(package_dir: Path) -> str: ...
+def runtime_versions() -> tuple[tuple[str, str], ...]: ...
+def software_identity() -> SoftwareIdentity: ...
+```
+
+The module cites SRS-009 and SRS-012 (the reports). `golden` and `evaluation.subset`, which use it, cite SRS-015 and SRS-016.
+
+**Version.** It is written in two places, always equal: `[project] version` in `dsp/pyproject.toml` and the string literal `__version__` in `sinus_dsp/__init__.py`. `dsp/uv.lock` records it too and is regenerated with `uv lock` after each change (CI's `uv sync --locked` fails otherwise; only the line of `sinus-dsp` changes). The version follows PEP 440 and the milestone register ([`milestones.md`](milestones.md)):
+
+| State of the register | Version | Example |
+|---|---|---|
+| At least one milestone `In progress` | `0.N.0.dev0`, where N is the lowest milestone `In progress` | M1 in progress: `0.1.0.dev0` |
+| No milestone `In progress` | `0.N.P`, where N is the highest milestone `Released`; P is 0 at the release of milestone N and is raised by 1 for each correction released into `main` before the next milestone starts | M1 released: `0.1.0`; its first correction: `0.1.1` |
+
+- The version names the milestone. It does not change between the development states of a milestone: the source digest tells them apart. No one has to judge whether a change "can alter a result" to decide a version change.
+- The version changes in the change that updates the register: the one that sets a milestone `In progress` (`0.N.0.dev0`) and the release pull request that sets it `Released` (`0.N.0`). A correction release raises P in the change that prepares it.
+- Milestone 0 was released as `0.0.1`, which fits the rule (`0.0.P`).
+- The major version stays 0 for the whole roadmap: `dsp` promises no compatibility of its Python interface. Under PEP 440, `0.N.0.dev0` sorts before `0.N.0`.
+
+**Source digest.** `source_digest(package_dir)`:
+1. List the files: walk `package_dir` with `os.walk(package_dir, followlinks=False)`, skipping folders whose name starts with `.` or is `__pycache__`. Keep each regular file that is not a symbolic link, whose name ends with `.py` and does not start with `.`.
+2. Name each file by its path relative to the parent of `package_dir`, with `/` as separator (e.g. `sinus_dsp/evaluation/run.py`), and sort the names in code-point order (`source_files`).
+3. Read each file as bytes and replace every CR LF by LF.
+4. For each file in that order, write the line `<SHA-256 of the bytes of step 3, 64 lowercase hexadecimal digits><two spaces><name><LF>`, the format of `sha256sum` in text mode.
+5. The manifest (`source_manifest`) is the concatenation of these lines, encoded in UTF-8.
+6. The digest is the SHA-256 of the manifest, written as 64 lowercase hexadecimal digits.
+
+Scope and properties:
+- Every module of the package is covered, including `__init__` (so the version) and `version` itself. Only `.py` files are covered, because the package holds no other files; a data file added to the package later is added to this rule in the same change.
+- Not covered: `dsp/scripts/` (thin wrappers, §8.1: the computations and the report text are in the package), the tests, the documents.
+- The digest does not depend on git, on the folder of the checkout or on its line endings. A ZIP download of a commit gives the same digest.
+- Anyone can recompute it from `dsp/` on a checkout with line feeds (the repository's `.gitattributes` gives them):
+
+  ```sh
+  find sinus_dsp -type f -name '*.py' -not -path '*/.*' -print0 | LC_ALL=C sort -z \
+    | xargs -0 sha256sum --text | sha256sum --text
+  ```
+
+  This was checked when the rule was written: same digest as a prototype of the six steps, on the 17 files of the package. `--text` matters on Windows, where some builds of `sha256sum` default to binary mode and write `*` before each name.
+- Cost: about 4 ms for the package (measured), once per report or export.
+- A digest is opaque. A released report is found through its version and the tag of the release; for a report of a development state, recomputing the digest on a candidate commit confirms or rejects it.
+
+**Runtime versions.** `runtime_versions()` returns `(name, importlib.metadata.version(name))` for each name of `RUNTIME_DISTRIBUTIONS`, in that order. `python` is `f"{sys.version_info.major}.{sys.version_info.minor}"`. The patch version of Python is left out: it is not pinned (`dsp/.python-version` gives 3.11), and it would make the stored subset report differ between machines. `RUNTIME_DISTRIBUTIONS` lists the names of the `[project] dependencies` of `dsp/pyproject.toml`, and a unit test checks that the two lists are the same, so adding a runtime dependency (`sdp.md` §7) also adds it here.
+
+**`software_identity()`** returns `SoftwareIdentity(version=sinus_dsp.__version__, source_sha256=source_digest(package_dir()), python=…, runtime=runtime_versions())`.
+- `package_dir()` is the folder of the module `version` itself (`Path(__file__).resolve().parent`): the code that is running. In the editable install made by `uv sync`, that is the checkout.
+- The version is the literal of `__init__.py`, not the installed metadata (`importlib.metadata.version("sinus-dsp")`), which reflects the last install and is stale after an edit until the next `uv sync`.
+- No error is raised on purpose. A package file that cannot be read raises `OSError`; a runtime SOUP package that is not installed raises `importlib.metadata.PackageNotFoundError`. Both propagate (§8.2).
+
+**Report rows** (`evaluation.report`, §8.10).
+- `software_rows(software)` returns the two table lines of report section 2: `| Software | sinus-dsp <version>, source SHA-256 <digest> |` and `| Runtime | Python <python>, <name> <version>, … |`. Both renderers use it, so the check below compares the very text they write.
+- `stale_software_rows(text, software)` returns one entry per problem, in the order of the lines of `text`: `line <n>: <line found>; current: <current line>` for each line that starts with `| Software | ` or `| Runtime | ` and differs from the matching line of `software_rows(software)`, then `no Software row` or `no Runtime row` when the text has one of the two rows but not the other. A text with neither row (for example `docs/validation/README.md`) gives an empty tuple.
+
+**Release check** (`scripts/software_check.py [--folder PATH]`, default `docs/validation/` at the repository root).
+- For each `*.md` file of the folder, in sorted order, it calls `stale_software_rows(text, software_identity())`.
+- If no file has a problem, it prints `software check: <k> reports state sinus-dsp <version>, source SHA-256 <digest>`, where k is the number of files with a row `Software`, and exits 0. Otherwise it prints `<file>: <entry>` on standard error for each problem and exits 1. Exit status 2 on a usage error.
+- It needs no data and runs no evaluation. It cites no requirement ID.
+- CI: a step of the release-gate workflow (pull requests into `main`), after the traceability step. A release therefore carries only reports produced by the released code. Between releases, the full report in `docs/validation/` may state an earlier identity: it then still names the code that produced it, and the next release regenerates it. The stored subset report is checked on every push instead (§8.11).
+
+**Checks in `scripts/traceability.py`.** The script does not import `sinus_dsp`; it reads the files.
+- `--check` (every push), new rule "Software version":
+  - the `[project] version` of `dsp/pyproject.toml` (read with `tomllib`) equals the string literal assigned to `__version__` in `dsp/sinus_dsp/__init__.py` (read with `ast`);
+  - the version is the one the table above gives for `milestones.md`: exactly `0.N.0.dev0` with N the lowest milestone `In progress`; if none is in progress, it matches `0\.N\.(0|[1-9][0-9]*)` with N the highest milestone `Released`.
+
+  Each failure names the file, the version found and the expected form, e.g. `dsp/pyproject.toml: version 0.0.1, expected 0.1.0.dev0 (M1 In progress)`.
+- `--release-gate` also fails if the version contains `.dev`. With the register rule this happens only while a milestone is `In progress`, which the gate already rejects through its requirements and open points; the explicit item gives the clearer message.
+- `Layout` gains `pyproject` (`dsp/pyproject.toml`) and `package_init` (`dsp/sinus_dsp/__init__.py`), so that tests on fixture trees (OP-052) cover the rule.
+- Not checked mechanically: that P is raised for a correction release, which needs the history of `main`. The release review checks it (`sdp.md` §3, activity 7).
+
+**C++ items.** This rule covers `dsp`. The versioning and identification of the C++ items is part of their detailed design, written at the start of their milestone (Conventions), starting with the library at Milestone 2.
+
+**Verification notes.**
+- Developer's unit tests:
+  - `source_digest` on a fixture package folder: equal to a digest computed independently in the test (`hashlib` on a manifest written out literally); the same whatever the order in which the files were created; a CR LF copy of a file gives the same digest; a `__pycache__` folder, a hidden file or folder, a file that is not `.py` and a symbolic link (where the platform allows one) leave it unchanged; one changed byte, a renamed file, an added or a removed `.py` file each change it; files in nested folders are named with `/`.
+  - `software_identity()` on the real package: the version equals `sinus_dsp.__version__` and the version of `dsp/pyproject.toml`; the digest has 64 lowercase hexadecimal digits; `python` matches `sys.version_info`; `RUNTIME_DISTRIBUTIONS` equals the dependency names of `dsp/pyproject.toml`.
+  - `software_rows` literally; `stale_software_rows` for a current report, a stale `Software` row, a stale `Runtime` row, one row missing, and a text with neither row.
+  - `software_check.py`: exit statuses and messages on fixture folders.
+  - The version rule of `traceability.py` on fixture trees (with OP-052): each state of the register, the two files disagreeing, a malformed version, the release gate.
+- QA: SRS-012 as in the §8.10 verification notes; SRS-016 as in the §8.11 verification notes; SRS-015: the header keys `software_version` and `source_sha256` hold the identity of the running package.
 
 ## 9. SOUP per software item
 
@@ -1475,4 +1616,4 @@ Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, Google
 
 ## 12. Open points referenced
 
-OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-056, OP-057. See [`open-points.md`](open-points.md).
+OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-056, OP-057, OP-061. See [`open-points.md`](open-points.md).
