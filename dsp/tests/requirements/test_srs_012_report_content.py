@@ -9,14 +9,24 @@ the detections, and therefore every count, are known (SRS-008 decides them; the 
 values are worked out in the docstring of each record builder of `conftest.py`). The command
 tests run the script of the software in a separate process, without network.
 
-What the tests check, from the statement of SRS-012 (v0.6):
+What the tests check, from the statement of SRS-012 (v0.7):
 - the per-record and aggregate statistics of SRS-011, with values matching the fixture;
 - the five records with the lowest Se and with the lowest +P, among the records whose value
   is defined (fewer if fewer are defined), ties ordered by record name;
 - the pass or fail of each SRS-007 threshold (99.50%), decided on the exact counts; a
   threshold whose value is not defined is reported as fail;
 - the database name and version and the outcome of its verification (SRS-001);
-- the software version and the settings used (channel, mains frequency);
+- the software version, with the identifier of the source code that produced the report,
+  and the settings used (channel, mains frequency). The test computes the identifier itself
+  from the source files of the package under test, with the six steps of architecture
+  section 8.14 (`conftest.py`, not the function of the software), and compares it with the
+  row `| Software | sinus-dsp <version>, source SHA-256 <identifier> |`; copies of the
+  package, changed or not, run in a separate process show that the identifier and the
+  version are those of the code that runs;
+- the versions of the third-party software used at run time: the row `| Runtime | Python
+  <major>.<minor>, numpy <version>, scipy <version>, wfdb <version> |`, compared with the
+  environment that runs the test (`sys.version_info`, `importlib.metadata`), and naming
+  every runtime dependency of `dsp/pyproject.toml`;
 - what was not scored because of ventricular flutter or fibrillation episodes: the episodes
   in the record, over the whole record; from 5:00 to the end of the record, the episodes that
   reach 5:00 or later, their duration from 5:00 with the onset and offset samples (a sample
@@ -29,6 +39,13 @@ What the tests check, from the statement of SRS-012 (v0.6):
 The cases of the verification of SRS-012 and their tests:
 - the report contains each listed item, with values matching the fixture, the worst records
   in the expected order: the tests on the standard fixture below;
+- the software version and the identifier of the source code are those of the software
+  under test, the identifier computed by the test:
+  `test_report_states_the_software_version_and_the_source_identifier`, and for the code that
+  runs, `test_report_states_the_identity_of_the_code_that_runs` and
+  `test_command_report_states_the_software_and_the_runtime_versions`;
+- the versions of the third-party software are those of the environment that runs the test,
+  in the documented form: `test_report_states_the_runtime_versions_of_the_environment`;
 - two episodes, one that ends before 5:00 and one after it: record 207 of the standard
   fixture (`test_episode_before_5_minutes_counts_only_in_the_episodes_of_the_record`) and
   the case `one-before-and-one-after-5min` of the figures of one record;
@@ -56,6 +73,10 @@ and 8.10), tested here with it.
 
 from __future__ import annotations
 
+import ast
+import contextlib
+import hashlib
+import importlib.metadata
 import os
 import re
 import subprocess
@@ -68,7 +89,6 @@ from typing import Any
 import numpy as np
 import pytest
 
-from sinus_dsp import __version__
 from sinus_dsp.data.physionet import Database, VerificationResult
 from sinus_dsp.data.records import Annotation, Record
 from sinus_dsp.errors import DataVerificationError
@@ -84,6 +104,7 @@ from sinus_dsp.evaluation.run import (
     run_validation,
     write_validation_report,
 )
+from sinus_dsp.version import SoftwareIdentity
 
 pytestmark = pytest.mark.usefixtures("forbid_network")
 
@@ -288,43 +309,314 @@ def test_report_states_the_database_that_was_verified(
     assert MITDB_TITLE not in section.text
 
 
-@pytest.mark.requirement("SRS-012")
-def test_report_states_the_software_version(
-    standard_run: Run, parse_report: Callable[[str], Any]
-) -> None:
-    """The software version.
-
-    Input: the report of the standard fixture; the evaluation results it came from.
-    Expected: the results carry the version of the package, and the section "Software, data
-    and settings" states "sinus-dsp <version of the package>".
-    """
-    section = parse_report(standard_run.text).section("software, data and settings")
-
-    assert standard_run.results.software_version == __version__
-    assert f"sinus-dsp {__version__}" in section.text
-
-
-@pytest.mark.requirement("SRS-012")
-def test_report_states_the_software_version_of_the_results(
-    standard_run: Run, parse_report: Callable[[str], Any]
-) -> None:
-    """The version stated is the one of the results, not a fixed text.
-
-    Input: the results of the standard fixture with the software version replaced by
-    "9.8.7-test", rendered as the full report.
-    Expected: "sinus-dsp 9.8.7-test" in the section "Software, data and settings", and not
-    the version of the package.
-    """
-    results = _replaced(standard_run.results, software_version="9.8.7-test")
-
-    section = parse_report(render_full_report(results)).section("software, data and settings")
-
-    assert "sinus-dsp 9.8.7-test" in section.text
-    assert f"sinus-dsp {__version__}" not in section.text
-
-
 def _replaced(results: Any, **changes: Any) -> Any:
     return replace(results, **changes)
+
+
+# --------------------------------------------------------------------------------------------
+# Software version, identifier of the source code, and runtime versions
+# --------------------------------------------------------------------------------------------
+
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
+OTHER_SOFTWARE = SoftwareIdentity(
+    version="9.8.7.dev6",
+    source_sha256="0123456789abcdef" * 4,
+    python="3.99",
+    runtime=(("numpy", "1.2.3"), ("scipy", "4.5.6"), ("wfdb", "7.8.9")),
+)
+
+
+def _rows_starting_with(text: str, prefix: str) -> list[str]:
+    """The lines of ``text`` that start with ``prefix``."""
+    return [line for line in text.split("\n") if line.startswith(prefix)]
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+@pytest.mark.requirement("SRS-012")
+def test_source_identifier_of_the_test_follows_the_documented_method(
+    tmp_path: Path,
+    source_digest: Callable[[Path], str],
+    source_manifest: Callable[[Path], bytes],
+) -> None:
+    """The identifier that the tests compute is the one documented in architecture 8.14.
+
+    Checks the helper of the tests before it is used as the expected value.
+    Input: a package folder `pkg` written by the test, holding `__init__.py`, `Z.py`, `b.py`
+    (CR LF line endings), `sub/a.py` and `sub/é.py`, and what the method leaves out:
+    `__pycache__/c.py`, `.hidden/d.py`, `.e.py`, `f.pyc`, `g.txt`, a folder `h.py` holding
+    only a text file, and, where the platform allows them, a symbolic link `i.py` to `b.py`
+    and a symbolic link `j` to the folder `sub`.
+    Expected: the manifest is the line `<SHA-256 of the content, CR LF read as LF>  <name>`
+    for `pkg/Z.py`, `pkg/__init__.py`, `pkg/b.py`, `pkg/sub/a.py` and `pkg/sub/é.py`, in this
+    (code-point) order, each ended by a line feed, in UTF-8, written out literally here; the
+    identifier is the SHA-256 of that manifest, 64 lowercase hexadecimal digits.
+    """
+    package = tmp_path / "pkg"
+    contents = {
+        "__init__.py": b'"""Package."""\n__version__ = "1.2.3"\n',
+        "Z.py": b"z = 1\n",
+        "b.py": b"b = 2\r\nc = 3\r\n",
+        "sub/a.py": b"a = 1\n",
+        "sub/é.py": b"e = 5\n",
+        "__pycache__/c.py": b"c = 1\n",
+        ".hidden/d.py": b"d = 1\n",
+        ".e.py": b"e = 1\n",
+        "f.pyc": b"\x00\x01",
+        "g.txt": b"text\n",
+        "h.py/inner.txt": b"text\n",
+    }
+    for name, data in contents.items():
+        (package / name).parent.mkdir(parents=True, exist_ok=True)
+        (package / name).write_bytes(data)
+    with contextlib.suppress(OSError, NotImplementedError):
+        (package / "i.py").symlink_to(package / "b.py")
+    with contextlib.suppress(OSError, NotImplementedError):
+        (package / "j").symlink_to(package / "sub", target_is_directory=True)
+    manifest = (
+        _sha256(b"z = 1\n")
+        + "  pkg/Z.py\n"
+        + _sha256(b'"""Package."""\n__version__ = "1.2.3"\n')
+        + "  pkg/__init__.py\n"
+        + _sha256(b"b = 2\nc = 3\n")
+        + "  pkg/b.py\n"
+        + _sha256(b"a = 1\n")
+        + "  pkg/sub/a.py\n"
+        + _sha256(b"e = 5\n")
+        + "  pkg/sub/é.py\n"
+    ).encode("utf-8")
+
+    assert source_manifest(package) == manifest
+    assert source_digest(package) == hashlib.sha256(manifest).hexdigest()
+    assert HEX64.match(source_digest(package))
+
+
+@pytest.mark.requirement("SRS-012")
+def test_report_states_the_software_version_and_the_source_identifier(
+    standard_run: Run,
+    parse_report: Callable[[str], Any],
+    running_software: Any,
+    project_version: str,
+) -> None:
+    """The software version, with the identifier of the source code that produced the report.
+
+    Input: the report of the standard fixture, written by the package under test in the test
+    process; the identifier computed by the test from the source files of that package (the
+    six steps of architecture section 8.14); the `__version__` literal of the package and
+    the version of `dsp/pyproject.toml`.
+    Expected: the table of the section "Software, data and settings" (columns Item, Value)
+    has the line `| Software | sinus-dsp <version>, source SHA-256 <identifier> |` with these
+    values, and the report has no other line starting with `| Software |`; the identifier
+    has 64 lowercase hexadecimal digits; the version is also that of `dsp/pyproject.toml`;
+    the results carry the same version and identifier.
+    """
+    section = parse_report(standard_run.text).section("software, data and settings")
+    expected = running_software
+
+    assert HEX64.match(expected.source_sha256)
+    assert expected.version == project_version
+    assert expected.software_row in section.lines
+    assert _rows_starting_with(standard_run.text, "| Software |") == [expected.software_row]
+    table = section.table_with_row("Software")
+    assert table.header == ("Item", "Value")
+    assert table.row("Software") == (
+        "Software",
+        f"sinus-dsp {expected.version}, source SHA-256 {expected.source_sha256}",
+    )
+    assert standard_run.results.software.version == expected.version
+    assert standard_run.results.software.source_sha256 == expected.source_sha256
+
+
+@pytest.mark.requirement("SRS-012")
+def test_report_states_the_runtime_versions_of_the_environment(
+    standard_run: Run,
+    parse_report: Callable[[str], Any],
+    running_software: Any,
+    runtime_dependency_names: tuple[str, ...],
+) -> None:
+    """The versions of the third-party software used at run time.
+
+    Input: the report of the standard fixture, written in the test process; the Python
+    version of the test process (`sys.version_info`), the installed versions of numpy, scipy
+    and wfdb (`importlib.metadata.version`) and the runtime dependencies of
+    `dsp/pyproject.toml`.
+    Expected: the table of the section "Software, data and settings" has the line
+    `| Runtime | Python <major>.<minor>, numpy <version>, scipy <version>, wfdb <version> |`
+    with these values, in this order (the documented form; Python without its patch
+    number), and the report has no other line starting with `| Runtime |`; the packages
+    named are exactly the runtime dependencies of `dsp/pyproject.toml`; the results carry the
+    same versions.
+    """
+    section = parse_report(standard_run.text).section("software, data and settings")
+    expected = running_software
+    python = f"{sys.version_info.major}.{sys.version_info.minor}"
+
+    assert expected.runtime_row in section.lines
+    assert _rows_starting_with(standard_run.text, "| Runtime |") == [expected.runtime_row]
+    value = section.table_with_row("Runtime").row("Runtime")[1]
+    first, *packages = value.split(", ")
+    assert first == f"Python {python}"
+    assert [package.split(" ")[0] for package in packages] == ["numpy", "scipy", "wfdb"]
+    assert sorted(package.split(" ")[0] for package in packages) == sorted(runtime_dependency_names)
+    for package in packages:
+        name, version = package.split(" ")
+        assert version == importlib.metadata.version(name), name
+    assert standard_run.results.software.python == python
+    assert standard_run.results.software.runtime == expected.runtime
+
+
+@pytest.mark.requirement("SRS-012")
+def test_software_and_runtime_rows_are_those_of_the_results(
+    standard_run: Run, running_software: Any
+) -> None:
+    """The rows state the software identity that the results carry, not fixed texts.
+
+    Input: the results of the standard fixture with their software identity replaced by
+    version "9.8.7.dev6", identifier "0123456789abcdef" four times, Python "3.99", numpy
+    1.2.3, scipy 4.5.6 and wfdb 7.8.9, rendered as the full report.
+    Expected: exactly one line `| Software | sinus-dsp 9.8.7.dev6, source SHA-256
+    0123456789abcdef...0123456789abcdef |` and one line `| Runtime | Python 3.99, numpy
+    1.2.3, scipy 4.5.6, wfdb 7.8.9 |`; neither the version, the identifier nor the runtime
+    line of the package under test.
+    """
+    text = render_full_report(_replaced(standard_run.results, software=OTHER_SOFTWARE))
+
+    assert _rows_starting_with(text, "| Software |") == [
+        f"| Software | sinus-dsp 9.8.7.dev6, source SHA-256 {'0123456789abcdef' * 4} |"
+    ]
+    assert _rows_starting_with(text, "| Runtime |") == [
+        "| Runtime | Python 3.99, numpy 1.2.3, scipy 4.5.6, wfdb 7.8.9 |"
+    ]
+    assert f"sinus-dsp {running_software.version}," not in text
+    assert running_software.source_sha256 not in text
+    assert running_software.runtime_row not in text
+
+
+def _set_version_literal(init_file: Path, version: str) -> None:
+    """Replace the string literal assigned to ``__version__`` in ``init_file``."""
+    source = init_file.read_bytes()
+    literals = [
+        node.value
+        for node in ast.parse(source).body
+        if isinstance(node, ast.Assign | ast.AnnAssign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "__version__"
+            for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        )
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    ]
+    assert len(literals) == 1
+    literal = literals[0]
+    assert literal is not None and literal.lineno == literal.end_lineno
+    lines = source.split(b"\n")
+    line = lines[literal.lineno - 1]
+    lines[literal.lineno - 1] = (
+        line[: literal.col_offset] + f'"{version}"'.encode() + line[literal.end_col_offset :]
+    )
+    init_file.write_bytes(b"\n".join(lines))
+
+
+def _change_copy(package: Path, variant: str) -> None:
+    """Change a copy of the package as the variant says."""
+    if variant == "unchanged":
+        return
+    if variant == "comment-added":
+        path = package / "evaluation" / "run.py"
+        path.write_bytes(path.read_bytes() + b"\n# A comment line added by a test.\n")
+    elif variant == "module-added":
+        (package / "evaluation" / "added_by_a_test.py").write_bytes(b'"""Added by a test."""\n')
+    elif variant == "version-changed":
+        _set_version_literal(package / "__init__.py", "9.9.9.dev9")
+    else:
+        raise AssertionError(variant)
+
+
+@pytest.mark.requirement("SRS-012")
+@pytest.mark.parametrize(
+    "variant", ["unchanged", "comment-added", "module-added", "version-changed"]
+)
+def test_report_states_the_identity_of_the_code_that_runs(
+    variant: str,
+    tmp_path: Path,
+    evaluation_fixture_without_episodes: Any,
+    copy_package: Callable[..., Path],
+    expected_software: Callable[[Path], Any],
+    running_software: Any,
+    run_report_driver: Callable[..., Any],
+) -> None:
+    """The version and the identifier stated are those of the code that wrote the report.
+
+    Input: a copy of the package under test in another folder: unchanged; with a comment
+    line added at the end of `sinus_dsp/evaluation/run.py`; with a module
+    `sinus_dsp/evaluation/added_by_a_test.py` added; or with its `__version__` literal set
+    to "9.9.9.dev9". A separate Python process that imports the package from the copy writes
+    the report of the fixture databases without episodes, with the detector double.
+    Expected: the process imported the copy and wrote the report; its only `Software` row
+    states the `__version__` literal of the copy and the identifier computed by the test from
+    the files of the copy; that identifier equals the one of the package under test for the
+    unchanged copy only (the version literal is part of the source code, so changing it
+    changes the identifier too), and the version differs only for the changed version; the
+    only `Runtime` row is that of the environment.
+    """
+    package = copy_package(tmp_path / "code copy")
+    _change_copy(package, variant)
+    expected = expected_software(package)
+    output = tmp_path / "out" / "qrs-ec57-report.md"
+    output.parent.mkdir()
+
+    run = run_report_driver(
+        evaluation_fixture_without_episodes, output, cwd=tmp_path, package_root=package.parent
+    )
+
+    assert run.completed.returncode == 0, run.completed.stderr
+    assert run.package_dir is not None and run.package_dir.samefile(package)
+    assert run.report is not None
+    text = run.report.decode("utf-8")
+    assert _rows_starting_with(text, "| Software |") == [expected.software_row]
+    assert _rows_starting_with(text, "| Runtime |") == [running_software.runtime_row]
+    assert (expected.source_sha256 == running_software.source_sha256) == (variant == "unchanged")
+    assert (expected.version == running_software.version) == (variant != "version-changed")
+    if variant == "version-changed":
+        assert expected.version == "9.9.9.dev9"
+
+
+@pytest.mark.requirement("SRS-012")
+def test_command_report_states_the_software_and_the_runtime_versions(
+    tmp_path: Path,
+    ecg_evaluation_fixture: Any,
+    write_command_driver: Callable[[Path], Path],
+    running_software: Any,
+) -> None:
+    """The report written by the validation command states the same software identity.
+
+    Input: `validate.py --offline --data-dir <fixture> --output <path>`, run in a separate
+    process without network, on the fixture databases of noise-free synthetic ECGs, with the
+    pinned checksum lists set to the fixture lists for that process only.
+    Expected: exit status 0; the report has exactly one line starting with `| Software |`,
+    equal to `| Software | sinus-dsp <version>, source SHA-256 <identifier computed by the
+    test> |`, and one starting with `| Runtime |`, equal to the documented line with the
+    versions of the environment that runs the test.
+    """
+    fixture = ecg_evaluation_fixture
+    output = tmp_path / "out" / "qrs-ec57-report.md"
+    output.parent.mkdir()
+    driver = write_command_driver(tmp_path)
+    pins = (fixture.mitdb.checksum_list_sha256, fixture.nstdb.checksum_list_sha256)
+
+    completed = _run_command(
+        driver,
+        pins,
+        ["--offline", "--data-dir", str(fixture.data_root), "--output", str(output)],
+        cwd=tmp_path,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    text = output.read_bytes().decode("utf-8")
+    assert _rows_starting_with(text, "| Software |") == [running_software.software_row]
+    assert _rows_starting_with(text, "| Runtime |") == [running_software.runtime_row]
 
 
 @pytest.mark.requirement("SRS-012")
@@ -598,10 +890,19 @@ def _noise_stress() -> NoiseStressResults:
     )
 
 
+RENDER_SOFTWARE = SoftwareIdentity(
+    version="0.0.0.dev0",
+    source_sha256="e" * 64,
+    python="3.11",
+    runtime=(("numpy", "2.0.0"), ("scipy", "1.0.0"), ("wfdb", "4.0.0")),
+)
+
+
 def _results(evaluations: Sequence[RecordEvaluation]) -> ValidationResults:
-    """Validation results of the given MIT-BIH record evaluations, default settings."""
+    """Validation results of the given MIT-BIH record evaluations, default settings, and a
+    software identity made up by the test."""
     return ValidationResults(
-        software_version=__version__,
+        software=RENDER_SOFTWARE,
         settings=EvaluationSettings(),
         mitdb=VerificationResult(database=RENDER_MITDB, records=None, files=("RECORDS",)),
         records=tuple(sorted(evaluations, key=lambda e: e.record)),
