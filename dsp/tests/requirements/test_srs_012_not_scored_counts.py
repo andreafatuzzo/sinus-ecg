@@ -1,8 +1,9 @@
 """Requirement tests of SRS-012: the counts of what was not scored (risk control RC-004).
 
 SRS-012 states which figures the validation report gives on what SRS-008 leaves unscored
-because of ventricular flutter or fibrillation episodes. They cover the part of each record
-from 5:00 to its end:
+because of ventricular flutter or fibrillation episodes. Like every one of those figures
+except the number of episodes in the record (SRS-012 v0.6), the two counts of this file
+cover the part of each record from 5:00 to its end:
 
 - the number of reference beats at or after 5:00 that lie inside an episode;
 - the number of detections at or after 5:00 that lie inside an episode and are not paired,
@@ -94,7 +95,7 @@ def test_only_the_episode_after_5_minutes_is_counted(
 
 @pytest.mark.requirement("SRS-012")
 def test_episode_that_contains_5_minutes_counts_only_the_items_after_it() -> None:
-    """An episode from 107000 to 109000, which contains 5:00.
+    """An episode from 107000 to 109000, which contains 5:00 (an SRS-012 verification case).
 
     Input: reference beats at 107500 and 108500 and detections at 107500 and 108500, all
     inside the episode; nothing else.
@@ -186,6 +187,8 @@ def test_detection_left_unscored_by_the_rule_at_5_minutes_is_not_counted(
 ) -> None:
     """The first detection after 5:00, inside an episode that contains 5:00.
 
+    The SRS-012 verification case "a detection left unscored by the rule at 5:00 that lies
+    inside an episode", with its limits.
     Input: the episode from 107000 to 109000, and:
     - a first scored beat at 110000 and detections at 108020 and 110000: the detection at
       108020 is left unscored by the rule at 5:00 (the next detection is closer to the first

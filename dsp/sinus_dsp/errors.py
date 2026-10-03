@@ -26,8 +26,14 @@ class InvalidInputError(SinusError, ValueError):
     is rejected with it too. SRS-002: a channel that the record does not have, and signal
     units other than mV, are rejected with it. It is also raised for a design argument
     outside its range (architecture §8.6), for an invalid record name or an empty record
-    selection (architecture §8.3), and for samples out of order given to the matching
-    (architecture §8.8).
+    selection (architecture §8.3), for samples out of order or a negative window or start
+    given to the matching (architecture §8.8), for invalid counts or duplicate record names
+    given to the statistics (architecture §8.9), and by the evaluation run and the report
+    rendering (architecture §8.10): record names given as a string, invalid or given twice;
+    a record loaded with a channel other than that of the settings; invalid counts or target
+    in the comparison with a target; evaluations without records 118 and 119 exactly once
+    for the noise stress comparison; a name that is not a noise stress record name; results
+    of the wrong kind given to a report renderer.
     """
 
 
@@ -37,6 +43,8 @@ class DataVerificationError(SinusError):
     SRS-001, SRS-013: a database with a listed file that is missing or whose SHA-256 differs
     is reported as not verified with this error, which names each such file. It is also
     raised when the checksum list itself is missing or differs from its pinned digest.
+    SRS-012, SRS-014: the command that writes the validation report raises it, before
+    anything is written, when either database is not verified (architecture §8.10).
 
     Attributes:
         database: Name and version of the database, e.g. ``mitdb 1.0.0``.
@@ -74,11 +82,13 @@ class DataVerificationError(SinusError):
 
 
 class MalformedFileError(SinusError, ValueError):
-    """A file does not follow its format (architecture §7.3, §8.3, §8.4, §8.11).
+    """A file does not follow its format (architecture §7.3, §8.3, §8.4, §8.10, §8.11).
 
     SRS-001: a checksum list with a line that is not an entry, an unsafe path, a duplicate
     path or no entry is rejected with this error. SRS-002: so is an annotation file whose
-    sample indices decrease.
+    sample indices decrease. It is also raised for a record list ``RECORDS`` that is not
+    UTF-8 text, names an invalid record or a record twice, or names none (architecture
+    §8.10).
 
     Attributes:
         path: The file, or the name of the source of the text.

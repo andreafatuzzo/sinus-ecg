@@ -3,18 +3,23 @@
 The helpers here are independent of the software under test: they build the test inputs
 (synthetic ECGs with known QRS positions, sinusoids, WFDB records, database folders with
 their checksum list, a fetch function that serves bytes from a dictionary, random beat and
-detection lists around 5:00) and apply the pass criteria of the requirements to its outputs.
-Each helper is exposed as a fixture that returns a function or a class.
+detection lists around 5:00, fixture databases for the evaluation with a detector double
+whose output is known) and apply the pass criteria of the requirements to its outputs
+(including reading the tables of a Markdown report). Each helper is exposed as a fixture that
+returns a function, a class or the fixture data.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import math
+import re
+import shutil
 import socket
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -553,3 +558,901 @@ def forbid_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
     monkeypatch.setattr(urllib.request, "urlopen", refuse("urllib.request.urlopen"))
     yield attempts
     assert attempts == [], f"network access attempted: {attempts}"
+
+
+@contextlib.contextmanager
+def _network_forbidden() -> Iterator[list[str]]:
+    """The guard of ``forbid_network`` as a context manager, for fixtures of a wider scope.
+
+    Inside the block, name resolution, socket connections and ``urllib.request.urlopen``
+    raise an error. On exit, the block fails if any access was attempted, even when the
+    software under test caught the error.
+    """
+    attempts: list[str] = []
+
+    def refuse(name: str) -> Callable[..., Any]:
+        def refused(*args: Any, **kwargs: Any) -> Any:
+            attempts.append(name)
+            raise RuntimeError(f"network access attempted ({name}) in a test without network")
+
+        return refused
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(socket.socket, "connect", refuse("socket.connect"))
+        patch.setattr(socket, "create_connection", refuse("socket.create_connection"))
+        patch.setattr(socket, "getaddrinfo", refuse("socket.getaddrinfo"))
+        patch.setattr(urllib.request, "urlopen", refuse("urllib.request.urlopen"))
+        yield attempts
+    assert attempts == [], f"network access attempted: {attempts}"
+
+
+@pytest.fixture(scope="session")
+def network_forbidden() -> Callable[[], contextlib.AbstractContextManager[list[str]]]:
+    """``with network_forbidden(): ...``: see ``_network_forbidden``."""
+    return _network_forbidden
+
+
+# --------------------------------------------------------------------------------------------
+# Fixture databases for the evaluation run and the validation report (SRS-009, SRS-012,
+# SRS-014)
+# --------------------------------------------------------------------------------------------
+
+EVALUATION_FS_HZ = 360
+FIVE_MINUTES = 108000  # 5:00 at 360 Hz: the first scored sample
+SIX_MINUTES = 129600  # length of the synthetic ECG records, in samples
+SEVEN_MINUTES = 151200  # length of the spike records, in samples
+SPIKE_MV = 1.0
+SPIKE_THRESHOLD_MV = 0.5
+
+# The 12 ECG records of the MIT-BIH Noise Stress Test Database, by record and by decreasing
+# signal-to-noise ratio, with the number of missed beats and of false detections of each
+# fixture record (see ``_standard_nstdb_records``).
+NOISE_STRESS_DESIGN: tuple[tuple[str, int, int], ...] = (
+    ("118e24", 2, 2),
+    ("118e18", 3, 2),
+    ("118e12", 5, 4),
+    ("118e06", 10, 12),
+    ("118e00", 20, 30),
+    ("118e_6", 40, 60),
+    ("119e24", 0, 4),
+    ("119e18", 1, 5),
+    ("119e12", 4, 6),
+    ("119e06", 8, 15),
+    ("119e00", 25, 35),
+    ("119e_6", 134, 0),
+)
+
+
+@dataclass(frozen=True)
+class FixtureRecord:
+    """A record of a fixture database, and the figures that its evaluation must give.
+
+    Both channels are 0 mV, except for a 1 mV spike at each sample of ``spikes_0`` (channel 0)
+    and of ``spikes_1`` (channel 1): the spike detector returns exactly these samples. For a
+    synthetic ECG record, ``ecg_mv`` is channel 0. ``annotations`` are the reference
+    annotations (beats and others) in file order; ``None`` writes no annotation file.
+
+    The expected figures (``tp`` to ``flutter_waves_outside_vf``) are those of channel 0 with
+    the settings of SRS-007, at 360 Hz: match window 54 samples, 5:00 = sample 108000. They are
+    worked out from the statements of SRS-008 and SRS-012 when the record is designed, in the
+    docstring of its builder.
+    """
+
+    name: str
+    n_samples: int
+    signal_names: tuple[str, str]
+    annotations: tuple[AnnotationTuple, ...] | None
+    spikes_0: tuple[int, ...]
+    spikes_1: tuple[int, ...]
+    tp: int
+    fn: int
+    fp: int
+    vf_episodes: int = 0
+    vf_episodes_scored: int = 0
+    vf_samples_scored: int = 0
+    reference_excluded: int = 0
+    detections_excluded: int = 0
+    flutter_waves_outside_vf: int = 0
+    ecg_mv: FloatArray | None = field(default=None, compare=False, repr=False)
+
+    @property
+    def beats(self) -> tuple[int, ...]:
+        """The samples of the reference beat annotations."""
+        if self.annotations is None:
+            return ()
+        return tuple(a[0] for a in self.annotations if a[1] in ("N", "V"))
+
+
+def _file_order(
+    beats: Sequence[int], others: Sequence[AnnotationTuple]
+) -> tuple[AnnotationTuple, ...]:
+    """Reference annotations in file order.
+
+    A rhythm annotation ``+`` with the note ``(N`` at sample 10 (as in the reference database),
+    a beat annotation at each of ``beats`` (``N``, and ``V`` for every seventh beat: any beat
+    code is a reference beat), and ``others``, merged in sample order.
+    """
+    merged: list[AnnotationTuple] = [(10, "+", 0, "(N")]
+    merged += [(b, "V" if i % 7 == 3 else "N", 0, "") for i, b in enumerate(beats)]
+    merged += list(others)
+    return tuple(sorted(merged, key=lambda a: a[0]))
+
+
+def _spread(items: Sequence[int], count: int) -> list[int]:
+    """``count`` items of ``items``, spread evenly over it, starting with the first one."""
+    return [items[i * len(items) // count] for i in range(count)]
+
+
+def _every_360() -> list[int]:
+    """Beats every 360 samples (60 bpm) from sample 180 to the end of a 7-min record.
+
+    420 beats; the 120 from 108180 to 151020 are at or after 5:00.
+    """
+    return list(range(180, SEVEN_MINUTES, 360))
+
+
+def _regular_record(
+    name: str, *, period: int, misses: int, extras: int, signal_name: str = "MLII"
+) -> FixtureRecord:
+    """A 7-min record with a beat every ``period`` samples, from sample 180.
+
+    Channel 0 has a spike 3 samples after every beat, except after ``misses`` of the beats at
+    or after 5:00 (spread over them), and ``extras`` more spikes halfway between a beat at or
+    after 5:00 and the next beat. A spike 3 samples after a beat is paired with it; a beat
+    without a spike is a false negative; a spike halfway lies at least 162 samples from any
+    beat and is a false positive. No spike lies within 54 samples of 5:00, so the rule at 5:00
+    changes nothing. Channel 1 has no spike.
+
+    Period 360: 120 beats at or after 5:00 (108180 to 151020). Period 324: 134 (108072 to
+    151164). Expected: TP = those beats - misses, FN = misses, FP = extras; no episode.
+    """
+    beats = list(range(180, SEVEN_MINUTES, period))
+    scored = [b for b in beats if b >= FIVE_MINUTES]
+    missed = set(_spread(scored, misses)) if misses else set()
+    halfway = [b + period // 2 for b in _spread(scored, extras)] if extras else []
+    spikes = sorted([b + 3 for b in beats if b not in missed] + halfway)
+    return FixtureRecord(
+        name=name,
+        n_samples=SEVEN_MINUTES,
+        signal_names=(signal_name, "V1"),
+        annotations=_file_order(beats, ()),
+        spikes_0=tuple(spikes),
+        spikes_1=(),
+        tp=len(scored) - misses,
+        fn=misses,
+        fp=extras,
+    )
+
+
+def _record_105() -> FixtureRecord:
+    """Reference beats only in the first 5 minutes, and detections after 5:00.
+
+    Beats every 360 samples from 180 to 107820, each with a spike 3 samples later, and five
+    more spikes at 111960, 115560, 119160, 122760 and 126360.
+    Expected: no scored reference beat, so TP 0 and FN 0 (Se not defined); the five spikes
+    after 5:00 are false positives (the first one is 3960 samples after 5:00, so the rule at
+    5:00 does not apply): FP 5, +P 0.00%.
+    """
+    beats = list(range(180, FIVE_MINUTES, 360))
+    late = [111960, 115560, 119160, 122760, 126360]
+    return FixtureRecord(
+        name="105",
+        n_samples=SEVEN_MINUTES,
+        signal_names=("MLII", "V1"),
+        annotations=_file_order(beats, ()),
+        spikes_0=tuple(sorted([b + 3 for b in beats] + late)),
+        spikes_1=(),
+        tp=0,
+        fn=0,
+        fp=5,
+    )
+
+
+def _record_207() -> FixtureRecord:
+    """Two ventricular flutter episodes, one that ends before 5:00 and one after 5:00.
+
+    The fixture of the verification of SRS-012. Beats every 360 samples from 180.
+    - Episode 1, ``[`` at 36000 and ``]`` at 43200 (100 s to 120 s): the 20 beats from 36180
+      to 43020 lie inside it, each with a spike 3 samples later, and one more spike at 40000.
+    - Episode 2, ``[`` at 115200 and ``]`` at 124350: the 25 beats from 115380 to 124020 lie
+      inside it, with no spike near them; two spikes at 117000 and 121000, far from any
+      scored beat (not paired); a spike at 124340, inside the episode, 40 samples before the
+      scored beat at 124380 (outside it), which has no other spike: they are paired. A flutter
+      wave ``!`` at 118000.
+    - Every other beat has a spike 3 samples later.
+    Expected: TP 95 (the 120 beats after 5:00 minus the 25 of episode 2), FN 0, FP 0; 2
+    episodes in the record, 1 that reaches 5:00 or later, lasting 124350 - 115200 + 1 = 9151
+    samples (25.4 s) from 5:00; 25 reference beats and 2 detections not scored; no flutter
+    wave outside the episodes.
+    """
+    beats = _every_360()
+    spikes = [b + 3 for b in beats if not 115200 <= b <= 124380]
+    spikes += [40000, 117000, 121000, 124340]
+    others: list[AnnotationTuple] = [
+        (36000, "[", 0, ""),
+        (43200, "]", 0, ""),
+        (115200, "[", 0, ""),
+        (118000, "!", 0, ""),
+        (124350, "]", 0, ""),
+    ]
+    return FixtureRecord(
+        name="207",
+        n_samples=SEVEN_MINUTES,
+        signal_names=("MLII", "V1"),
+        annotations=_file_order(beats, others),
+        spikes_0=tuple(sorted(spikes)),
+        spikes_1=(),
+        tp=95,
+        fn=0,
+        fp=0,
+        vf_episodes=2,
+        vf_episodes_scored=1,
+        vf_samples_scored=9151,
+        reference_excluded=25,
+        detections_excluded=2,
+    )
+
+
+def _record_208() -> FixtureRecord:
+    """Twenty short episodes after 5:00: the duration includes the onset and offset samples.
+
+    Beats every 360 samples from 180, each with a spike 3 samples later. For k = 310, 312,
+    ..., 348, an episode from 60 to 420 samples after the beat ``180 + 360 k``: 361 samples,
+    onset and offset included, with the next beat and its spike inside it.
+    Expected: TP 100, FN 0, FP 0; 20 episodes, all from 5:00, lasting 20 x 361 = 7220 samples
+    (20.1 s; 20.0 s if the onset or the offset sample were left out); 20 reference beats and
+    20 detections not scored.
+    """
+    beats = _every_360()
+    others: list[AnnotationTuple] = []
+    for k in range(310, 350, 2):
+        beat = 180 + 360 * k
+        others += [(beat + 60, "[", 0, ""), (beat + 420, "]", 0, "")]
+    return FixtureRecord(
+        name="208",
+        n_samples=SEVEN_MINUTES,
+        signal_names=("MLII", "V1"),
+        annotations=_file_order(beats, others),
+        spikes_0=tuple(b + 3 for b in beats),
+        spikes_1=(),
+        tp=100,
+        fn=0,
+        fp=0,
+        vf_episodes=20,
+        vf_episodes_scored=20,
+        vf_samples_scored=7220,
+        reference_excluded=20,
+        detections_excluded=20,
+    )
+
+
+def _record_209() -> FixtureRecord:
+    """An episode that contains 5:00, and a detection dropped by the rule at 5:00 inside it.
+
+    Beats every 360 samples from 180. An episode from 107000 to 109000 holds the beats 107100,
+    107460 and 107820 (before 5:00) and 108180, 108540 and 108900 (after 5:00). Every beat has
+    a spike 3 samples later, except 108180; one more spike at 108020, 20 samples after 5:00.
+    The first scored reference beat is 109260. The first detection at or after 5:00 (108020)
+    lies within 54 samples of 5:00 and the next one (108543) is closer to 109260: the rule at
+    5:00 of SRS-008 leaves it unscored. 108543 and 108903 lie inside the episode and are not
+    paired.
+    Expected: TP 117, FN 0, FP 0; 1 episode, 1 from 5:00, lasting 109000 - 108000 + 1 = 1001
+    samples (2.8 s) from 5:00; 3 reference beats not scored (those at or after 5:00) and 2
+    detections not scored (the one dropped by the rule at 5:00 is not included).
+    """
+    beats = _every_360()
+    spikes = [b + 3 for b in beats if b != 108180] + [108020]
+    others: list[AnnotationTuple] = [(107000, "[", 0, ""), (109000, "]", 0, "")]
+    return FixtureRecord(
+        name="209",
+        n_samples=SEVEN_MINUTES,
+        signal_names=("MLII", "V1"),
+        annotations=_file_order(beats, others),
+        spikes_0=tuple(sorted(spikes)),
+        spikes_1=(),
+        tp=117,
+        fn=0,
+        fp=0,
+        vf_episodes=1,
+        vf_episodes_scored=1,
+        vf_samples_scored=1001,
+        reference_excluded=3,
+        detections_excluded=2,
+    )
+
+
+def _record_210() -> FixtureRecord:
+    """An episode that ends before 5:00 only, and two flutter waves outside any episode.
+
+    Beats every 360 samples from 180, each with a spike 3 samples later. An episode from 36000
+    to 43200 (20 beats and their spikes inside it). Two flutter waves ``!`` outside it: one at
+    60090, before 5:00, and one at 120240, after 5:00, halfway between the beats 120060 and
+    120420 (177 samples from the nearest spike). A ``!`` is not a reference beat, so neither
+    changes the counts.
+    Expected: TP 120, FN 0, FP 0; 1 episode in the record, 0 from 5:00, duration 0 samples,
+    no reference beat and no detection not scored; 1 flutter wave outside the episodes: the
+    one at 120240. The one at 60090 is not counted, because the flutter waves are counted from
+    5:00 to the end of the record (architecture sections 8.8 and 8.10, a design figure of the
+    report).
+    """
+    beats = _every_360()
+    others: list[AnnotationTuple] = [
+        (36000, "[", 0, ""),
+        (43200, "]", 0, ""),
+        (60090, "!", 0, ""),
+        (120240, "!", 0, ""),
+    ]
+    return FixtureRecord(
+        name="210",
+        n_samples=SEVEN_MINUTES,
+        signal_names=("MLII", "V1"),
+        annotations=_file_order(beats, others),
+        spikes_0=tuple(b + 3 for b in beats),
+        spikes_1=(),
+        tp=120,
+        fn=0,
+        fp=0,
+        vf_episodes=1,
+        flutter_waves_outside_vf=1,
+    )
+
+
+def _record_211() -> FixtureRecord:
+    """An episode without an offset annotation: it lasts until the end of the record.
+
+    Beats every 360 samples from 180, each with a spike 3 samples later. A ``[`` at 140000 and
+    no ``]``: the 31 beats from 140220 to 151020 and their spikes lie inside the episode.
+    Expected: TP 89, FN 0, FP 0; 1 episode, 1 from 5:00, lasting 151199 - 140000 + 1 = 11200
+    samples (31.1 s); 31 reference beats and 31 detections not scored.
+    """
+    beats = _every_360()
+    return FixtureRecord(
+        name="211",
+        n_samples=SEVEN_MINUTES,
+        signal_names=("MLII", "V1"),
+        annotations=_file_order(beats, [(140000, "[", 0, "")]),
+        spikes_0=tuple(b + 3 for b in beats),
+        spikes_1=(),
+        tp=89,
+        fn=0,
+        fp=0,
+        vf_episodes=1,
+        vf_episodes_scored=1,
+        vf_samples_scored=11200,
+        reference_excluded=31,
+        detections_excluded=31,
+    )
+
+
+def _standard_mitdb_records() -> list[FixtureRecord]:
+    """The 14 records of the fixture MIT-BIH Arrhythmia Database.
+
+    | Record | TP | FN | FP | Se (%) | +P (%) | Episodes |
+    |---|---|---|---|---|---|---|
+    | 100 | 120 | 0 | 0 | 100.00 | 100.00 | |
+    | 101 | 117 | 3 | 1 | 97.50 | 99.15 | |
+    | 102 | 134 | 0 | 4 | 100.00 | 97.10 | |
+    | 103 | 117 | 3 | 0 | 97.50 | 100.00 | |
+    | 104 | 114 | 6 | 6 | 95.00 | 95.00 | (signal V5) |
+    | 105 | 0 | 0 | 5 | not defined | 0.00 | |
+    | 106 | 0 | 120 | 0 | 0.00 | not defined | |
+    | 118 | 118 | 2 | 1 | 98.33 | 99.16 | |
+    | 119 | 134 | 0 | 4 | 100.00 | 97.10 | |
+    | 207 to 211 | | 0 | 0 | 100.00 | 100.00 | see their builders |
+
+    Gross: TP 1375, FN 134, FP 21.
+    """
+    return [
+        _regular_record("100", period=360, misses=0, extras=0),
+        _regular_record("101", period=360, misses=3, extras=1),
+        _regular_record("102", period=324, misses=0, extras=4),
+        _regular_record("103", period=360, misses=3, extras=0),
+        _regular_record("104", period=360, misses=6, extras=6, signal_name="V5"),
+        _record_105(),
+        _regular_record("106", period=360, misses=120, extras=0),
+        _regular_record("118", period=360, misses=2, extras=1),
+        _regular_record("119", period=324, misses=0, extras=4),
+        _record_207(),
+        _record_208(),
+        _record_209(),
+        _record_210(),
+        _record_211(),
+    ]
+
+
+def _noise_record(name: str) -> FixtureRecord:
+    """A noise record of the Noise Stress Test Database (``bw``, ``em``, ``ma``).
+
+    One minute, two flat channels, no annotation file: noise only, not an ECG record.
+    """
+    return FixtureRecord(
+        name=name,
+        n_samples=21600,
+        signal_names=("noise1", "noise2"),
+        annotations=None,
+        spikes_0=(),
+        spikes_1=(),
+        tp=0,
+        fn=0,
+        fp=0,
+    )
+
+
+def _standard_nstdb_records() -> list[FixtureRecord]:
+    """The 12 ECG records and the 3 noise records of the fixture Noise Stress Test Database.
+
+    Each ECG record has the reference beats of the fixture record 118 (``118eNN``, period 360)
+    or 119 (``119eNN``, period 324), as the noise stress records carry the annotations of the
+    record they are made from, and the misses and false detections of ``NOISE_STRESS_DESIGN``.
+    """
+    records = [
+        _regular_record(
+            name, period=360 if name.startswith("118") else 324, misses=misses, extras=extras
+        )
+        for name, misses, extras in NOISE_STRESS_DESIGN
+    ]
+    return records + [_noise_record(name) for name in ("bw", "em", "ma")]
+
+
+def _long_synthetic_ecg(fs_hz: int, heart_rate_bpm: int, n_samples: int) -> SyntheticEcg:
+    """The synthetic ECG of ``make_synthetic_ecg``, computed fast for long records.
+
+    Same QRS positions and waves, but each wave is evaluated only within 1 s of the R centre
+    of its beat. From 30 bpm up, every wave is below 1e-15 mV beyond that distance.
+    """
+    rr = Fraction(60, heart_rate_bpm)
+    last_centre_s = Fraction(n_samples, fs_hz) - Fraction(1, 2)
+    n_beats = max(0, math.floor((last_centre_s - Fraction(1, 2)) / rr) + 1)
+    qrs = [math.floor((Fraction(1, 2) + k * rr) * fs_hz + Fraction(1, 2)) for k in range(n_beats)]
+
+    scale = math.sqrt(60.0 / heart_rate_bpm)
+    signal = np.zeros(n_samples, dtype=np.float64)
+    for r in qrs:
+        low, high = max(0, r - fs_hz), min(n_samples, r + fs_hz + 1)
+        t_s = np.arange(low, high, dtype=np.float64) / fs_hz
+        for _name, offset_ms, amplitude_mv, sigma_ms, scaled in _WAVES:
+            factor = scale if scaled else 1.0
+            centre_s = r / fs_hz + offset_ms * factor / 1000.0
+            sigma_s = sigma_ms * factor / 1000.0
+            signal[low:high] += amplitude_mv * np.exp(-((t_s - centre_s) ** 2) / (2.0 * sigma_s**2))
+    return SyntheticEcg(
+        fs_hz=float(fs_hz), signal_mv=signal, qrs_samples=np.asarray(qrs, dtype=np.int64)
+    )
+
+
+def _ecg_record(name: str, ecg: SyntheticEcg) -> FixtureRecord:
+    """A 6-min record whose channel 0 is a noise-free synthetic ECG, annotated at its QRS.
+
+    For the real detector: by SRS-006 it detects each QRS once, within 150 ms, so every
+    reference beat at or after 5:00 is paired. Expected: TP = those beats, FN 0, FP 0.
+    """
+    beats = ecg.qrs_samples.tolist()
+    return FixtureRecord(
+        name=name,
+        n_samples=ecg.signal_mv.size,
+        signal_names=("MLII", "V1"),
+        annotations=_file_order(beats, ()),
+        spikes_0=(),
+        spikes_1=(),
+        tp=sum(1 for b in beats if b >= FIVE_MINUTES),
+        fn=0,
+        fp=0,
+        ecg_mv=ecg.signal_mv,
+    )
+
+
+@dataclass(frozen=True)
+class FixtureDatabase:
+    """A fixture database written in a data folder, with the records it holds."""
+
+    slug: str
+    folder: DatabaseFolder
+    records: dict[str, FixtureRecord]  # every record written, by name
+    record_list: tuple[str, ...]  # the names of its RECORDS file, in file order
+
+    @property
+    def checksum_list_sha256(self) -> str:
+        """SHA-256 of its checksum list, to pin in the ``Database`` under test."""
+        return self.folder.checksum_list_sha256
+
+    @property
+    def n_listed_files(self) -> int:
+        """Number of files that its checksum list names."""
+        return len(self.folder.files)
+
+
+@dataclass(frozen=True)
+class EvaluationFixture:
+    """A data folder holding a fixture ``mitdb`` and a fixture ``nstdb`` database."""
+
+    data_root: Path
+    mitdb: FixtureDatabase
+    nstdb: FixtureDatabase
+
+
+def _write_evaluation_database(
+    data_root: Path,
+    slug: str,
+    records: Sequence[FixtureRecord],
+    *,
+    record_list: Sequence[str],
+    extra_files: Mapping[str, bytes],
+) -> FixtureDatabase:
+    """Write ``records`` as WFDB records (360 Hz, two channels, format 212, gain 200/mV) in
+    ``data_root / slug``, with a ``RECORDS`` file listing ``record_list``, the
+    ``extra_files``, and the checksum list of every file.
+    """
+    folder = data_root / slug
+    folder.mkdir(parents=True, exist_ok=True)
+    for record in records:
+        signals = np.zeros((record.n_samples, 2), dtype=np.float64)
+        if record.ecg_mv is not None:
+            signals[:, 0] = record.ecg_mv
+        signals[list(record.spikes_0), 0] = SPIKE_MV
+        signals[list(record.spikes_1), 1] = SPIKE_MV
+        _write_wfdb_record(
+            folder,
+            record.name,
+            fs_hz=EVALUATION_FS_HZ,
+            signals_mv=signals,
+            signal_names=record.signal_names,
+            annotations=record.annotations,
+        )
+    files = {
+        path.relative_to(folder).as_posix(): path.read_bytes()
+        for path in sorted(folder.rglob("*"))
+        if path.is_file()
+    }
+    files["RECORDS"] = "".join(f"{name}\n" for name in record_list).encode("ascii")
+    files.update(extra_files)
+    return FixtureDatabase(
+        slug=slug,
+        folder=_write_database_folder(data_root, slug, files),
+        records={record.name: record for record in records},
+        record_list=tuple(record_list),
+    )
+
+
+_ANNOTATORS = {"ANNOTATORS": b"atr\treference beat, rhythm, and signal quality annotations\n"}
+
+
+def _moved(database: FixtureDatabase, data_root: Path) -> FixtureDatabase:
+    """The same fixture database, copied under another data folder."""
+    folder = replace(database.folder, data_root=data_root, folder=data_root / database.slug)
+    return replace(database, folder=folder)
+
+
+def _copy_evaluation_fixture(source: EvaluationFixture, data_root: Path) -> EvaluationFixture:
+    """Copy both databases of ``source`` to ``data_root`` (which must not exist)."""
+    shutil.copytree(source.data_root, data_root)
+    return EvaluationFixture(
+        data_root=data_root,
+        mitdb=_moved(source.mitdb, data_root),
+        nstdb=_moved(source.nstdb, data_root),
+    )
+
+
+@pytest.fixture(scope="session")
+def evaluation_fixture(tmp_path_factory: pytest.TempPathFactory) -> EvaluationFixture:
+    """The standard fixture databases of the report tests. Read only: copy it to alter it.
+
+    - ``mitdb``: the 14 records of ``_standard_mitdb_records``, a ``RECORDS`` file that lists
+      them in decreasing order of name, an ``ANNOTATORS`` file and a documentation file.
+    - ``nstdb``: the 12 ECG records and 3 noise records of ``_standard_nstdb_records``, a
+      ``RECORDS`` file listing all 15 in increasing order of name, an ``ANNOTATORS`` file.
+    """
+    data_root = tmp_path_factory.mktemp("evaluation") / "data"
+    mitdb_records = _standard_mitdb_records()
+    mitdb = _write_evaluation_database(
+        data_root,
+        "mitdb",
+        mitdb_records,
+        record_list=sorted((r.name for r in mitdb_records), reverse=True),
+        extra_files={**_ANNOTATORS, "mitdbdir/intro.htm": b"<html><body>Intro</body></html>\n"},
+    )
+    nstdb_records = _standard_nstdb_records()
+    nstdb = _write_evaluation_database(
+        data_root,
+        "nstdb",
+        nstdb_records,
+        record_list=sorted(r.name for r in nstdb_records),
+        extra_files=_ANNOTATORS,
+    )
+    return EvaluationFixture(data_root=data_root, mitdb=mitdb, nstdb=nstdb)
+
+
+@pytest.fixture(scope="session")
+def evaluation_fixture_without_episodes(
+    evaluation_fixture: EvaluationFixture, tmp_path_factory: pytest.TempPathFactory
+) -> EvaluationFixture:
+    """Fixture databases in which no record has a ventricular flutter episode. Read only.
+
+    - ``mitdb``: records 100 and 118 (period 360, no miss, no false detection) and 119
+      (period 324, no miss, one false detection): gross TP 374, FN 0, FP 1.
+    - ``nstdb``: a copy of the standard fixture ``nstdb``.
+    """
+    data_root = tmp_path_factory.mktemp("evaluation-without-episodes") / "data"
+    records = [
+        _regular_record("100", period=360, misses=0, extras=0),
+        _regular_record("118", period=360, misses=0, extras=0),
+        _regular_record("119", period=324, misses=0, extras=1),
+    ]
+    mitdb = _write_evaluation_database(
+        data_root, "mitdb", records, record_list=[r.name for r in records], extra_files={}
+    )
+    shutil.copytree(evaluation_fixture.nstdb.folder.folder, data_root / "nstdb")
+    nstdb = _moved(evaluation_fixture.nstdb, data_root)
+    return EvaluationFixture(data_root=data_root, mitdb=mitdb, nstdb=nstdb)
+
+
+@pytest.fixture(scope="session")
+def ecg_evaluation_fixture(tmp_path_factory: pytest.TempPathFactory) -> EvaluationFixture:
+    """Fixture databases of 6-min noise-free synthetic ECGs, for the real detector. Read only.
+
+    - ``mitdb``: records 118 (75 bpm) and 119 (60 bpm).
+    - ``nstdb``: the 12 ECG records, ``118eNN`` at 75 bpm and ``119eNN`` at 60 bpm.
+    Channel 1 is flat. Every record: TP = the beats at or after 5:00, FN 0, FP 0.
+    """
+    data_root = tmp_path_factory.mktemp("evaluation-ecg") / "data"
+    ecg = {rate: _long_synthetic_ecg(EVALUATION_FS_HZ, rate, SIX_MINUTES) for rate in (60, 75)}
+    mitdb = _write_evaluation_database(
+        data_root,
+        "mitdb",
+        [_ecg_record("118", ecg[75]), _ecg_record("119", ecg[60])],
+        record_list=["118", "119"],
+        extra_files={},
+    )
+    names = [name for name, _, _ in NOISE_STRESS_DESIGN]
+    nstdb = _write_evaluation_database(
+        data_root,
+        "nstdb",
+        [_ecg_record(name, ecg[75 if name.startswith("118") else 60]) for name in names],
+        record_list=names,
+        extra_files={},
+    )
+    return EvaluationFixture(data_root=data_root, mitdb=mitdb, nstdb=nstdb)
+
+
+@pytest.fixture(scope="session")
+def copy_evaluation_fixture() -> Callable[[EvaluationFixture, Path], EvaluationFixture]:
+    """``copy_evaluation_fixture(source, data_root)``: see ``_copy_evaluation_fixture``."""
+    return _copy_evaluation_fixture
+
+
+class SpikeDetector:
+    """Detector double with a known output: the samples where the signal exceeds 0.5 mV.
+
+    It has the interface of the detector of the evaluation: (signal in mV, sampling frequency
+    in Hz, mains setting in Hz) -> sample indices. ``calls`` lists, for each call, the number
+    of samples of the signal, the sampling frequency and the mains setting.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, float, int]] = []
+
+    def __call__(self, signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> IndexArray:
+        signal = np.asarray(signal_mv, dtype=np.float64)
+        self.calls.append((int(signal.size), float(fs_hz), int(mains_hz)))
+        return np.flatnonzero(signal > SPIKE_THRESHOLD_MV).astype(np.int64)
+
+
+@pytest.fixture(scope="session")
+def make_spike_detector() -> type[SpikeDetector]:
+    """``make_spike_detector()``: see ``SpikeDetector``."""
+    return SpikeDetector
+
+
+# A script run in a separate Python process by the command tests. It forbids network access,
+# may set the pinned SHA-256 of the checksum lists to those of fixture databases (for that
+# process only), then runs a command-line script of the software as ``python SCRIPT ...``
+# would.
+_COMMAND_DRIVER = '''\
+"""Run a command-line script of the software without network access.
+
+Usage: python <this file> MITDB_PIN NSTDB_PIN SCRIPT [ARGUMENT ...]
+
+Name resolution, socket connections and urllib.request.urlopen raise an error. A PIN other
+than "-" replaces, in this process only, the pinned SHA-256 of the checksum list of that
+database, so that a fixture database stands for the real one.
+"""
+
+import runpy
+import socket
+import sys
+import urllib.request
+from pathlib import Path
+
+
+def _refuse(*args, **kwargs):
+    raise RuntimeError("network access attempted in a test without network")
+
+
+socket.socket.connect = _refuse
+socket.create_connection = _refuse
+socket.getaddrinfo = _refuse
+urllib.request.urlopen = _refuse
+
+from sinus_dsp.data import physionet  # noqa: E402
+
+for database, pin in ((physionet.MITDB, sys.argv[1]), (physionet.NSTDB, sys.argv[2])):
+    if pin != "-":
+        object.__setattr__(database, "checksum_list_sha256", pin)
+
+script = Path(sys.argv[3]).resolve()
+sys.argv = [str(script), *sys.argv[4:]]
+sys.path.insert(0, str(script.parent))
+runpy.run_path(str(script), run_name="__main__")
+'''
+
+
+def _write_command_driver(folder: Path) -> Path:
+    """Write the command driver in ``folder`` and return its path.
+
+    ``python <driver> MITDB_PIN NSTDB_PIN SCRIPT [ARGUMENT ...]`` runs ``SCRIPT`` with its
+    arguments, without network access; a PIN other than ``-`` replaces the pinned SHA-256 of
+    the checksum list of that database in that process only.
+    """
+    path = folder / "run_command_without_network.py"
+    path.write_text(_COMMAND_DRIVER, encoding="utf-8")
+    return path
+
+
+@pytest.fixture(scope="session")
+def write_command_driver() -> Callable[[Path], Path]:
+    """``write_command_driver(folder)``: see ``_write_command_driver``."""
+    return _write_command_driver
+
+
+# --------------------------------------------------------------------------------------------
+# Reading the validation report
+# --------------------------------------------------------------------------------------------
+
+_HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
+_SEPARATOR_CELL = re.compile(r"^:?-+:?$")
+
+
+def _normalize_cell(text: str) -> str:
+    """A table cell without emphasis, code marks, escapes or a trailing ``%``, ASCII minus."""
+    value = text.strip().replace("**", "").replace("`", "").replace("\\_", "_")
+    value = value.replace("−", "-").strip()
+    if value.endswith("%"):
+        value = value[:-1].rstrip()
+    return value
+
+
+@dataclass(frozen=True)
+class ReportTable:
+    """A Markdown table: its header cells and its data rows, cells normalized."""
+
+    header: tuple[str, ...]
+    rows: tuple[tuple[str, ...], ...]
+
+    def first_cells(self) -> list[str]:
+        """The first cell of every data row, in order."""
+        return [row[0] for row in self.rows]
+
+    def row(self, first_cell: str) -> tuple[str, ...]:
+        """The only data row whose first cell is ``first_cell``."""
+        matches = [row for row in self.rows if row[0] == first_cell]
+        assert len(matches) == 1, f"{len(matches)} rows start with {first_cell!r}: {self.rows}"
+        return matches[0]
+
+
+def _parse_table(lines: Sequence[str]) -> ReportTable:
+    rows: list[tuple[str, ...]] = []
+    for line in lines:
+        stripped = line.strip()
+        inner = stripped[1:-1] if len(stripped) > 1 and stripped.endswith("|") else stripped[1:]
+        cells = tuple(_normalize_cell(cell) for cell in inner.split("|"))
+        if all(_SEPARATOR_CELL.match(cell) for cell in cells):
+            continue
+        rows.append(cells)
+    assert rows, f"empty table: {lines}"
+    return ReportTable(header=rows[0], rows=tuple(rows[1:]))
+
+
+@dataclass(frozen=True)
+class ReportSection:
+    """The lines under a heading, up to the next heading of the same or a higher level."""
+
+    title: str
+    lines: tuple[str, ...]
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.lines)
+
+    def tables(self) -> list[ReportTable]:
+        """Every Markdown table of the section, in order."""
+        tables: list[ReportTable] = []
+        block: list[str] = []
+        for line in (*self.lines, ""):
+            if line.lstrip().startswith("|"):
+                block.append(line)
+            elif block:
+                tables.append(_parse_table(block))
+                block = []
+        return tables
+
+    def table_with_row(self, first_cell: str) -> ReportTable:
+        """The only table of the section with a data row whose first cell is ``first_cell``."""
+        found = [t for t in self.tables() if first_cell in t.first_cells()]
+        assert len(found) == 1, f"{len(found)} tables with a row {first_cell!r} in {self.title!r}"
+        return found[0]
+
+
+class ParsedReport:
+    """A Markdown report split into headings, sections and tables."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.lines = tuple(text.split("\n"))
+        self.headings: list[tuple[int, int, str]] = []  # (line index, level, title)
+        for index, line in enumerate(self.lines):
+            match = _HEADING.match(line)
+            if match:
+                self.headings.append((index, len(match.group(1)), match.group(2)))
+
+    def titles(self) -> list[str]:
+        return [title for _, _, title in self.headings]
+
+    def section(self, keyword: str) -> ReportSection:
+        """The first section whose heading contains ``keyword``, ignoring case."""
+        for position, (index, level, title) in enumerate(self.headings):
+            if keyword.casefold() in title.casefold():
+                end = next(
+                    (i for i, lv, _ in self.headings[position + 1 :] if lv <= level),
+                    len(self.lines),
+                )
+                return ReportSection(title=title, lines=self.lines[index + 1 : end])
+        raise AssertionError(f"no heading contains {keyword!r}; headings: {self.titles()}")
+
+
+def _two_decimals(value: Fraction) -> str:
+    """``value`` with two decimals, rounded from its exact value.
+
+    Fails if ``value`` lies within 1e-6 hundredths of a rounding tie: there, the rounding of
+    its binary64 value could differ, and a fixture must avoid such values.
+    """
+    scaled = value * 100
+    whole = math.floor(scaled)
+    remainder = scaled - whole
+    assert abs(remainder - Fraction(1, 2)) > Fraction(1, 10**6), (
+        f"{float(value)} is too close to a rounding tie for a fixture"
+    )
+    hundredths = whole + (1 if remainder > Fraction(1, 2) else 0)
+    return f"{hundredths // 100}.{hundredths % 100:02d}"
+
+
+def _percent_text(numerator: int, denominator: int) -> str:
+    """``100 * numerator / denominator`` as the reports write it: two decimals, or
+    ``not defined`` for a zero denominator (SRS-011)."""
+    if denominator == 0:
+        return "not defined"
+    return _two_decimals(Fraction(100 * numerator, denominator))
+
+
+def _mean_percent_text(pairs: Sequence[tuple[int, int]]) -> str:
+    """Mean of the defined values ``100 * n / d`` of ``pairs``, as the reports write it."""
+    values = [Fraction(100 * n, d) for n, d in pairs if d != 0]
+    if not values:
+        return "not defined"
+    return _two_decimals(sum(values, Fraction(0)) / len(values))
+
+
+@pytest.fixture(scope="session")
+def parse_report() -> type[ParsedReport]:
+    """``parse_report(text)``: see ``ParsedReport``."""
+    return ParsedReport
+
+
+@pytest.fixture(scope="session")
+def percent_text() -> Callable[[int, int], str]:
+    """``percent_text(numerator, denominator)``: see ``_percent_text``."""
+    return _percent_text
+
+
+@pytest.fixture(scope="session")
+def mean_percent_text() -> Callable[[Sequence[tuple[int, int]]], str]:
+    """``mean_percent_text(pairs)``: see ``_mean_percent_text``."""
+    return _mean_percent_text
