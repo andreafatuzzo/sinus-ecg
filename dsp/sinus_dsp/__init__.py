@@ -7,4 +7,6 @@ requirement cites its ID
 traceability matrix.
 """
 
-__version__ = "0.0.1"
+# Equal to [project] version in dsp/pyproject.toml; follows the milestone register
+# (docs/regulatory/sdp.md §4). Checked by scripts/traceability.py --check.
+__version__ = "0.1.0.dev0"

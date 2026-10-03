@@ -15,13 +15,19 @@ from sinus_dsp.evaluation.noise_stress import (
     SnrStatistics,
     snr_db,
 )
-from sinus_dsp.evaluation.report import render_full_report, render_subset_report
+from sinus_dsp.evaluation.report import (
+    render_full_report,
+    render_subset_report,
+    software_rows,
+    stale_software_rows,
+)
 from sinus_dsp.evaluation.run import (
     DEFAULT_SETTINGS,
     EvaluationSettings,
     RecordEvaluation,
     ValidationResults,
 )
+from sinus_dsp.version import SoftwareIdentity
 
 MITDB_VERIFICATION = VerificationResult(
     Database("mitdb", "1.0.0", "Fixture Arrhythmia Database", "a" * 64),
@@ -31,6 +37,17 @@ MITDB_VERIFICATION = VerificationResult(
 NSTDB_VERIFICATION = VerificationResult(
     Database("nstdb", "1.0.0", "Fixture Noise Database", "b" * 64), None, ("118e24.dat",)
 )
+SOFTWARE = SoftwareIdentity(
+    version="0.1.0.dev0",
+    source_sha256="0123456789abcdef" * 4,
+    python="3.11",
+    runtime=(("numpy", "2.4.6"), ("scipy", "1.17.1"), ("wfdb", "4.3.1")),
+)
+SOFTWARE_LINE = (
+    "| Software | sinus-dsp 0.1.0.dev0, source SHA-256 "
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef |"
+)
+RUNTIME_LINE = "| Runtime | Python 3.11, numpy 2.4.6, scipy 1.17.1, wfdb 4.3.1 |"
 
 
 def evaluation(
@@ -94,7 +111,7 @@ def full_results(
     settings: EvaluationSettings = DEFAULT_SETTINGS,
 ) -> ValidationResults:
     return ValidationResults(
-        software_version="0.0.1",
+        software=SOFTWARE,
         settings=settings,
         mitdb=MITDB_VERIFICATION,
         records=records,
@@ -127,7 +144,9 @@ EXPECTED_FULL_REPORT = (
                 "",
                 "| Item | Value |",
                 "|---|---|",
-                "| Software | sinus-dsp 0.0.1 |",
+                "| Software | sinus-dsp 0.1.0.dev0, source SHA-256 "
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef |",
+                "| Runtime | Python 3.11, numpy 2.4.6, scipy 1.17.1, wfdb 4.3.1 |",
                 "| Database | Fixture Arrhythmia Database, version 1.0.0 |",
                 "| Verification | verified: 3 files match the published SHA-256 checksum list "
                 "(SHA256SUMS.txt, SHA-256 {A}) |",
@@ -440,18 +459,155 @@ def test_settings_other_than_the_defaults_are_stated() -> None:
     assert "| Mains interference filter | 50 Hz |" in text
 
 
-def test_version_database_and_verification_of_a_subset_selection() -> None:
+def test_software_database_and_verification_of_a_subset_selection() -> None:
     verification = VerificationResult(
         Database("mitdb", "2.0.0", "Other | Database", "c" * 64), ("100", "118"), ("100.dat",)
     )
-    results = dataclasses.replace(full_results(), mitdb=verification, software_version="9.8.7")
+    software = SoftwareIdentity("9.8.7", "f" * 64, "3.12", (("numpy", "1.26.0"),))
+    results = dataclasses.replace(full_results(), mitdb=verification, software=software)
     text = render_full_report(results)
-    assert "| Software | sinus-dsp 9.8.7 |" in text
+    assert f"| Software | sinus-dsp 9.8.7, source SHA-256 {'f' * 64} |" in text
+    assert "| Runtime | Python 3.12, numpy 1.26.0 |" in text
+    assert SOFTWARE_LINE not in text
     assert "| Database | Other \\| Database, version 2.0.0 |" in text
     assert (
         "| Verification | verified: 1 files match the published SHA-256 checksum list "
         f"(SHA256SUMS.txt, SHA-256 {'c' * 64}); records 100, 118 |"
     ) in text
+
+
+# --- software rows --------------------------------------------------------------------------
+
+
+def test_software_rows_literally() -> None:
+    assert software_rows(SOFTWARE) == (SOFTWARE_LINE, RUNTIME_LINE)
+
+
+def test_software_rows_follow_the_identity() -> None:
+    software = SoftwareIdentity(
+        "1.2.3", "a" * 64, "3.13", (("wfdb", "4.3.1"), ("numpy", "2.0.0"), ("scipy", "1.0"))
+    )
+    assert software_rows(software) == (
+        f"| Software | sinus-dsp 1.2.3, source SHA-256 {'a' * 64} |",
+        # The runtime packages in the order of the identity.
+        "| Runtime | Python 3.13, wfdb 4.3.1, numpy 2.0.0, scipy 1.0 |",
+    )
+
+
+def test_software_rows_without_runtime_packages_and_with_a_bar() -> None:
+    software = SoftwareIdentity("1|2", "a" * 64, "3.11", ())
+    assert software_rows(software) == (
+        f"| Software | sinus-dsp 1\\|2, source SHA-256 {'a' * 64} |",
+        "| Runtime | Python 3.11 |",
+    )
+
+
+@pytest.mark.parametrize("render", [render_full_report, render_subset_report])
+def test_both_reports_write_the_software_rows_first_in_section_2(render: object) -> None:
+    results = full_results() if render is render_full_report else subset_results()
+    assert callable(render)
+    text = render(results)
+    assert line_after(text, "## Software, data and settings")[:4] == [
+        "| Item | Value |",
+        "|---|---|",
+        SOFTWARE_LINE,
+        RUNTIME_LINE,
+    ]
+    lines = text.split("\n")
+    assert lines.count(SOFTWARE_LINE) == 1
+    assert lines.count(RUNTIME_LINE) == 1
+
+
+@pytest.mark.parametrize("render", [render_full_report, render_subset_report])
+def test_a_rendered_report_states_its_software(render: object) -> None:
+    results = full_results() if render is render_full_report else subset_results()
+    assert callable(render)
+    assert stale_software_rows(render(results), SOFTWARE) == ()
+    other = SoftwareIdentity("0.1.0.dev0", "f" * 64, "3.11", SOFTWARE.runtime)
+    assert len(stale_software_rows(render(results), other)) == 1
+
+
+def stale_entry(number: int, found: str, current: str) -> str:
+    return f"line {number}: {found}; current: {current}"
+
+
+def test_stale_software_row() -> None:
+    text = render_full_report(full_results())
+    other = dataclasses.replace(SOFTWARE, source_sha256="f" * 64)
+    # Lines 9 and 10 are the table header and alignment of section 2.
+    assert text.split("\n")[10] == SOFTWARE_LINE
+    assert stale_software_rows(text, other) == (
+        stale_entry(11, SOFTWARE_LINE, software_rows(other)[0]),
+    )
+    newer = dataclasses.replace(SOFTWARE, version="0.1.0")
+    assert stale_software_rows(text, newer) == (
+        stale_entry(11, SOFTWARE_LINE, software_rows(newer)[0]),
+    )
+
+
+def test_stale_runtime_row() -> None:
+    text = render_subset_report(subset_results())
+    for other in (
+        dataclasses.replace(SOFTWARE, python="3.12"),
+        dataclasses.replace(SOFTWARE, runtime=(("numpy", "2.4.7"), *SOFTWARE.runtime[1:])),
+        dataclasses.replace(SOFTWARE, runtime=SOFTWARE.runtime[:2]),
+    ):
+        # The subset report has one more paragraph before section 2.
+        assert stale_software_rows(text, other) == (
+            stale_entry(14, RUNTIME_LINE, software_rows(other)[1]),
+        )
+
+
+def test_both_rows_stale_in_the_order_of_the_lines() -> None:
+    text = "\n".join(["| Runtime | old |", "", "| Software | old |", ""])
+    assert stale_software_rows(text, SOFTWARE) == (
+        stale_entry(1, "| Runtime | old |", RUNTIME_LINE),
+        stale_entry(3, "| Software | old |", SOFTWARE_LINE),
+    )
+
+
+def test_one_row_missing() -> None:
+    text = render_full_report(full_results())
+    without_runtime = text.replace(RUNTIME_LINE + "\n", "")
+    without_software = text.replace(SOFTWARE_LINE + "\n", "")
+    assert stale_software_rows(without_runtime, SOFTWARE) == ("no Runtime row",)
+    assert stale_software_rows(without_software, SOFTWARE) == ("no Software row",)
+    stale_without_runtime = without_runtime.replace(SOFTWARE_LINE, "| Software | sinus-dsp 0 |")
+    assert stale_software_rows(stale_without_runtime, SOFTWARE) == (
+        stale_entry(11, "| Software | sinus-dsp 0 |", SOFTWARE_LINE),
+        "no Runtime row",
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "\n",
+        "# Validation reports\n\n| Report | Requirements |\n|---|---|\n| a.md | none |\n",
+        "| Software |\n| Runtime |\n",  # no cell after the label
+        "| Softwares | x |\n| Runtimes | y |\n",
+        "Software | x |\n  | Runtime | y |\n",
+    ],
+)
+def test_text_with_neither_row(text: str) -> None:
+    assert stale_software_rows(text, SOFTWARE) == ()
+
+
+def test_every_software_row_is_compared() -> None:
+    text = "\n".join([SOFTWARE_LINE, RUNTIME_LINE, "", SOFTWARE_LINE, "| Software |  |", ""])
+    assert stale_software_rows(text, SOFTWARE) == (
+        stale_entry(5, "| Software |  |", SOFTWARE_LINE),
+    )
+
+
+def test_carriage_returns_at_line_ends_are_not_part_of_the_rows() -> None:
+    text = render_full_report(full_results()).replace("\n", "\r\n")
+    assert stale_software_rows(text, SOFTWARE) == ()
+    other = dataclasses.replace(SOFTWARE, python="3.12")
+    assert stale_software_rows(text, other) == (
+        stale_entry(12, RUNTIME_LINE, software_rows(other)[1]),
+    )
 
 
 # --- segments not scored --------------------------------------------------------------------

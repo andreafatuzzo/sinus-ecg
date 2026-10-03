@@ -19,6 +19,12 @@ Sources of truth (paths relative to the repository root):
                   in the sources under libs/, firmware/ and desktop/.
   - Open points:  ``| OP-nnn | ... | refs | ...`` rows in docs/regulatory/open-points.md; refs
                   may cite SRS, HAZ and RC IDs (HAZ and RC rows are in risk-analysis.md).
+  - Version:      ``[project] version`` in dsp/pyproject.toml and the string literal assigned
+                  to ``__version__`` in dsp/sinus_dsp/__init__.py. Both are equal and follow
+                  the milestone register: ``0.N.0.dev0`` with N the lowest milestone In
+                  progress; if none is in progress, ``0.N.P`` with N the highest milestone
+                  Released (docs/regulatory/sdp.md §4, architecture.md §8.14). The files are
+                  read, not imported.
 
 Test folders: a requirement tag is only accepted in a ``tests/requirements/`` folder (tests for
 requirements with Verification level Requirement) or a ``tests/system/`` folder (level System),
@@ -26,11 +32,13 @@ e.g. dsp/tests/requirements/, libs/<name>/tests/system/. Unit tests carry no tag
 
 Usage (from the repository root or anywhere):
   python dsp/scripts/traceability.py                 # rewrite docs/regulatory/traceability.md
-  python dsp/scripts/traceability.py --check         # exit 1 if any check fails (every push)
+  python dsp/scripts/traceability.py --check         # exit 1 if any check fails, including
+                                                     # the version rule (every push)
   python dsp/scripts/traceability.py --release-gate  # exit 1 unless every requirement of a
                                                      # milestone in progress or released has a
-                                                     # verifying test and no open point targets
-                                                     # it (pull requests into main)
+                                                     # verifying test, no open point targets
+                                                     # it, and the version is not a development
+                                                     # version (pull requests into main)
 """
 
 from __future__ import annotations
@@ -40,6 +48,7 @@ import ast
 import os
 import re
 import sys
+import tomllib
 from collections import Counter, defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -77,6 +86,10 @@ MILESTONE_ROW = re.compile(r"^\|\s*(M\d+)\s*\|")
 RISK_ROW = re.compile(r"^\|\s*((?:HAZ|RC)-\d{3})\s*\|")
 OP_ROW = re.compile(r"^\|\s*(OP-\d{3})\s*\|")
 SPEC_ID = re.compile(r"\b(?:SRS|HAZ|RC)-\d{3}\b")
+
+VERSION_NAME = "__version__"
+# A version containing this is a development version (PEP 440), never released into main.
+DEVELOPMENT_MARK = ".dev"
 
 CPP_TAG = re.compile(r"^\s*//\s*Verifies:(.*)$")
 # Case-insensitive on purpose: "// verifies: ..." must fail as a malformed tag, not be ignored.
@@ -116,6 +129,14 @@ class Layout:
     @property
     def output(self) -> Path:
         return self.regulatory / "traceability.md"
+
+    @property
+    def pyproject(self) -> Path:
+        return self.root / "dsp" / "pyproject.toml"
+
+    @property
+    def package_init(self) -> Path:
+        return self.root / "dsp" / "sinus_dsp" / "__init__.py"
 
     @property
     def python_code_roots(self) -> list[Path]:
@@ -174,6 +195,8 @@ class Matrix:
     register_errors: list[str]  # duplicate requirements, milestones.md format errors
     misplaced_tags: list[str]  # requirement tags outside tests/requirements and tests/system
     tag_errors: list[str]  # malformed or dangling C++ tags
+    versions: dict[str, str]  # file -> package version found in it (pyproject first)
+    version_errors: list[str]  # files whose package version cannot be read
 
 
 # --- Sources ---------------------------------------------------------------------------------
@@ -312,6 +335,68 @@ def scan_code(layout: Layout) -> dict[str, set[str]]:
     return refs
 
 
+def read_pyproject_version(layout: Layout) -> tuple[str | None, str | None]:
+    """The ``[project] version`` of dsp/pyproject.toml, or the reason it cannot be read."""
+    name = layout.rel(layout.pyproject)
+    if not layout.pyproject.exists():
+        return None, f"{name} not found"
+    try:
+        data = tomllib.loads(layout.pyproject.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as error:
+        return None, f"{name}: not valid TOML ({error})"
+    project = data.get("project")
+    version = project.get("version") if isinstance(project, dict) else None
+    if not isinstance(version, str):
+        return None, f"{name}: no [project] version given as a string"
+    return version, None
+
+
+def read_package_init_version(layout: Layout) -> tuple[str | None, str | None]:
+    """The string literal assigned to ``__version__`` at the top level of the package's
+    ``__init__.py``, or the reason it cannot be read."""
+    name = layout.rel(layout.package_init)
+    if not layout.package_init.exists():
+        return None, f"{name} not found"
+    try:
+        tree = ast.parse(layout.package_init.read_text(encoding="utf-8"), filename=name)
+    except SyntaxError as error:
+        return None, f"{name}: not valid Python ({error.msg}, line {error.lineno})"
+    values: list[ast.expr | None] = []
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == VERSION_NAME for target in stmt.targets
+        ):
+            values.append(stmt.value)
+        elif (
+            isinstance(stmt, ast.AnnAssign)
+            and isinstance(stmt.target, ast.Name)
+            and stmt.target.id == VERSION_NAME
+        ):
+            values.append(stmt.value)
+    if len(values) != 1:
+        return None, f"{name}: {VERSION_NAME} assigned {len(values)} times, expected once"
+    value = values[0]
+    if not (isinstance(value, ast.Constant) and isinstance(value.value, str)):
+        return None, f"{name}: {VERSION_NAME} is not assigned a string literal"
+    return value.value, None
+
+
+def read_versions(layout: Layout) -> tuple[dict[str, str], list[str]]:
+    """Package version by file (dsp/pyproject.toml first), and the files where none is read."""
+    versions: dict[str, str] = {}
+    errors: list[str] = []
+    for path, read in (
+        (layout.pyproject, read_pyproject_version),
+        (layout.package_init, read_package_init_version),
+    ):
+        version, error = read(layout)
+        if version is not None:
+            versions[layout.rel(path)] = version
+        if error is not None:
+            errors.append(error)
+    return versions, errors
+
+
 # --- Python tests (pytest) -------------------------------------------------------------------
 
 
@@ -448,6 +533,7 @@ def build(layout: Layout) -> Matrix:
     milestones, ms_errors = parse_milestones(layout)
     py_tests, py_misplaced = scan_python_tests(layout)
     cpp_tests, cpp_misplaced, tag_errors = scan_cpp_tests(layout)
+    versions, version_errors = read_versions(layout)
     tests: dict[str, list[TestRef]] = defaultdict(list)
     for source in (py_tests, cpp_tests):
         for req, refs in source.items():
@@ -462,6 +548,8 @@ def build(layout: Layout) -> Matrix:
         register_errors=req_errors + ms_errors,
         misplaced_tags=sorted(py_misplaced + cpp_misplaced),
         tag_errors=sorted(tag_errors),
+        versions=versions,
+        version_errors=version_errors,
     )
 
 
@@ -534,9 +622,67 @@ def gated_milestones(m: Matrix) -> list[str]:
     )
 
 
+def expected_version(m: Matrix) -> tuple[re.Pattern[str], str] | None:
+    """The version that the milestone register gives, as (pattern, text naming the form).
+
+    ``0.N.0.dev0`` exactly, with N the lowest milestone In progress; if none is in progress,
+    ``0.N.P`` with N the highest milestone Released and P a whole number without leading
+    zeros. ``None`` if no milestone is In progress or Released.
+    """
+    by_status: dict[str, list[Milestone]] = defaultdict(list)
+    for ms in m.milestones.values():
+        by_status[ms.status].append(ms)
+    if in_progress := by_status["In progress"]:
+        ms = min(in_progress, key=lambda ms: _milestone_key(ms.id))
+        version = f"0.{_milestone_key(ms.id)}.0.dev0"
+        return re.compile(re.escape(version)), f"{version} ({ms.id} In progress)"
+    if released := by_status["Released"]:
+        ms = max(released, key=lambda ms: _milestone_key(ms.id))
+        n = _milestone_key(ms.id)
+        return (
+            re.compile(rf"0\.{n}\.(0|[1-9][0-9]*)"),
+            f"0.{n}.P with P = 0, 1, 2, ... ({ms.id} Released, none In progress)",
+        )
+    return None
+
+
+def version_failures(m: Matrix) -> list[str]:
+    """Package versions that cannot be read, that differ between the two files, or that do not
+    follow the milestone register."""
+    out = list(m.version_errors)
+    rule = expected_version(m)
+    if rule is None:
+        out.append("milestones.md: no milestone is In progress or Released, so no version fits")
+    else:
+        pattern, form = rule
+        out += [
+            f"{name}: version {version}, expected {form}"
+            for name, version in m.versions.items()
+            if not pattern.fullmatch(version)
+        ]
+    found = list(m.versions.items())
+    for name, version in found[1:]:
+        first, first_version = found[0]
+        if version != first_version:
+            out.append(f"{name}: version {version}, expected {first_version} (as in {first})")
+    return out
+
+
+def development_versions(m: Matrix) -> list[str]:
+    """Package versions that are development versions, which a release cannot carry, and
+    files where no version can be read."""
+    out = list(m.version_errors)
+    reported: set[str] = set()
+    for name, version in m.versions.items():
+        if DEVELOPMENT_MARK in version and version not in reported:
+            reported.add(version)
+            out.append(f"{name}: version {version} is a development version, not a release")
+    return out
+
+
 def release_gate_failures(m: Matrix) -> list[str]:
     """Requirements of gated milestones without a verifying test or without a valid milestone,
-    and open points that still target a gated milestone."""
+    open points that still target a gated milestone, and a development version."""
     gated = set(gated_milestones(m))
     out: list[str] = []
     for req in sorted(m.requirements.values(), key=lambda r: r.id):
@@ -550,6 +696,7 @@ def release_gate_failures(m: Matrix) -> list[str]:
     for op in sorted(m.open_points, key=lambda o: o.id):
         if op.is_open and op.target in gated:
             out.append(f"{op.id}: open point still targets {op.target}; close or retarget it")
+    out += development_versions(m)
     return out
 
 
@@ -631,6 +778,7 @@ def check_failures(m: Matrix, layout: Layout, content: str) -> list[tuple[str, l
         ("Implemented requirements without a verifying test", implemented_untested(m)),
         ("Open points citing undefined IDs", dangling_refs(m)),
         ("Duplicate open point IDs", duplicate_open_points(m)),
+        ("Software version", version_failures(m)),
     ]
 
 
@@ -644,7 +792,9 @@ def main(argv: list[str] | None = None) -> int:
             "milestone or verification level, code or tests cite unknown IDs, a requirement tag "
             "is outside tests/requirements/ and tests/system/ or in the folder of the other "
             "verification level, a C++ tag is malformed, a requirement cited in production "
-            "code has no verifying test, or open points cite undefined IDs or repeat an ID"
+            "code has no verifying test, open points cite undefined IDs or repeat an ID, or the "
+            "package version differs between dsp/pyproject.toml and sinus_dsp/__init__.py or "
+            "does not follow the milestone register"
         ),
     )
     parser.add_argument(
@@ -652,8 +802,9 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "do not write; fail unless every requirement of a milestone that is In progress or "
-            "Released in docs/regulatory/milestones.md has a verifying test and no open point "
-            "still targets such a milestone (run on pull requests into main)"
+            "Released in docs/regulatory/milestones.md has a verifying test, no open point "
+            "still targets such a milestone, and the package version is not a development "
+            "version (run on pull requests into main)"
         ),
     )
     args = parser.parse_args(argv)

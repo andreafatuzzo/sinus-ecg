@@ -4,7 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sinus-dsp"
-version = "0.0.1"
+# Equal to __version__ in sinus_dsp/__init__.py; follows the milestone register
+# (docs/regulatory/sdp.md §4). Run `uv lock` after changing it.
+version = "0.1.0.dev0"
 description = "Sinus ECG reference signal-processing algorithms and EC57-style validation pipeline"
 license = "Apache-2.0"
 requires-python = ">=3.11"

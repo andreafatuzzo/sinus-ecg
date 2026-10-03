@@ -2,12 +2,16 @@
 
 SRS-012: the full report states the statistics per record and for the set of records, the
 records with the lowest Se and +P, the pass or fail of each target, the database and its
-verification, the software version and the settings, what was not scored, and that the
-results are not a clinical validation. SRS-014: it adds the noise stress section. SRS-009:
-the text depends only on the results it is given: records are sorted, every number is an
-integer count or is computed from counts by correctly rounded operations and formatted with
-a fixed number of decimals, and nothing depends on the date, the time, the host, the user or
-a path. The text is UTF-8, with line feeds, no trailing spaces and one line feed at the end.
+verification, the software version with the digest of the source code that produced the
+report (architecture §8.14) and the settings, what was not scored, and that the results are
+not a clinical validation. SRS-014: it adds the noise stress section. SRS-009: the text
+depends only on the results it is given: records are sorted, every number is an integer
+count or is computed from counts by correctly rounded operations and formatted with a fixed
+number of decimals, and nothing depends on the date, the time, the host, the user or a path.
+The text is UTF-8, with line feeds, no trailing spaces and one line feed at the end.
+
+:func:`stale_software_rows` lets a release check compare the software rows of a stored
+report with the running software.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ from sinus_dsp.evaluation.run import (
     ValidationResults,
     meets_target,
 )
+from sinus_dsp.version import SoftwareIdentity
 
 _FULL_TITLE: Final = "QRS detection: EC57 beat-by-beat evaluation"
 _SUBSET_TITLE: Final = "QRS detection: EC57 subset report for regression checking"
@@ -50,6 +55,9 @@ _NOT_SCORED_INTRODUCTION: Final = (
 )
 _NO_EPISODE: Final = "No ventricular flutter or fibrillation episode is annotated in these records."
 _NO_THRESHOLD: Final = "No pass threshold is set for these results (OP-031)."
+
+_SOFTWARE_LABEL: Final = "Software"
+_RUNTIME_LABEL: Final = "Runtime"
 
 _LEFT: Final = "---"
 _RIGHT: Final = "---:"
@@ -144,6 +152,77 @@ def render_subset_report(results: ValidationResults) -> str:
     return _join(blocks)
 
 
+def software_rows(software: SoftwareIdentity) -> tuple[str, str]:
+    """Return the two table lines of report section 2 that state the software.
+
+    SRS-009, SRS-012: ``| Software | sinus-dsp <version>, source SHA-256 <digest> |``, with
+    the 64 digits of the source digest, and ``| Runtime | Python <python>, <distribution>
+    <version>, … |``, with the runtime SOUP packages in the order of ``software.runtime``
+    (architecture §8.10, §8.14). Both renderers write these very lines, so that
+    :func:`stale_software_rows` compares the text they write.
+
+    Args:
+        software: The software identity.
+
+    Returns:
+        The line of the row ``Software`` and the line of the row ``Runtime``, without line
+        feeds.
+    """
+    runtime = ", ".join(
+        [f"Python {software.python}", *(f"{name} {version}" for name, version in software.runtime)]
+    )
+    return (
+        _row(
+            [
+                _SOFTWARE_LABEL,
+                f"sinus-dsp {software.version}, source SHA-256 {software.source_sha256}",
+            ]
+        ),
+        _row([_RUNTIME_LABEL, runtime]),
+    )
+
+
+def stale_software_rows(text: str, software: SoftwareIdentity) -> tuple[str, ...]:
+    """Return how the software rows of a report differ from those of a software identity.
+
+    Each line of ``text`` (split at line feeds; a carriage return at the end of a line is not
+    part of it) that starts with ``| Software | `` or ``| Runtime | `` is compared with the
+    matching line of :func:`software_rows`. A text that has one of the two rows but not the
+    other lacks a row. A text with neither row (e.g. a README) gives no entry (architecture
+    §8.14).
+
+    Args:
+        text: The text of a report.
+        software: The identity the report should state, normally the running software.
+
+    Returns:
+        One entry per problem: ``line <n>: <line found>; current: <current line>`` for each
+        differing line, in the order of the lines (``n`` from 1), then ``no Software row`` or
+        ``no Runtime row``. Empty if the report states this software, or has neither row.
+    """
+    expected = dict(
+        zip(
+            (_row_prefix(_SOFTWARE_LABEL), _row_prefix(_RUNTIME_LABEL)),
+            software_rows(software),
+            strict=True,
+        )
+    )
+    problems: list[str] = []
+    found: set[str] = set()
+    for number, raw_line in enumerate(text.split("\n"), start=1):
+        line = raw_line.removesuffix("\r")
+        for prefix, current in expected.items():
+            if line.startswith(prefix):
+                found.add(prefix)
+                if line != current:
+                    problems.append(f"line {number}: {line}; current: {current}")
+    if found:
+        for label in (_SOFTWARE_LABEL, _RUNTIME_LABEL):
+            if _row_prefix(label) not in found:
+                problems.append(f"no {label} row")
+    return tuple(problems)
+
+
 def _settings_section(results: ValidationResults) -> list[str]:
     """Section 2: software, data and settings."""
     channel = results.settings.channel
@@ -159,7 +238,6 @@ def _settings_section(results: ValidationResults) -> list[str]:
         "ventricular flutter and fibrillation episodes not scored"
     )
     rows = [
-        ["Software", f"sinus-dsp {results.software_version}"],
         ["Database", _database(results.mitdb)],
         ["Verification", describe_verification(results.mitdb)],
         ["Records", str(len(results.records))],
@@ -167,7 +245,11 @@ def _settings_section(results: ValidationResults) -> list[str]:
         ["Mains interference filter", f"{results.settings.mains_hz} Hz"],
         ["Matching", matching],
     ]
-    return ["## Software, data and settings", _table(["Item", "Value"], [_LEFT, _LEFT], rows)]
+    lines = [*software_rows(results.software), *(_row(row) for row in rows)]
+    return [
+        "## Software, data and settings",
+        _table_of_lines(["Item", "Value"], [_LEFT, _LEFT], lines),
+    ]
 
 
 def _targets_section(aggregate: AggregateStatistics) -> list[str]:
@@ -399,13 +481,21 @@ def _cell(text: str) -> str:
 
 def _table(header: Sequence[str], align: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
     """A Markdown table, one line per row."""
-    lines = [_row(header), "|" + "|".join(align) + "|"]
-    lines.extend(_row(row) for row in rows)
-    return "\n".join(lines)
+    return _table_of_lines(header, align, [_row(row) for row in rows])
+
+
+def _table_of_lines(header: Sequence[str], align: Sequence[str], lines: Sequence[str]) -> str:
+    """A Markdown table whose rows are given as lines already written with :func:`_row`."""
+    return "\n".join([_row(header), "|" + "|".join(align) + "|", *lines])
 
 
 def _row(cells: Sequence[str]) -> str:
     return "| " + " | ".join(_cell(cell) for cell in cells) + " |"
+
+
+def _row_prefix(label: str) -> str:
+    """The start of the line of a table row whose first cell is ``label``: ``| <label> | ``."""
+    return f"| {_cell(label)} | "
 
 
 def _join(blocks: Sequence[str]) -> str:

@@ -34,7 +34,7 @@ from sinus_dsp.errors import DataVerificationError, InvalidInputError, Malformed
 from sinus_dsp.evaluation import run as run_module
 from sinus_dsp.evaluation.metrics import RecordCounts
 from sinus_dsp.evaluation.noise_stress import NOISE_STRESS_RECORDS
-from sinus_dsp.evaluation.report import render_full_report
+from sinus_dsp.evaluation.report import render_full_report, software_rows
 from sinus_dsp.evaluation.run import (
     DEFAULT_SETTINGS,
     EvaluationSettings,
@@ -43,6 +43,7 @@ from sinus_dsp.evaluation.run import (
     write_validation_report,
 )
 from sinus_dsp.pipeline import detect_beats
+from sinus_dsp.version import SoftwareIdentity, software_identity
 
 Detector = Callable[[npt.NDArray[np.float64], float, int], npt.NDArray[np.int64]]
 
@@ -173,7 +174,8 @@ def test_offline_run(data: tuple[Path, Database, Database], fake_detector: Detec
         root, mitdb=mitdb, nstdb=nstdb, detector=fake_detector, loader=loader, fetch=None
     )
     assert isinstance(results, ValidationResults)
-    assert results.software_version == sinus_dsp.__version__
+    assert results.software == software_identity()
+    assert results.software.version == sinus_dsp.__version__
     assert results.settings == EvaluationSettings()
     assert results.subset is False
     assert results.mitdb.database == mitdb
@@ -220,6 +222,46 @@ def test_offline_run(data: tuple[Path, Database, Database], fake_detector: Detec
     ] == [(4, 0, 0), (4, 0, 0), (4, 0, 0), (2, 2, 0), (2, 2, 2), (2, 2, 2)]
     assert (noise.clean.tp, noise.clean.fn, noise.clean.fp) == (5, 1, 0)
     assert noise.clean.n_records == 2
+
+
+def test_software_identity_is_taken_once(
+    data: tuple[Path, Database, Database],
+    fake_detector: Detector,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, mitdb, nstdb = data
+    identity = SoftwareIdentity("7.7.7.dev0", "e" * 64, "3.99", (("numpy", "0.1"),))
+    calls: list[None] = []
+
+    def fixed_identity() -> SoftwareIdentity:
+        calls.append(None)
+        return identity
+
+    monkeypatch.setattr(run_module, "software_identity", fixed_identity)
+    results = run_validation(root, mitdb=mitdb, nstdb=nstdb, detector=fake_detector, fetch=None)
+    assert results.software is identity
+    assert len(calls) == 1
+    output = root.parent / "report.md"
+    write_validation_report(
+        output, root, mitdb=mitdb, nstdb=nstdb, detector=fake_detector, fetch=None
+    )
+    assert len(calls) == 2
+    lines = output.read_text(encoding="utf-8").split("\n")
+    assert all(row in lines for row in software_rows(identity))
+
+
+def test_no_software_identity_without_verified_data(
+    data: tuple[Path, Database, Database],
+    fake_detector: Detector,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, mitdb, nstdb = data
+    (root / "mitdb" / "100.dat").unlink()
+    calls: list[None] = []
+    monkeypatch.setattr(run_module, "software_identity", lambda: calls.append(None))
+    with pytest.raises(DataVerificationError):
+        run_validation(root, mitdb=mitdb, nstdb=nstdb, detector=fake_detector, fetch=None)
+    assert calls == []
 
 
 def test_settings_reach_the_detector_and_the_loader(
@@ -351,6 +393,8 @@ def test_report_is_written_in_utf8_with_line_feeds(
     )
     assert content == expected.encode("utf-8")
     assert b"\r" not in content
+    lines = content.decode("utf-8").split("\n")
+    assert all(row in lines for row in software_rows(software_identity()))
     assert "≥ 99.50".encode() in content
     assert (
         describe_verification(
