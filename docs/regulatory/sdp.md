@@ -1,6 +1,6 @@
 # Software development plan
 
-_Inspired by IEC 62304 §5.1. Version 0.4, 2026-10-02. Status: draft (Milestone 0); the changes of version 0.4 are pending approval by the project owner._
+_Inspired by IEC 62304 §5.1. Version 0.4.1, 2026-10-03. Status: draft (Milestone 0); the changes of version 0.4 were approved by the project owner on 2026-10-03._
 
 > Sinus is not a medical device and claims no compliance with IEC 62304. This plan borrows the standard's structure so that the project is developed the way medical device software is.
 >
@@ -15,6 +15,7 @@ _Inspired by IEC 62304 §5.1. Version 0.4, 2026-10-02. Status: draft (Milestone 
 | 0.3 | 2026-09-29 | Software items aligned with the roadmap M0 to M6:<br>- portable C++17 library;<br>- Qt 6 desktop application;<br>- ESP32-S3 firmware in C++17 on ESP-IDF with FreeRTOS;<br>- backend.<br>Also:<br>- no quality management system;<br>- traceability gates and milestone register (ADR 0004);<br>- tools in use and planned per milestone, including the SBOM;<br>- development with AI assistance;<br>- equivalence, integration-by-replay and usability verification levels;<br>- definition of done per component |
 | 0.3.1 | 2026-09-29 | §6: rule for parameters tuned on the evaluation data |
 | 0.4 | 2026-10-02 | Software version and identification of `dsp` (OP-061; pending approval by the project owner). §4: the version follows the milestones, and every report and golden vector states the version and a digest of the package source; tags of correction releases. §3, activity 7: the release sets the version and regenerates the validation reports from the released code. §5.1: the release check of the reports. §6: results apply to the software they state; tuned parameters are recorded with the software identity before and after. §9: validation reports regenerated at each release |
+| 0.4.1 | 2026-10-03 | Changes of version 0.4 (software version and identification of `dsp`, OP-061) approved by the project owner; their implementation is pending |
 
 ## 1. Purpose and scope
 
