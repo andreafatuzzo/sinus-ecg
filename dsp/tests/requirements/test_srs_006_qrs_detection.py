@@ -8,12 +8,13 @@ exact:
 - "within 150 ms": |index - QRS| <= floor(0.150 * fs) samples (54 at 360 Hz, 37 at 250 Hz);
 - "no closer than 200 ms": spacing >= ceil(0.200 * fs) samples (72 at 360 Hz, 50 at 250 Hz).
 
-The statement (SRS v0.6) has two parts, and the tests follow them:
+The statement (SRS v0.7) has three parts, and the tests follow them:
 
 - for every input accepted by SRS-003, the indices are strictly increasing, no two are closer
   than 200 ms, and the index of each detected QRS complex lies within 150 ms of that complex;
 - for a noise-free input with a regular rhythm between 30 and 200 bpm (bounds included),
-  there is exactly one index for each QRS complex and no other index.
+  there is exactly one index for each QRS complex and no other index;
+- for an input of constant value (a flat line), there is no index.
 
 The 150 ms criterion concerns the QRS complexes that are detected; it does not by itself
 exclude an index that marks no QRS complex (a false detection, measured by SRS-007). From
@@ -26,6 +27,7 @@ those inputs. The detection is exercised through each of its public entry points
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -248,16 +250,54 @@ def test_flat_input_of_10_s_gives_no_detection_and_no_error(
 ) -> None:
     """A flat input of 10 s produces no detections and no error.
 
-    A case named by the verification of SRS-006 ("A flat input of 10 s produces no
-    detections and no error"): the expected result is taken from that line. A flat input is
-    accepted by SRS-003 and has no QRS complex, so any index would mark no QRS complex.
+    The case of the verification of SRS-006 ("A flat input of 10 s produces no detections and
+    no error"), which follows from the third sentence of the statement (v0.7): "For an input
+    of constant value (a flat line), the output shall contain no index." A flat input of 10 s
+    is accepted by SRS-003.
     Input: a constant signal of exactly 10 s (3600 samples at 360 Hz, 2500 at 250 Hz), at
-    0 mV, 1 mV and -0.5 mV, with the mains setting 50 Hz and 60 Hz.
+    0 mV, 1 mV and -0.5 mV, with the mains setting 50 Hz and 60 Hz, through each entry point
+    of the detection.
     Expected: no error, and an empty int64 array of indices.
     """
     flat = np.full(10 * fs_hz, level_mv, dtype=np.float64)
 
     beats = detector(flat, float(fs_hz), mains_hz)
+
+    _assert_index_array(beats, flat.size)
+    assert beats.size == 0
+
+
+# Constant values beyond the verification case: zero with its sign, a value close to zero,
+# an ECG amplitude, the order of an electrode offset of either sign, and a value far beyond
+# any ECG front end.
+CONSTANT_LEVELS_MV = [-0.0, 1e-6, 5.0, 300.0, -300.0, 1e6]
+
+
+@pytest.mark.requirement("SRS-006")
+@pytest.mark.parametrize("detector", FLAT_DETECTORS)
+@pytest.mark.parametrize("fs_hz", [125.0, 333.3, 1000.0])
+@pytest.mark.parametrize("duration_s", [10, 120])
+@pytest.mark.parametrize("level_mv", CONSTANT_LEVELS_MV)
+@pytest.mark.parametrize("mains_hz", MAINS_SETTINGS_HZ)
+def test_constant_input_gives_no_index(
+    detector: Detector, fs_hz: float, duration_s: int, level_mv: float, mains_hz: int
+) -> None:
+    """An input of constant value gives an output with no index, for any accepted input.
+
+    SRS-006 (v0.7), third sentence: "For an input of constant value (a flat line), the output
+    shall contain no index." It holds for every input accepted by SRS-003, not only for the
+    verification case (10 s at 360 Hz and 250 Hz).
+    Input: a constant signal at -0.0, 1e-6, 5, 300, -300 and 1e6 mV; at 125 Hz and 1000 Hz
+    (the limits of SRS-003) and at 333.3 Hz (not a whole number); lasting 10 s (the shortest
+    input accepted, ceil(10 * fs) samples) and 120 s; with the mains setting 50 Hz and 60 Hz;
+    through each entry point of the detection.
+    Expected: no error, and an empty int64 array of indices.
+    """
+    n_samples = math.ceil(duration_s * fs_hz)
+    assert n_samples / fs_hz >= duration_s
+    flat = np.full(n_samples, level_mv, dtype=np.float64)
+
+    beats = detector(flat, fs_hz, mains_hz)
 
     _assert_index_array(beats, flat.size)
     assert beats.size == 0

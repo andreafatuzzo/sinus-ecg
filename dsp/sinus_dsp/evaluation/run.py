@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from sinus_dsp import __version__
 from sinus_dsp._types import FloatArray, IndexArray
 from sinus_dsp.data.physionet import (
     MITDB,
@@ -44,6 +43,7 @@ from sinus_dsp.evaluation.matching import (
 )
 from sinus_dsp.evaluation.metrics import RecordCounts
 from sinus_dsp.pipeline import detect_beats
+from sinus_dsp.version import SoftwareIdentity, software_identity
 
 if TYPE_CHECKING:
     from sinus_dsp.evaluation.noise_stress import NoiseStressResults
@@ -129,7 +129,9 @@ class ValidationResults:
     """Everything a validation report states (SRS-012, SRS-014).
 
     Attributes:
-        software_version: Version of the software, ``sinus_dsp.__version__``.
+        software: Identity of the software that produced the results: package version,
+            source digest, and the versions of Python and of the runtime SOUP
+            (:func:`~sinus_dsp.version.software_identity`).
         settings: Settings of the detection.
         mitdb: Outcome of the verification of the MIT-BIH Arrhythmia Database.
         records: Evaluation of each record, sorted by record name.
@@ -137,7 +139,7 @@ class ValidationResults:
         subset: Whether the results cover a subset of the records.
     """
 
-    software_version: str
+    software: SoftwareIdentity
     settings: EvaluationSettings
     mitdb: VerificationResult
     records: tuple[RecordEvaluation, ...]
@@ -382,6 +384,8 @@ def run_validation(
        evaluated in the order of their names.
     3. The noise stress records are evaluated, and compared with records 118 and 119 of
        step 2.
+    4. The identity of the running software is taken once, with
+       :func:`~sinus_dsp.version.software_identity`.
 
     Args:
         data_root: The data folder; each database is in ``data_root / database.slug``.
@@ -401,6 +405,7 @@ def run_validation(
             format.
         InvalidInputError: If the evaluation of a record rejects its input, or if records
             118 and 119 are not among the evaluated records.
+        OSError: If a file of the package cannot be read for its source digest.
     """
     # Called here, not imported at the top: noise_stress imports this module.
     from sinus_dsp.evaluation.noise_stress import evaluate_noise_stress
@@ -426,7 +431,7 @@ def run_validation(
         loader=loader,
     )
     return ValidationResults(
-        software_version=__version__,
+        software=software_identity(),
         settings=settings,
         mitdb=mitdb_verification,
         records=records,
@@ -450,8 +455,9 @@ def write_validation_report(
 
     SRS-009: one call runs the detection and the evaluation on the reference database and
     writes the report; the report is a deterministic function of the verified data, the
-    software version and the settings. SRS-012, SRS-014: the report is written only after
-    the verification of both databases and everything else has succeeded.
+    software identity (version, source digest and runtime versions) and the settings.
+    SRS-012, SRS-014: the report is written only after the verification of both databases
+    and everything else has succeeded.
 
     The text of :func:`~sinus_dsp.evaluation.report.render_full_report` is written in UTF-8
     with line feeds, atomically: to ``<name>.part~`` in the same folder, then renamed. The

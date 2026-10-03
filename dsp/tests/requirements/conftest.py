@@ -4,19 +4,28 @@ The helpers here are independent of the software under test: they build the test
 (synthetic ECGs with known QRS positions, sinusoids, WFDB records, database folders with
 their checksum list, a fetch function that serves bytes from a dictionary, random beat and
 detection lists around 5:00, fixture databases for the evaluation with a detector double
-whose output is known) and apply the pass criteria of the requirements to its outputs
-(including reading the tables of a Markdown report). Each helper is exposed as a fixture that
+whose output is known, copies of the package under test run in a separate process) and apply
+the pass criteria of the requirements to its outputs (including reading the tables of a
+Markdown report, and the software identity a report must state, computed by the test from
+the source files with the documented method). Each helper is exposed as a fixture that
 returns a function, a class or the fixture data.
 """
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import hashlib
+import importlib
+import importlib.metadata
 import math
+import os
 import re
 import shutil
 import socket
+import subprocess
+import sys
+import tomllib
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -1456,3 +1465,315 @@ def percent_text() -> Callable[[int, int], str]:
 def mean_percent_text() -> Callable[[Sequence[tuple[int, int]]], str]:
     """``mean_percent_text(pairs)``: see ``_mean_percent_text``."""
     return _mean_percent_text
+
+
+# --------------------------------------------------------------------------------------------
+# Software identity: version, source identifier and runtime versions (SRS-009, SRS-012)
+# --------------------------------------------------------------------------------------------
+
+DSP_DIR = Path(__file__).resolve().parents[2]
+# The runtime third-party packages, in the order of the documented `Runtime` row
+# (architecture, sections 8.10 and 8.14).
+RUNTIME_DISTRIBUTIONS = ("numpy", "scipy", "wfdb")
+_DEPENDENCY_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def _source_files(package_dir: Path) -> list[tuple[str, Path]]:
+    """Steps 1 and 2 of the source identifier (architecture, section 8.14).
+
+    Walk ``package_dir`` without following symbolic links, skipping folders whose name starts
+    with ``.`` or is ``__pycache__``; keep each regular file that is not a symbolic link,
+    whose name ends with ``.py`` and does not start with ``.``. Name each one by its path
+    relative to the parent of ``package_dir``, with ``/``, and sort the names in code-point
+    order. Returns (name, path) pairs.
+    """
+    found: list[tuple[str, Path]] = []
+    for folder, subfolders, files in os.walk(package_dir, followlinks=False):
+        subfolders[:] = [s for s in subfolders if not s.startswith(".") and s != "__pycache__"]
+        for file_name in files:
+            path = Path(folder) / file_name
+            if not file_name.endswith(".py") or file_name.startswith("."):
+                continue
+            if path.is_symlink() or not path.is_file():
+                continue
+            found.append((path.relative_to(package_dir.parent).as_posix(), path))
+    return sorted(found)
+
+
+def _source_manifest(package_dir: Path) -> bytes:
+    """Steps 3 to 5: one line ``<SHA-256 of the file, CR LF read as LF>  <name>\\n`` per
+    file, in the order of the names, encoded in UTF-8."""
+    lines = []
+    for name, path in _source_files(package_dir):
+        content = path.read_bytes().replace(b"\r\n", b"\n")
+        lines.append(f"{hashlib.sha256(content).hexdigest()}  {name}\n")
+    return "".join(lines).encode("utf-8")
+
+
+def _source_digest(package_dir: Path) -> str:
+    """Step 6: the SHA-256 of the manifest, 64 lowercase hexadecimal digits."""
+    return hashlib.sha256(_source_manifest(package_dir)).hexdigest()
+
+
+def _version_literal(package_dir: Path) -> str:
+    """The string literal assigned to ``__version__`` in ``<package_dir>/__init__.py``."""
+    tree = ast.parse((package_dir / "__init__.py").read_bytes())
+    values = [
+        node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign | ast.AnnAssign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "__version__"
+            for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        )
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    ]
+    assert len(values) == 1, f"{len(values)} string literals assigned to __version__"
+    return values[0]
+
+
+def _runtime_dependency_names() -> tuple[str, ...]:
+    """The names of the ``[project] dependencies`` of ``dsp/pyproject.toml``."""
+    project = tomllib.loads((DSP_DIR / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    names = []
+    for requirement in project["dependencies"]:
+        match = _DEPENDENCY_NAME.match(requirement)
+        assert match, requirement
+        names.append(match.group(1).lower())
+    return tuple(names)
+
+
+def _project_version() -> str:
+    """The ``[project] version`` of ``dsp/pyproject.toml``."""
+    text = (DSP_DIR / "pyproject.toml").read_text(encoding="utf-8")
+    return str(tomllib.loads(text)["project"]["version"])
+
+
+@dataclass(frozen=True)
+class ExpectedSoftware:
+    """The software identity a report must state, worked out by the test.
+
+    ``version`` is the ``__version__`` literal of the package, ``source_sha256`` the
+    identifier computed with the six steps of architecture section 8.14, ``python`` and
+    ``runtime`` the versions of the environment that runs the test (``sys.version_info`` and
+    ``importlib.metadata``).
+    """
+
+    package_dir: Path
+    version: str
+    source_sha256: str
+    python: str
+    runtime: tuple[tuple[str, str], ...]
+
+    @property
+    def software_row(self) -> str:
+        """The documented table line ``| Software | sinus-dsp <version>, source SHA-256 <d> |``."""
+        return f"| Software | sinus-dsp {self.version}, source SHA-256 {self.source_sha256} |"
+
+    @property
+    def runtime_row(self) -> str:
+        """The documented table line ``| Runtime | Python <x.y>, numpy <v>, scipy <v>, ... |``."""
+        parts = [f"Python {self.python}", *(f"{name} {version}" for name, version in self.runtime)]
+        return f"| Runtime | {', '.join(parts)} |"
+
+
+def _expected_software(package_dir: Path) -> ExpectedSoftware:
+    """The identity of the package in ``package_dir`` run in this environment."""
+    return ExpectedSoftware(
+        package_dir=package_dir,
+        version=_version_literal(package_dir),
+        source_sha256=_source_digest(package_dir),
+        python=f"{sys.version_info.major}.{sys.version_info.minor}",
+        runtime=tuple((name, importlib.metadata.version(name)) for name in RUNTIME_DISTRIBUTIONS),
+    )
+
+
+def _running_package_dir() -> Path:
+    """The folder of the package ``sinus_dsp`` that the tests import."""
+    module = importlib.import_module("sinus_dsp")
+    assert module.__file__ is not None
+    return Path(module.__file__).resolve().parent
+
+
+def _copy_package(destination: Path, *, crlf: bool = False) -> Path:
+    """Copy the package under test into ``destination`` (without ``__pycache__``) and return
+    the folder of the copy. With ``crlf``, every ``.py`` file of the copy gets CR LF line
+    endings."""
+    target = destination / "sinus_dsp"
+    shutil.copytree(_running_package_dir(), target, ignore=shutil.ignore_patterns("__pycache__"))
+    if crlf:
+        for path in target.rglob("*.py"):
+            content = path.read_bytes().replace(b"\r\n", b"\n")
+            path.write_bytes(content.replace(b"\n", b"\r\n"))
+    return target
+
+
+@pytest.fixture(scope="session")
+def source_digest() -> Callable[[Path], str]:
+    """``source_digest(package_dir)``: see ``_source_digest`` (computed by the test)."""
+    return _source_digest
+
+
+@pytest.fixture(scope="session")
+def source_manifest() -> Callable[[Path], bytes]:
+    """``source_manifest(package_dir)``: see ``_source_manifest`` (computed by the test)."""
+    return _source_manifest
+
+
+@pytest.fixture(scope="session")
+def expected_software() -> Callable[[Path], ExpectedSoftware]:
+    """``expected_software(package_dir)``: see ``_expected_software``."""
+    return _expected_software
+
+
+@pytest.fixture(scope="session")
+def running_software() -> ExpectedSoftware:
+    """The identity of the package under test, run in this environment."""
+    return _expected_software(_running_package_dir())
+
+
+@pytest.fixture(scope="session")
+def runtime_dependency_names() -> tuple[str, ...]:
+    """The names of the runtime dependencies of ``dsp/pyproject.toml``."""
+    return _runtime_dependency_names()
+
+
+@pytest.fixture(scope="session")
+def project_version() -> str:
+    """The ``[project] version`` of ``dsp/pyproject.toml``."""
+    return _project_version()
+
+
+@pytest.fixture(scope="session")
+def copy_package() -> Callable[..., Path]:
+    """``copy_package(destination, *, crlf=False)``: see ``_copy_package``."""
+    return _copy_package
+
+
+# A script run in a separate Python process: it writes the validation report of fixture
+# databases with a detector double (the samples above 0.5 mV), without network access, and
+# prints the folder of the package ``sinus_dsp`` it imported.
+_REPORT_DRIVER = '''\
+"""Write the validation report of fixture databases with a detector double, without network.
+
+Usage: python <this file> OUTPUT DATA_ROOT MITDB_PIN NSTDB_PIN
+
+Prints "package: <folder of the imported package sinus_dsp>" on standard output.
+"""
+
+import socket
+import sys
+import urllib.request
+from pathlib import Path
+
+import numpy as np
+
+
+def _refuse(*args, **kwargs):
+    raise RuntimeError("network access attempted in a test without network")
+
+
+socket.socket.connect = _refuse
+socket.create_connection = _refuse
+socket.getaddrinfo = _refuse
+urllib.request.urlopen = _refuse
+
+import sinus_dsp  # noqa: E402
+from sinus_dsp.data.physionet import Database  # noqa: E402
+from sinus_dsp.evaluation.run import write_validation_report  # noqa: E402
+
+
+def spike_detector(signal_mv, fs_hz, mains_hz):
+    return np.flatnonzero(np.asarray(signal_mv, dtype=np.float64) > 0.5).astype(np.int64)
+
+
+output, data_root, mitdb_pin, nstdb_pin = sys.argv[1:5]
+print("package:", Path(sinus_dsp.__file__).resolve().parent)
+write_validation_report(
+    Path(output),
+    Path(data_root),
+    mitdb=Database(
+        slug="mitdb",
+        version="1.0.0",
+        title="MIT-BIH Arrhythmia Database",
+        checksum_list_sha256=mitdb_pin,
+    ),
+    nstdb=Database(
+        slug="nstdb",
+        version="1.0.0",
+        title="MIT-BIH Noise Stress Test Database",
+        checksum_list_sha256=nstdb_pin,
+    ),
+    detector=spike_detector,
+    fetch=None,
+)
+'''
+
+
+@dataclass(frozen=True)
+class DriverRun:
+    """A report written by the report driver in a separate process."""
+
+    completed: subprocess.CompletedProcess[str]
+    package_dir: Path | None
+    report: bytes | None
+
+
+def _run_report_driver(
+    fixture: EvaluationFixture,
+    output: Path,
+    *,
+    cwd: Path,
+    package_root: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> DriverRun:
+    """Write the report of ``fixture`` to ``output`` in a separate Python process.
+
+    With ``package_root``, that folder comes first on ``PYTHONPATH``, so the process imports
+    the package ``sinus_dsp`` found there. ``env`` adds environment variables.
+    """
+    driver = output.parent / "write_report_driver.py"
+    driver.write_text(_REPORT_DRIVER, encoding="utf-8")
+    environment = {**os.environ, **(env or {})}
+    if package_root is not None:
+        existing = environment.get("PYTHONPATH")
+        environment["PYTHONPATH"] = os.pathsep.join(
+            [str(package_root), *([existing] if existing else [])]
+        )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(driver),
+            str(output),
+            str(fixture.data_root),
+            fixture.mitdb.checksum_list_sha256,
+            fixture.nstdb.checksum_list_sha256,
+        ],
+        cwd=cwd,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=600,
+        check=False,
+    )
+    package = [
+        line.removeprefix("package:").strip()
+        for line in completed.stdout.splitlines()
+        if line.startswith("package:")
+    ]
+    driver.unlink()
+    return DriverRun(
+        completed=completed,
+        package_dir=Path(package[0]) if package else None,
+        report=output.read_bytes() if output.exists() else None,
+    )
+
+
+@pytest.fixture(scope="session")
+def run_report_driver() -> Callable[..., DriverRun]:
+    """``run_report_driver(fixture, output, *, cwd, package_root=None, env=None)``: see
+    ``_run_report_driver``."""
+    return _run_report_driver

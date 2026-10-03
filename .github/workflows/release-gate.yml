@@ -2,7 +2,9 @@ name: Release gate
 
 # A pull request into main releases a milestone: every requirement of a milestone that is in
 # progress or released (docs/regulatory/milestones.md) must have a verifying test
-# (docs/adr/0004-test-tagging-and-traceability-gates.md).
+# (docs/adr/0004-test-tagging-and-traceability-gates.md), the package version must be a release
+# version, and the validation reports must state the released software
+# (docs/regulatory/architecture.md §8.14).
 # This workflow runs only on pull requests into main, so its check "release-gate" is never
 # produced by a push, and the ruleset on main requires it.
 on:
@@ -24,3 +26,7 @@ jobs:
       - run: uv sync --locked
       - name: Traceability checks and release gate
         run: uv run python scripts/traceability.py --check --release-gate
+      # Every report in docs/validation/ states the software being released: package version,
+      # source digest and runtime versions (docs/regulatory/architecture.md §8.14).
+      - name: Software stated by the validation reports
+        run: uv run python scripts/software_check.py
