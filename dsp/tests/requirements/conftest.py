@@ -1777,3 +1777,192 @@ def run_report_driver() -> Callable[..., DriverRun]:
     """``run_report_driver(fixture, output, *, cwd, package_root=None, env=None)``: see
     ``_run_report_driver``."""
     return _run_report_driver
+
+
+# --------------------------------------------------------------------------------------------
+# Fixture databases for the subset check (SRS-016)
+# --------------------------------------------------------------------------------------------
+
+# The records of SRS-016, in the order of the statement.
+SUBSET_RECORD_NAMES = ("100", "105", "108", "119", "203", "207")
+
+# Files that the reference database publishes beside the records, imitated by the fixture:
+# a calibration file `<record>.xws` for every record, further annotation files for records
+# 108, 119 and 203 (architecture, section 8.11), and files that belong to no record.
+_SUBSET_ANNOTATION_EXTRAS = ("108.at_", "119.at_", "203.at-", "203.at_")
+_OTHER_LISTED_FILES: dict[str, bytes] = {
+    **_ANNOTATORS,
+    "mitdbdir/intro.htm": b"<html><body>Intro</body></html>\n",
+    "x_mitdb/x_108.hea": b"x_108 2 360 21600\n",
+}
+
+
+@dataclass(frozen=True)
+class SubsetFixture:
+    """A fixture MIT-BIH Arrhythmia database for the subset check, in ``data_root/mitdb``.
+
+    ``subset_files`` are the listed files of the six records of SRS-016, worked out by the
+    test from the checksum list: each top-level path that starts with ``<record>.`` and goes
+    on with at least one more character. ``other_files`` are the listed files that belong to
+    no record of the subset. ``records`` holds the six records and every other record
+    written (its files are among ``other_files``).
+    """
+
+    data_root: Path
+    database: FixtureDatabase
+    subset_files: tuple[str, ...]
+    other_files: tuple[str, ...]
+
+    @property
+    def folder(self) -> Path:
+        return self.database.folder.folder
+
+    @property
+    def checksum_list_sha256(self) -> str:
+        return self.database.checksum_list_sha256
+
+    @property
+    def records(self) -> dict[str, FixtureRecord]:
+        return self.database.records
+
+    def subset_records(self) -> list[FixtureRecord]:
+        """The six records of the subset, in increasing order of name."""
+        return [self.records[name] for name in sorted(SUBSET_RECORD_NAMES)]
+
+
+def _subset_selection(paths: Sequence[str], records: Sequence[str]) -> tuple[str, ...]:
+    """The listed files of ``records``: top-level paths ``<record>.<at least one character>``."""
+    return tuple(
+        sorted(
+            path
+            for path in paths
+            if "/" not in path
+            and any(path.startswith(f"{r}.") and len(path) > len(r) + 1 for r in records)
+        )
+    )
+
+
+def _write_subset_database(
+    data_root: Path, records: Sequence[FixtureRecord], other_records: Sequence[FixtureRecord]
+) -> SubsetFixture:
+    """Write the six subset ``records`` and ``other_records`` as a fixture database.
+
+    Besides the WFDB files of each record (``.hea``, ``.dat``, ``.atr``), the folder holds a
+    ``<record>.xws`` file for each record, the files ``108.at_``, ``119.at_``, ``203.at-`` and
+    ``203.at_``, a ``RECORDS`` file listing every record, an ``ANNOTATORS`` file and two files
+    in subfolders, all in the checksum list. For the six records this gives the 28 files of
+    the reference database (architecture, section 8.11).
+    """
+    all_records = [*records, *other_records]
+    extras: dict[str, bytes] = {
+        f"{record.name}.xws": f"xws {record.name}\n".encode("ascii") for record in all_records
+    }
+    extras.update(
+        {name: f"annotations {name}\n".encode("ascii") for name in _SUBSET_ANNOTATION_EXTRAS}
+    )
+    extras.update(_OTHER_LISTED_FILES)
+    database = _write_evaluation_database(
+        data_root,
+        "mitdb",
+        all_records,
+        record_list=sorted(record.name for record in all_records),
+        extra_files=extras,
+    )
+    listed = sorted(database.folder.files)
+    subset = _subset_selection(listed, SUBSET_RECORD_NAMES)
+    return SubsetFixture(
+        data_root=data_root,
+        database=database,
+        subset_files=subset,
+        other_files=tuple(path for path in listed if path not in subset),
+    )
+
+
+def _subset_spike_records(*, with_episodes: bool) -> list[FixtureRecord]:
+    """The six records of the spike subset fixture (7 min at 360 Hz, detector double).
+
+    | Record | Period | Misses | Extras | TP | FN | FP | Se (%) | +P (%) |
+    |---|---|---|---|---|---|---|---|---|
+    | 100 | 360 | 1 | 0 | 119 | 1 | 0 | 99.17 | 100.00 |
+    | 105 | 360 | 2 | 5 | 118 | 2 | 5 | 98.33 | 95.93 |
+    | 108 (signal V5) | 324 | 4 | 9 | 130 | 4 | 9 | 97.01 | 93.53 |
+    | 119 | 324 | 0 | 0 | 134 | 0 | 0 | 100.00 | 100.00 |
+    | 203 | 360 | 3 | 2 | 117 | 3 | 2 | 97.50 | 98.32 |
+    | 207 | see ``_record_207`` | | | 95 | 0 | 0 | 100.00 | 100.00 |
+
+    Gross: TP 713, FN 10, FP 16. Without episodes, record 207 is a regular record of period
+    360 without miss or extra (TP 120): gross TP 738. No spike lies within 54 samples of 5:00
+    and no detection before 5:00 lies within 54 samples of a scored beat, so the rule at 5:00
+    changes nothing (``_regular_record``).
+    """
+    records = [
+        _regular_record("100", period=360, misses=1, extras=0),
+        _regular_record("105", period=360, misses=2, extras=5),
+        _regular_record("108", period=324, misses=4, extras=9, signal_name="V5"),
+        _regular_record("119", period=324, misses=0, extras=0),
+        _regular_record("203", period=360, misses=3, extras=2),
+    ]
+    if with_episodes:
+        records.append(_record_207())
+    else:
+        records.append(_regular_record("207", period=360, misses=0, extras=0))
+    return records
+
+
+@pytest.fixture(scope="session")
+def subset_fixture(tmp_path_factory: pytest.TempPathFactory) -> SubsetFixture:
+    """The spike subset fixture of ``_subset_spike_records``, with record 207 holding two
+    ventricular flutter episodes, and record 101 (period 360, no miss, no extra) written and
+    listed as a record outside the subset. Read only: copy it to alter it.
+    """
+    data_root = tmp_path_factory.mktemp("subset") / "data"
+    return _write_subset_database(
+        data_root,
+        _subset_spike_records(with_episodes=True),
+        [_regular_record("101", period=360, misses=0, extras=0)],
+    )
+
+
+@pytest.fixture(scope="session")
+def subset_fixture_without_episodes(tmp_path_factory: pytest.TempPathFactory) -> SubsetFixture:
+    """The spike subset fixture with no ventricular flutter episode in any record. Read only."""
+    data_root = tmp_path_factory.mktemp("subset-without-episodes") / "data"
+    return _write_subset_database(data_root, _subset_spike_records(with_episodes=False), [])
+
+
+@pytest.fixture(scope="session")
+def subset_ecg_fixture(tmp_path_factory: pytest.TempPathFactory) -> SubsetFixture:
+    """Six 6-min records named as the subset, whose channel 0 is a noise-free synthetic ECG
+    (records 100, 108 and 203 at 75 bpm; 105, 119 and 207 at 60 bpm), for the real detector:
+    every record has TP = its beats at or after 5:00, FN 0 and FP 0. Read only.
+    """
+    data_root = tmp_path_factory.mktemp("subset-ecg") / "data"
+    ecg = {rate: _long_synthetic_ecg(EVALUATION_FS_HZ, rate, SIX_MINUTES) for rate in (60, 75)}
+    rates = {"100": 75, "105": 60, "108": 75, "119": 60, "203": 75, "207": 60}
+    records = [_ecg_record(name, ecg[rates[name]]) for name in SUBSET_RECORD_NAMES]
+    return _write_subset_database(data_root, records, [])
+
+
+def _copy_subset_fixture(
+    source: SubsetFixture, data_root: Path, *, only_subset: bool = False
+) -> SubsetFixture:
+    """Copy ``source`` to ``data_root`` (which must not exist).
+
+    With ``only_subset``, the copy holds only the checksum list and the files of the six
+    records, as the cache of the continuous integration does (architecture, section 8.11).
+    """
+    if only_subset:
+        target = data_root / "mitdb"
+        target.mkdir(parents=True)
+        for name in (CHECKSUM_LIST_NAME, *source.subset_files):
+            shutil.copyfile(source.folder / name, target / name)
+    else:
+        shutil.copytree(source.data_root, data_root)
+    return replace(source, data_root=data_root, database=_moved(source.database, data_root))
+
+
+@pytest.fixture(scope="session")
+def copy_subset_fixture() -> Callable[..., SubsetFixture]:
+    """``copy_subset_fixture(source, data_root, *, only_subset=False)``: see
+    ``_copy_subset_fixture``."""
+    return _copy_subset_fixture
