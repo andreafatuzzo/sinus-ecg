@@ -26,6 +26,27 @@ jobs:
       # level, implemented => tested (docs/adr/0004-test-tagging-and-traceability-gates.md)
       - name: Traceability checks
         run: uv run python scripts/traceability.py --check
+      # Subset report check (SRS-016, architecture §8.11): records 100, 105, 108, 119, 203 and
+      # 207 of the MIT-BIH Arrhythmia Database 1.0.0. The cache is only a copy: every run
+      # verifies it against the pinned checksum list, and a missing or altered file is
+      # downloaded again. With a complete cache the check uses no network.
+      - name: Cache of the subset records
+        uses: actions/cache@v6.1.0
+        with:
+          path: data/mitdb
+          key: mitdb-1.0.0-subset-v1
+      - name: Subset report check
+        run: >-
+          uv run python scripts/subset_check.py
+          --write-regenerated "${{ runner.temp }}/qrs-ec57-subset-report.md"
+      # The report regenerated here is the authority when it differs from the stored one
+      # (CONTRIBUTING.md); nothing to upload when the verification failed.
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: subset-report
+          path: ${{ runner.temp }}/qrs-ec57-subset-report.md
+          if-no-files-found: warn
       # The release gate for pull requests into main is a separate workflow (release-gate.yml).
       # SBOM of the runtime dependencies only: a separate environment without the dev group,
       # described by cyclonedx-py (a dev-group tool) and published as a workflow artifact.

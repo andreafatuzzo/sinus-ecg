@@ -36,7 +36,8 @@ testpaths = ["tests"]
 addopts = "--strict-markers --import-mode=importlib"
 markers = [
     "requirement(*ids): SRS requirement IDs verified by this test (e.g. 'SRS-001'); only in tests/requirements (Verification level Requirement) and tests/system (level System)",
-    "needs_data: requires the local MIT-BIH database in data/; skipped when it is absent (e.g. in CI)",
+    "needs_data: requires the complete local MIT-BIH Arrhythmia Database in data/mitdb (RECORDS and the .hea, .dat and .atr files of every record it lists); skipped otherwise (e.g. in CI, which keeps only the subset records)",
+    "needs_nstdb: requires the local MIT-BIH Noise Stress Test Database in data/nstdb (the .hea, .dat and .atr files of its 12 noise stress records); skipped otherwise (e.g. in CI)",
 ]
 
 [tool.ruff]

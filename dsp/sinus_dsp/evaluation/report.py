@@ -1,14 +1,16 @@
-"""Deterministic Markdown rendering of the validation reports (architecture §8.10).
+"""Deterministic Markdown rendering of the validation reports (architecture §8.10, §8.11).
 
 SRS-012: the full report states the statistics per record and for the set of records, the
 records with the lowest Se and +P, the pass or fail of each target, the database and its
 verification, the software version with the digest of the source code that produced the
 report (architecture §8.14) and the settings, what was not scored, and that the results are
-not a clinical validation. SRS-014: it adds the noise stress section. SRS-009: the text
-depends only on the results it is given: records are sorted, every number is an integer
-count or is computed from counts by correctly rounded operations and formatted with a fixed
-number of decimals, and nothing depends on the date, the time, the host, the user or a path.
-The text is UTF-8, with line feeds, no trailing spaces and one line feed at the end.
+not a clinical validation. SRS-014: it adds the noise stress section. SRS-016: the subset
+report states the same items for the records of a subset, except the targets, and says that
+it is a regression check, not the performance evaluation. SRS-009: the text depends only on
+the results it is given: records are sorted, every number is an integer count or is computed
+from counts by correctly rounded operations and formatted with a fixed number of decimals,
+and nothing depends on the date, the time, the host, the user or a path. The text is UTF-8,
+with line feeds, no trailing spaces and one line feed at the end.
 
 :func:`stale_software_rows` lets a release check compare the software rows of a stored
 report with the running software.
@@ -105,9 +107,10 @@ def render_full_report(results: ValidationResults) -> str:
 def render_subset_report(results: ValidationResults) -> str:
     """Render the subset report as Markdown.
 
-    SRS-009, SRS-012: the items of the full report for the records evaluated, without the
-    performance targets and without the noise stress test, and a paragraph that states that
-    the report covers a subset of the records for regression checking (architecture §8.11).
+    SRS-009, SRS-012, SRS-016: the items of the full report for the records evaluated,
+    without the performance targets and without the noise stress test, and a paragraph that
+    states that the report covers a subset of the records for regression checking and is not
+    the performance evaluation against the targets (architecture §8.11).
     Sections, in this order: title, the statement that the results are not a clinical
     validation, the subset paragraph and the origin of the file; software, data and
     settings; results per record; lowest sensitivity; lowest positive predictivity;
