@@ -14,13 +14,13 @@ those modules inside the functions that call them.
 from __future__ import annotations
 
 import numbers
-import os
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from sinus_dsp._files import write_atomically
 from sinus_dsp._types import FloatArray, IndexArray
 from sinus_dsp.data.physionet import (
     MITDB,
@@ -65,7 +65,6 @@ _FLUTTER_WAVE: Final = "!"
 # The record-name rule of architecture §8.3: a name is used as a file name in the database
 # folder.
 _RECORD_NAME: Final = re.compile(r"[A-Za-z0-9_]+")
-_PART_SUFFIX: Final = ".part~"
 
 
 @dataclass(frozen=True)
@@ -494,7 +493,7 @@ def write_validation_report(
         loader=loader,
         fetch=fetch,
     )
-    _write_atomically(Path(output_path), render_full_report(results).encode("utf-8"))
+    write_atomically(Path(output_path), render_full_report(results).encode("utf-8"))
 
 
 def _checked_names(records: Sequence[str]) -> tuple[str, ...]:
@@ -542,11 +541,3 @@ def _non_negative_integer(value: int, name: str) -> int:
     if number < 0:
         raise InvalidInputError(f"{name} is negative: {number}")
     return number
-
-
-def _write_atomically(path: Path, content: bytes) -> None:
-    """Write a file through ``<name>.part~`` in the same folder, creating the folder."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    part = path.with_name(path.name + _PART_SUFFIX)
-    part.write_bytes(content)
-    os.replace(part, path)
