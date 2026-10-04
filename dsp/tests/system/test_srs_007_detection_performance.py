@@ -15,9 +15,10 @@ summed counts.
 
 These tests need the verified local copies of the MIT-BIH Arrhythmia Database (``data/mitdb``)
 and of the MIT-BIH Noise Stress Test Database (``data/nstdb``), which the validation run also
-verifies; ``scripts/download_data.py`` obtains both. They are skipped where the MIT-BIH
-database is absent, as in CI, and their result is recorded in the milestone's validation
-report.
+verifies; ``scripts/download_data.py`` obtains both. Every test uses that run, so every test
+is marked ``needs_data`` and ``needs_nstdb`` and is skipped unless both databases are
+complete, as in CI, which keeps only the subset records. Their result is recorded in the
+milestone's validation report.
 """
 
 from __future__ import annotations
@@ -207,6 +208,7 @@ def _gross(evaluations: Sequence[RecordEvaluation]) -> tuple[int, int, int]:
 
 
 @pytest.mark.needs_data
+@pytest.mark.needs_nstdb
 @pytest.mark.requirement("SRS-007")
 def test_run_uses_the_settings_of_srs_007(run: Run) -> None:
     """The evaluation uses the first stored signal and the mains filter set to 60 Hz.
@@ -235,6 +237,7 @@ def test_run_uses_the_settings_of_srs_007(run: Run) -> None:
 
 
 @pytest.mark.needs_data
+@pytest.mark.needs_nstdb
 @pytest.mark.requirement("SRS-007")
 def test_all_48_records_are_evaluated_in_full(run: Run) -> None:
     """Every one of the 48 records is evaluated once, on its whole signal.
@@ -275,6 +278,7 @@ def test_all_48_records_are_evaluated_in_full(run: Run) -> None:
 
 
 @pytest.mark.needs_data
+@pytest.mark.needs_nstdb
 @pytest.mark.requirement("SRS-007")
 def test_first_stored_signal_of_each_record_is_evaluated(run: Run) -> None:
     """The signal evaluated is the first one stored in each record.
@@ -294,6 +298,7 @@ def test_first_stored_signal_of_each_record_is_evaluated(run: Run) -> None:
 
 
 @pytest.mark.needs_data
+@pytest.mark.needs_nstdb
 @pytest.mark.requirement("SRS-007")
 def test_every_scored_reference_beat_is_counted(run: Run) -> None:
     """TP + FN of each record equals its number of scored reference beats.
@@ -318,6 +323,7 @@ def test_every_scored_reference_beat_is_counted(run: Run) -> None:
 
 
 @pytest.mark.needs_data
+@pytest.mark.needs_nstdb
 @pytest.mark.requirement("SRS-007")
 def test_gross_sensitivity_is_at_least_99_5_percent(run: Run) -> None:
     """Gross Se over the 48 records is at least 99.5 %.
@@ -336,6 +342,7 @@ def test_gross_sensitivity_is_at_least_99_5_percent(run: Run) -> None:
 
 
 @pytest.mark.needs_data
+@pytest.mark.needs_nstdb
 @pytest.mark.requirement("SRS-007")
 def test_gross_positive_predictivity_is_at_least_99_5_percent(run: Run) -> None:
     """Gross +P over the 48 records is at least 99.5 %.
@@ -354,6 +361,7 @@ def test_gross_positive_predictivity_is_at_least_99_5_percent(run: Run) -> None:
 
 
 @pytest.mark.needs_data
+@pytest.mark.needs_nstdb
 @pytest.mark.requirement("SRS-007")
 def test_report_states_the_gross_values_and_verdicts(run: Run) -> None:
     """The validation report states the gross values and the verdicts that the counts give.

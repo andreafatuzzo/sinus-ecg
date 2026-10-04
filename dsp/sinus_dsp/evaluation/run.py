@@ -128,6 +128,9 @@ class RecordEvaluation:
 class ValidationResults:
     """Everything a validation report states (SRS-012, SRS-014).
 
+    SRS-016: the results of the subset check have ``subset`` true and no noise stress test;
+    the subset report states them.
+
     Attributes:
         software: Identity of the software that produced the results: package version,
             source digest, and the versions of Python and of the runtime SOUP

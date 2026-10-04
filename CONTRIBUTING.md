@@ -8,7 +8,7 @@ Thanks for your interest. Sinus follows a lightweight version of medical-device 
 
 1. Branch from `develop` as `feature/<short-name>`.
 2. Open a pull request into `develop`. `main` only receives pull requests from `develop` at the end of a milestone.
-3. CI must pass: ruff, mypy, pytest and the traceability checks. On pull requests into `main`, the release gate also requires a verifying test for every requirement of a milestone that is in progress or released ([`milestones.md`](docs/regulatory/milestones.md)).
+3. CI must pass: ruff, mypy, pytest, the traceability checks and the subset report check (below). On pull requests into `main`, the release gate also requires a verifying test for every requirement of a milestone that is in progress or released ([`milestones.md`](docs/regulatory/milestones.md)).
 
 ## Development setup (Python, `dsp/`)
 
@@ -36,6 +36,14 @@ uv run pytest && uv run mypy && uv run ruff check . && uv run ruff format --chec
 - **Dependencies.** Add them with `uv add`, and list every new runtime dependency in [`docs/regulatory/soup.md`](docs/regulatory/soup.md).
 - **Open points.** Anything you defer or leave undecided goes in [`docs/regulatory/open-points.md`](docs/regulatory/open-points.md) as a new `OP-xxx` row, tagged with the `SRS`/`HAZ`/`RC` IDs it concerns.
 - **Data.** Never commit datasets. Validation reports in `docs/validation/` are generated, never hand-edited.
+- **Stored subset report.** On every push, CI regenerates the subset report on records 100, 105, 108, 119, 203 and 207 of the MIT-BIH Arrhythmia Database and fails if it differs in any byte from [`docs/validation/qrs-ec57-subset-report.md`](docs/validation/qrs-ec57-subset-report.md). The report states the software that produced it, so it changes with any change to a file under `dsp/sinus_dsp/` (even a comment), to the package version, or to the Python minor version or a runtime dependency version in `dsp/uv.lock`, as well as with any change of the detection results. Update it in the same pull request:
+
+  ```sh
+  cd dsp
+  uv run python scripts/subset_check.py --update   # downloads the six records into data/mitdb/ if needed (about 12 MB)
+  ```
+
+  and check in the diff which rows changed: only `Software` and `Runtime`, or the counts too. CI is the authority ([`architecture.md`](docs/regulatory/architecture.md) §8.11): if CI still reports a difference after the update, replace the stored report with the `subset-report` artifact of that CI run, so that the pull request shows the change for review.
 - **Validation.** QRS detection is scored with EC57 beat-by-beat matching. Beat classification must use an inter-patient split.
 
 ## Reporting problems

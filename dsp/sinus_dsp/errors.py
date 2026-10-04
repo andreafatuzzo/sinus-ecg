@@ -45,6 +45,8 @@ class DataVerificationError(SinusError):
     raised when the checksum list itself is missing or differs from its pinned digest.
     SRS-012, SRS-014: the command that writes the validation report raises it, before
     anything is written, when either database is not verified (architecture §8.10).
+    SRS-016: the subset check raises it, before any report is rendered or written, when a
+    file of the subset records is not verified (architecture §8.11).
 
     Attributes:
         database: Name and version of the database, e.g. ``mitdb 1.0.0``.
@@ -86,9 +88,9 @@ class MalformedFileError(SinusError, ValueError):
 
     SRS-001: a checksum list with a line that is not an entry, an unsafe path, a duplicate
     path or no entry is rejected with this error. SRS-002: so is an annotation file whose
-    sample indices decrease. It is also raised for a record list ``RECORDS`` that is not
-    UTF-8 text, names an invalid record or a record twice, or names none (architecture
-    §8.10).
+    sample indices decrease. SRS-016: so is a stored subset report that is not UTF-8 text
+    (architecture §8.11). It is also raised for a record list ``RECORDS`` that is not UTF-8
+    text, names an invalid record or a record twice, or names none (architecture §8.10).
 
     Attributes:
         path: The file, or the name of the source of the text.
@@ -113,8 +115,12 @@ class MalformedFileError(SinusError, ValueError):
 class SubsetReportMismatchError(SinusError):
     """The regenerated subset report differs from the stored one (architecture §8.11).
 
+    SRS-016: any difference between the subset report regenerated in continuous integration
+    and the stored one fails the check, and the differences are named.
+
     Attributes:
-        differences: One entry per differing line.
+        differences: One entry per differing line (at most 20, then the number of the
+            others), or one entry naming a stored report that does not exist.
 
     The message is ``subset report differs from the stored report:`` followed by one
     difference per line.

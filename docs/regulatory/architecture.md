@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2.8, 2026-10-03. Status: approved by the project owner (sections 1 to 7 and 9 to 12 in v0.1 and the detailed design of §8 in v0.2 on 2026-09-29; the corrections of v0.2.2 on 2026-09-30; the corrections of v0.2.4 on 2026-10-01; the software identity and versioning rule of v0.2.6 on 2026-10-03). Version 0.2.8 is editorial (no design change)._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2.9, 2026-10-03. Status: approved by the project owner (sections 1 to 7 and 9 to 12 in v0.1 and the detailed design of §8 in v0.2 on 2026-09-29; the corrections of v0.2.2 on 2026-09-30; the corrections of v0.2.4 on 2026-10-01; the software identity and versioning rule of v0.2.6 on 2026-10-03; v0.2.8 is editorial; the readings of §8.10 and §8.14 of v0.2.9 on 2026-10-04)._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;
@@ -35,6 +35,7 @@ The detailed design of each requirement (module, interface, algorithm with refer
 | 0.2.6 | 2026-10-02 | Software identity and versioning (OP-061; pending approval by the project owner). New §8.14: every report and golden vector states the package version and the SHA-256 digest of the package source, computed when it is produced, and the reports also state the versions of Python and of the runtime SOUP; the version follows the milestones (`0.N.0.dev0` while milestone N is in progress, `0.N.0` at its release, `0.N.P` for a later correction); checks in `traceability.py`, in the new release check `scripts/software_check.py` and, through the stored subset report, on every push. §7.3: header key `source_sha256`. §7.4: determinism stated with the software identity. §8.1: module `version` and script `software_check.py`. §8.10: `ValidationResults.software` replaces `software_version`; report section 2 gains the source digest in the row `Software` and a new row `Runtime`; determinism and verification notes. §8.11: `run_subset` states the software identity; when the stored subset report must be updated; stability across machines. §8.12: `GoldenVector.source_sha256`, `golden_vector` takes the software identity. §8.13: module `version` in the graph; when the changes of v0.2.6 are made. §12: OP-061 |
 | 0.2.7 | 2026-10-03 | Software identity and versioning rule of v0.2.6 approved by the project owner, including the `Runtime` row of the reports (OP-061, implementation pending). The versioning of the C++ items is tracked by OP-062 |
 | 0.2.8 | 2026-10-03 | Editorial, no design change. §8.14 is implemented (OP-061 closed), so the status line no longer says it is pending. §8.10 "Determinism" quotes the condition of SRS-009 as worded in `srs.md` v0.7. |
+| 0.2.9 | 2026-10-03 | Readings of the implemented §8.14 where the design was silent, recorded as design behaviour (approved by the project owner on 2026-10-04; no behaviour or code change). §8.14: a folder of the package that cannot be listed, `package_dir` included, raises `OSError`; the shell command needs no `__pycache__` exclusion and gives the digest of the implemented package; `stale_software_rows` splits the text at line feeds and ignores a carriage return at the end of a line; the `Runtime` row when there is no runtime package; `software_check.py`: the files it reads and how, the path it prints, a `--folder` that is not a folder (exit status 2), a file that is not UTF-8, the count k; `traceability.py`: how `__version__` is read, the messages of the version rule, a version that cannot be read listed by both `--check` and `--release-gate`; the unit tests of the version rule are not left to OP-052. §8.10: the wording of the `Runtime` row; the public constant `RECORD_LIST_NAME`. §12: OP-052 added |
 
 ## 1. System context
 
@@ -1099,6 +1100,8 @@ class ValidationResults:
     noise_stress: NoiseStressResults | None     # None in the subset report
     subset: bool
 
+RECORD_LIST_NAME: Final = "RECORDS"            # the record list of a PhysioNet database
+
 def read_record_list(database_dir: Path) -> tuple[str, ...]: ...
 def episode_coverage(episodes: Sequence[Episode], first_sample: int,
                      last_sample: int) -> tuple[int, int]: ...   # (episodes, samples) in the range
@@ -1163,7 +1166,7 @@ def stale_software_rows(text: str, software: SoftwareIdentity) -> tuple[str, ...
 `evaluation.run` imports `evaluation.noise_stress` and `evaluation.report` inside `run_validation` and `write_validation_report`, because both modules import `evaluation.run` (§8.13).
 
 **Functions and their checks.**
-- `read_record_list(database_dir)` reads `database_dir / "RECORDS"` as UTF-8. It splits the text at line feeds, removes a carriage return at the end of a line and the white space around the name (`str.strip`), and ignores empty lines. It returns the names sorted in code-point order. `MalformedFileError` (naming the file, and the 1-based line where there is one): the file is not UTF-8; a name does not match `[A-Za-z0-9_]+` (the record-name rule of §8.3); a name is listed twice; no name is listed. An absent file raises `OSError`. In practice it cannot be absent: `RECORDS` is listed in the checksum list, and step 1 has verified it.
+- `read_record_list(database_dir)` reads `database_dir / RECORD_LIST_NAME` (`RECORDS`) as UTF-8. It splits the text at line feeds, removes a carriage return at the end of a line and the white space around the name (`str.strip`), and ignores empty lines. It returns the names sorted in code-point order. `MalformedFileError` (naming the file, and the 1-based line where there is one): the file is not UTF-8; a name does not match `[A-Za-z0-9_]+` (the record-name rule of §8.3); a name is listed twice; no name is listed. An absent file raises `OSError`. In practice it cannot be absent: `RECORDS` is listed in the checksum list, and step 1 has verified it.
 - `evaluate_records(database_dir, records, settings, …)` checks the names first, before it loads any record. Each name must be a `str` matching `[A-Za-z0-9_]+`, given once, and `records` must not be a `str` itself; otherwise `InvalidInputError`. It returns the evaluations in the order of `records`; it does not sort, because the noise stress order relies on it.
 - `evaluate_record(record, settings, detector)` raises `InvalidInputError` if `record.channel` differs from `settings.channel`, so that the settings stated in the report are those of every evaluated record.
 - `meets_target(tp, other, target_hundredths)` raises `InvalidInputError` if `tp` or `other` is negative or not an integer (`bool` is not accepted), or if `target_hundredths` is not an integer from 0 to 10000.
@@ -1215,7 +1218,7 @@ Sections of the full report, in this order:
    - `Generated by dsp/scripts/validate.py; do not edit by hand.`
 2. **Software, data and settings.** The heading `## Software, data and settings`, then a table with the columns `Item` and `Value` and these rows:
    - `Software`: `sinus-dsp <version>, source SHA-256 <source_sha256>`, with the version and the 64-digit source digest of `results.software` (§8.14), e.g. `sinus-dsp 0.1.0.dev0, source SHA-256 d7cc8c52…6d443e29` (shortened here; the report gives all 64 digits);
-   - `Runtime`: `Python <python>, ` followed by `<distribution> <version>` for each runtime SOUP package of `results.software.runtime`, in the order of `RUNTIME_DISTRIBUTIONS`, separated by `, `; e.g. `Python 3.11, numpy 2.4.6, scipy 1.17.1, wfdb 4.3.1`;
+   - `Runtime`: `Python <python>`, then `, <distribution> <version>` for each runtime SOUP package of `results.software.runtime`, in the order of `RUNTIME_DISTRIBUTIONS`; e.g. `Python 3.11, numpy 2.4.6, scipy 1.17.1, wfdb 4.3.1`;
    - `Database`: `<title>, version <version>` of `results.mitdb.database`;
    - `Verification`: `describe_verification(results.mitdb)`;
    - `Records`: the number of evaluated records;
@@ -1519,7 +1522,7 @@ The module cites SRS-009 and SRS-012 (the reports). `golden` and `evaluation.sub
 - The major version stays 0 for the whole roadmap: `dsp` promises no compatibility of its Python interface. Under PEP 440, `0.N.0.dev0` sorts before `0.N.0`.
 
 **Source digest.** `source_digest(package_dir)`:
-1. List the files: walk `package_dir` with `os.walk(package_dir, followlinks=False)`, skipping folders whose name starts with `.` or is `__pycache__`. Keep each regular file that is not a symbolic link, whose name ends with `.py` and does not start with `.`.
+1. List the files: walk `package_dir` with `os.walk(package_dir, followlinks=False)`, skipping folders whose name starts with `.` or is `__pycache__`. Keep each regular file that is not a symbolic link, whose name ends with `.py` and does not start with `.`. The walk is given an `onerror` that raises: a folder that cannot be listed, `package_dir` included, raises `OSError` (`FileNotFoundError` if `package_dir` does not exist). By default `os.walk` skips such a folder, and the digest would cover part of the package without notice.
 2. Name each file by its path relative to the parent of `package_dir`, with `/` as separator (e.g. `sinus_dsp/evaluation/run.py`), and sort the names in code-point order (`source_files`).
 3. Read each file as bytes and replace every CR LF by LF.
 4. For each file in that order, write the line `<SHA-256 of the bytes of step 3, 64 lowercase hexadecimal digits><two spaces><name><LF>`, the format of `sha256sum` in text mode.
@@ -1537,7 +1540,7 @@ Scope and properties:
     | xargs -0 sha256sum --text | sha256sum --text
   ```
 
-  This was checked when the rule was written: same digest as a prototype of the six steps, on the 17 files of the package. `--text` matters on Windows, where some builds of `sha256sum` default to binary mode and write `*` before each name.
+  This was checked when the rule was written (same digest as a prototype of the six steps, on the 17 files of the package) and again on the implemented package (same digest as `source_digest`, on its 18 files, with `__pycache__` folders present). `--text` matters on Windows, where some builds of `sha256sum` default to binary mode and write `*` before each name. The command does not skip `__pycache__` folders by name: they hold only compiled files (`.pyc`), which `-name '*.py'` already leaves out. It would differ from the six steps only for a `.py` file put into a `__pycache__` folder by hand.
 - Cost: about 4 ms for the package (measured), once per report or export.
 - A digest is opaque. A released report is found through its version and the tag of the release; for a report of a development state, recomputing the digest on a candidate commit confirms or rejects it.
 
@@ -1546,26 +1549,30 @@ Scope and properties:
 **`software_identity()`** returns `SoftwareIdentity(version=sinus_dsp.__version__, source_sha256=source_digest(package_dir()), python=…, runtime=runtime_versions())`.
 - `package_dir()` is the folder of the module `version` itself (`Path(__file__).resolve().parent`): the code that is running. In the editable install made by `uv sync`, that is the checkout.
 - The version is the literal of `__init__.py`, not the installed metadata (`importlib.metadata.version("sinus-dsp")`), which reflects the last install and is stale after an edit until the next `uv sync`.
-- No error is raised on purpose. A package file that cannot be read raises `OSError`; a runtime SOUP package that is not installed raises `importlib.metadata.PackageNotFoundError`. Both propagate (§8.2).
+- No error is raised on purpose. A package folder that cannot be listed (step 1) or a package file that cannot be read raises `OSError`; a runtime SOUP package that is not installed raises `importlib.metadata.PackageNotFoundError`. Both propagate (§8.2).
 
 **Report rows** (`evaluation.report`, §8.10).
-- `software_rows(software)` returns the two table lines of report section 2: `| Software | sinus-dsp <version>, source SHA-256 <digest> |` and `| Runtime | Python <python>, <name> <version>, … |`. Both renderers use it, so the check below compares the very text they write.
-- `stale_software_rows(text, software)` returns one entry per problem, in the order of the lines of `text`: `line <n>: <line found>; current: <current line>` for each line that starts with `| Software | ` or `| Runtime | ` and differs from the matching line of `software_rows(software)`, then `no Software row` or `no Runtime row` when the text has one of the two rows but not the other. A text with neither row (for example `docs/validation/README.md`) gives an empty tuple.
+- `software_rows(software)` returns the two table lines of report section 2: `| Software | sinus-dsp <version>, source SHA-256 <digest> |` and `| Runtime | Python <python>, <name> <version>, … |`. The `Runtime` cell is `Python <python>`, then `, <name> <version>` for each pair of `software.runtime`; with no pair it is `Python <python>` alone. Both renderers use it, so the check below compares the very text they write.
+- `stale_software_rows(text, software)` splits `text` at line feeds only, removes a carriage return at the end of a line, and numbers the lines from 1. It returns one entry per problem, in the order of the lines of `text`: `line <n>: <line found>; current: <current line>` for each line that starts with `| Software | ` or `| Runtime | ` and differs from the matching line of `software_rows(software)`, then `no Software row` or `no Runtime row` when the text has one of the two rows but not the other. A text with neither row (for example `docs/validation/README.md`) gives an empty tuple.
 
 **Release check** (`scripts/software_check.py [--folder PATH]`, default `docs/validation/` at the repository root).
-- For each `*.md` file of the folder, in sorted order, it calls `stale_software_rows(text, software_identity())`.
-- If no file has a problem, it prints `software check: <k> reports state sinus-dsp <version>, source SHA-256 <digest>`, where k is the number of files with a row `Software`, and exits 0. Otherwise it prints `<file>: <entry>` on standard error for each problem and exits 1. Exit status 2 on a usage error.
+- A `--folder` that is not an existing folder is a usage error (`not a folder: <path>`, exit status 2).
+- It checks the files directly in the folder whose name matches `*.md`, in code-point order of their names; subfolders are not searched, and an entry that is not a file is skipped. It reads each file as UTF-8 text with Python's universal newlines (CR LF and CR become LF), so the line numbers are those an editor shows, and calls `stale_software_rows(text, software_identity())`. A file that is not UTF-8 raises `UnicodeDecodeError`, which propagates (§8.2): exit status 1, with a traceback. The folder holds only the reports, which the scripts write in UTF-8, and its README.
+- If no file has a problem, it prints `software check: <k> reports state sinus-dsp <version>, source SHA-256 <digest>` and exits 0. k is the number of files holding the current `Software` line; when no file has a problem, that is every file with a row `Software`. Otherwise it prints `<file>: <entry>` on standard error for each problem, where `<file>` is the folder as given (absolute by default) joined with the file name, and exits 1.
 - It needs no data and runs no evaluation. It cites no requirement ID.
 - CI: a step of the release-gate workflow (pull requests into `main`), after the traceability step. A release therefore carries only reports produced by the released code. Between releases, the full report in `docs/validation/` may state an earlier identity: it then still names the code that produced it, and the next release regenerates it. The stored subset report is checked on every push instead (§8.11).
 
 **Checks in `scripts/traceability.py`.** The script does not import `sinus_dsp`; it reads the files.
 - `--check` (every push), new rule "Software version":
-  - the `[project] version` of `dsp/pyproject.toml` (read with `tomllib`) equals the string literal assigned to `__version__` in `dsp/sinus_dsp/__init__.py` (read with `ast`);
+  - the `[project] version` of `dsp/pyproject.toml` (read with `tomllib`) equals the string literal assigned to `__version__` in `dsp/sinus_dsp/__init__.py` (read with `ast`). That literal is the value of the only statement at the top level of the module that assigns `__version__` (`__version__ = "…"` or `__version__: str = "…"`); assignments nested in a block are not read. No such statement, more than one, or a value that is not a string literal is a failure;
   - the version is the one the table above gives for `milestones.md`: exactly `0.N.0.dev0` with N the lowest milestone `In progress`; if none is in progress, it matches `0\.N\.(0|[1-9][0-9]*)` with N the highest milestone `Released`.
 
-  Each failure names the file, the version found and the expected form, e.g. `dsp/pyproject.toml: version 0.0.1, expected 0.1.0.dev0 (M1 In progress)`.
-- `--release-gate` also fails if the version contains `.dev`. With the register rule this happens only while a milestone is `In progress`, which the gate already rejects through its requirements and open points; the explicit item gives the clearer message.
-- `Layout` gains `pyproject` (`dsp/pyproject.toml`) and `package_init` (`dsp/sinus_dsp/__init__.py`), so that tests on fixture trees (OP-052) cover the rule.
+  Each failure names the file, the version found and the expected form. The items of the rule, in this order, with paths relative to the repository root:
+  - for a file whose version cannot be read: `<file> not found`, `<file>: not valid TOML (<error>)`, `<file>: no [project] version given as a string`, `<file>: not valid Python (<message>, line <n>)`, `<file>: __version__ assigned <k> times, expected once` or `<file>: __version__ is not assigned a string literal`;
+  - for each file whose version does not fit the register, `<file>: version <found>, expected <form>`, where `<form>` is `0.N.0.dev0 (MN In progress)` or `0.N.P with P = 0, 1, 2, ... (MN Released, none In progress)`, e.g. `dsp/pyproject.toml: version 0.0.1, expected 0.1.0.dev0 (M1 In progress)`; if no milestone is `In progress` or `Released`, the single item `milestones.md: no milestone is In progress or Released, so no version fits`;
+  - if both versions are read and differ, `dsp/sinus_dsp/__init__.py: version <found>, expected <version of dsp/pyproject.toml> (as in dsp/pyproject.toml)`.
+- `--release-gate` also fails if the version contains `.dev`, with the item `<file>: version <found> is a development version, not a release`, once per distinct version (when the two files agree, only `dsp/pyproject.toml` is named). With the register rule this happens only while a milestone is `In progress`, which the gate already rejects through its requirements and open points; the explicit item gives the clearer message. A version that cannot be read is also an item of the release gate, with the messages above, so that the gate fails when it runs alone; with `--check --release-gate`, as in the release-gate workflow, such an item is listed under both rules.
+- `Layout` gains `pyproject` (`dsp/pyproject.toml`) and `package_init` (`dsp/sinus_dsp/__init__.py`), so that unit tests on fixture trees cover the rule.
 - Not checked mechanically: that P is raised for a correction release, which needs the history of `main`. The release review checks it (`sdp.md` §3, activity 7).
 
 **C++ items.** This rule covers `dsp`. The versioning and identification of the C++ items is part of their detailed design, written at the start of their milestone (Conventions), starting with the library at Milestone 2.
@@ -1576,7 +1583,7 @@ Scope and properties:
   - `software_identity()` on the real package: the version equals `sinus_dsp.__version__` and the version of `dsp/pyproject.toml`; the digest has 64 lowercase hexadecimal digits; `python` matches `sys.version_info`; `RUNTIME_DISTRIBUTIONS` equals the dependency names of `dsp/pyproject.toml`.
   - `software_rows` literally; `stale_software_rows` for a current report, a stale `Software` row, a stale `Runtime` row, one row missing, and a text with neither row.
   - `software_check.py`: exit statuses and messages on fixture folders.
-  - The version rule of `traceability.py` on fixture trees (with OP-052): each state of the register, the two files disagreeing, a malformed version, the release gate.
+  - The version rule of `traceability.py` on fixture trees: each state of the register, the two files disagreeing, a malformed version, the release gate. These tests come with the rule; the unit tests of the other rules of the script are OP-052.
 - QA: SRS-012 as in the §8.10 verification notes; SRS-016 as in the §8.11 verification notes; SRS-015: the header keys `software_version` and `source_sha256` hold the identity of the running package.
 
 ## 9. SOUP per software item
@@ -1618,4 +1625,4 @@ Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, Google
 
 ## 12. Open points referenced
 
-OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-056, OP-057, OP-061. See [`open-points.md`](open-points.md).
+OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-052, OP-056, OP-057, OP-061. See [`open-points.md`](open-points.md).

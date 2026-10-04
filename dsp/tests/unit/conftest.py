@@ -241,3 +241,64 @@ def _write_fixture_databases(data_root: Path) -> tuple[Database, Database]:
 def write_fixture_databases() -> Callable[[Path], tuple[Database, Database]]:
     """Writer of the two fixture databases (see ``_write_fixture_databases``)."""
     return _write_fixture_databases
+
+
+#: Files of the fixture subset database that are not records: name -> content.
+SUBSET_EXTRA_FILES = {
+    "100.xws": b"waveform settings\n",
+    "108.at_": b"further annotations of 108\n",
+    "119.at_": b"further annotations of 119\n",
+    "203.at-": b"older annotations of 203\n",
+    "203.at_": b"further annotations of 203\n",
+    "1001.dat": b"not a file of record 100\n",
+    "mitdbdir/notes.txt": b"documentation\n",
+    "x_mitdb/x_108.hea": b"not a top-level file\n",
+}
+
+
+def _write_subset_database(data_root: Path) -> Database:
+    """Write a fixture arrhythmia database with the records of the subset under ``data_root``.
+
+    With the fake detector (20 Hz, 5:00 = sample 6000, match window 3 samples), the counts
+    (TP, FN, FP) are: 100 (2, 1, 1); 105 (2, 0, 2); 108 (1, 2, 0); 119 (3, 1, 0); 203
+    (2, 0, 0); 207 (2, 0, 0), with the episodes and ``!`` annotations of record 207 of
+    ``_write_fixture_databases``. Record 118, the ``RECORDS`` file and the files of
+    ``SUBSET_EXTRA_FILES`` are there too; the selection of the six records holds 23 files.
+    """
+    folder = data_root / "mitdb"
+    write = _write_fixture_record
+    write(folder, "100", n_samples=6600, beats=[6100, 6200, 6300], detections=[6100, 6201, 6400])
+    write(folder, "105", n_samples=6600, beats=[6100, 6200], detections=[6100, 6200, 6300, 6350])
+    write(folder, "108", n_samples=6600, beats=[6100, 6200, 6300], detections=[6100])
+    write(folder, "118", n_samples=6600, beats=[6100, 6200], detections=[6100, 6200])
+    write(
+        folder,
+        "119",
+        n_samples=6600,
+        beats=[6100, 6200, 6300, 6400],
+        detections=[6101, 6199, 6300],
+    )
+    write(folder, "203", n_samples=6600, beats=[6100, 6200], detections=[6100, 6200])
+    write(
+        folder,
+        "207",
+        n_samples=6600,
+        beats=[100, 6100, 6250, 6400],
+        others=[(50, "["), (150, "]"), (300, "!"), (6200, "["), (6300, "]"), (6500, "!")],
+        detections=[120, 6100, 6260, 6280, 6401],
+    )
+    for name, content in SUBSET_EXTRA_FILES.items():
+        path = folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    return _pin_database(
+        folder,
+        "Fixture Arrhythmia Database",
+        records_file=["100", "105", "108", "118", "119", "203", "207"],
+    )
+
+
+@pytest.fixture(scope="session")
+def write_subset_database() -> Callable[[Path], Database]:
+    """Writer of the fixture database of the subset check (see ``_write_subset_database``)."""
+    return _write_subset_database

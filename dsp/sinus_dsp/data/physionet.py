@@ -8,6 +8,8 @@ list altered in transit or on the server.
 SRS-001 (MIT-BIH Arrhythmia Database) and SRS-013 (MIT-BIH Noise Stress Test Database): a database
 is obtained into a local data folder, every file listed in its checksum list is verified, and a
 missing or altered file makes the database not verified, with an error naming each such file.
+SRS-016: the same functions obtain and verify only the files of some records of a database,
+for the subset check in continuous integration.
 
 Network access goes through an injectable fetch function, and the outcome is always decided by
 the local verification, never by the download.
@@ -194,13 +196,14 @@ def select_files(checksums: Mapping[str, str], records: Sequence[str] | None) ->
     """Select the listed files of the whole database or of some of its records.
 
     SRS-001, SRS-013: with ``records`` equal to ``None``, every listed file is selected.
-    Otherwise ``records`` holds at least one record name, and a name given several times
-    counts once. For each record, the selection holds every listed top-level path (one
+    SRS-016: otherwise ``records`` holds at least one record name, and a name given several
+    times counts once. For each record, the selection holds every listed top-level path (one
     without ``/``) that starts with ``<record>.`` and continues with at least one more
     character, whatever that extension is: ``100.atr``, ``100.dat``, ``100.hea`` and
-    ``100.xws`` for record 100, and also ``108.at_`` for record 108. A record with no such
-    file is selected under the placeholder ``<record>.*``, which no listed path can equal, so
-    that the verification reports it as missing.
+    ``100.xws`` for record 100, and also ``108.at_`` for record 108, so that each file of
+    the record is verified. A record with no such file is selected under the placeholder
+    ``<record>.*``, which no listed path can equal, so that the verification reports it as
+    missing.
 
     For a list given by :func:`parse_checksum_list` the result is never empty: the list has
     at least one entry, and every record contributes at least one path or its placeholder.
