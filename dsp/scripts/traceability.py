@@ -13,7 +13,9 @@ Sources of truth (paths relative to the repository root):
   - Code:         any SRS ID in the Python sources of dsp/sinus_dsp and dsp/scripts, and in the
                   C and C++ sources of libs/, firmware/ and desktop/ outside their test folders.
   - Python tests: ``@pytest.mark.requirement("SRS-nnn", ...)`` on test functions or classes,
-                  or in ``pytestmark``, in the test files under dsp/tests.
+                  or in ``pytestmark``, in the test files under dsp/tests. Test files, classes
+                  and functions are those of pytest's default discovery: files ``test_*.py``
+                  or ``*_test.py``, classes ``Test*``, functions ``test*``.
   - C++ tests:    one or more ``// Verifies: SRS-nnn, SRS-nnn`` lines directly above a
                   GoogleTest ``TEST``, ``TEST_F``, ``TEST_P``, ``TYPED_TEST`` or ``TYPED_TEST_P``,
                   in the sources under libs/, firmware/ and desktop/.
@@ -421,11 +423,18 @@ def _mark_ids(expr: ast.expr) -> list[str]:
 
 
 def _pytestmark_ids(body: list[ast.stmt]) -> list[str]:
-    """IDs from ``pytestmark = ...`` assignments at module or class level."""
+    """IDs from ``pytestmark = ...`` assignments, annotated or not, at module or class level."""
     ids: list[str] = []
     for stmt in body:
         if isinstance(stmt, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == "pytestmark" for t in stmt.targets
+        ):
+            ids.extend(_mark_ids(stmt.value))
+        elif (
+            isinstance(stmt, ast.AnnAssign)
+            and isinstance(stmt.target, ast.Name)
+            and stmt.target.id == "pytestmark"
+            and stmt.value is not None
         ):
             ids.extend(_mark_ids(stmt.value))
     return ids
@@ -443,7 +452,9 @@ def scan_python_tests(layout: Layout) -> tuple[dict[str, list[TestRef]], list[st
                 ids = inherited + [i for d in node.decorator_list for i in _mark_ids(d)]
                 name = f"{prefix}::{node.name}"
                 if isinstance(node, ast.ClassDef):
-                    visit(node.body, name, ids, level)
+                    # pytest's default discovery: tests are only collected in classes Test*
+                    if node.name.startswith("Test"):
+                        visit(node.body, name, ids, level)
                 elif node.name.startswith("test"):
                     for req in dict.fromkeys(ids):
                         refs[req].append(TestRef(name, level))
