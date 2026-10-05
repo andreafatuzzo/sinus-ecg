@@ -1,11 +1,11 @@
 """Requirement tests of SRS-016: the subset check of the continuous integration (RC-004).
 
-SRS-016 (v0.7): on every push, the build obtains records 100, 105, 108, 119, 203 and 207 of
-version 1.0.0 of the MIT-BIH Arrhythmia Database (a cached copy is allowed), verifies each of
-their files against the checksum list of SRS-001, runs QRS detection with the settings of
+SRS-016 (v0.7.1): on every push, the build obtains records 100, 105, 108, 119, 203 and 207
+of version 1.0.0 of the MIT-BIH Arrhythmia Database (a cached copy is allowed), verifies each
+of their files against the checksum list of SRS-001, runs QRS detection with the settings of
 SRS-007 and the evaluation of SRS-008 and SRS-011 on them, and regenerates a subset report.
-The build fails if the verification fails or if the regenerated report differs from the one
-stored in the repository.
+The build fails, and no subset report is written, if the verification fails; it also fails
+if the regenerated report differs from the one stored in the repository.
 
 This module tests the check: `check_subset_report` and `compare_reports` of
 `sinus_dsp.evaluation.subset`, and the command `scripts/subset_check.py` that the build runs
@@ -31,11 +31,17 @@ The cases of the verification of SRS-016 and their tests:
 - a record file fails verification: the check fails and no report is written
   (`test_failed_verification_stops_the_check_before_any_report_is_written` and the command).
 
-Formats that the design leaves open (the wording of the entry for a difference in line
-endings, of a line present in one report only, of an absent stored report) are not compared
-literally: the tests require that the check fails and that the entries name the line
-concerned or the stored file. The documented format `line <n>: stored <text>, regenerated
-<text>` and the limit of 20 entries followed by `… and <k> more` are compared literally.
+The difference entries are how the check names a difference, so they are compared with the
+formats documented in architecture section 8.11 (v0.2.10): `line <n>: stored <text>,
+regenerated <text>` with `(empty line)` and `(no line)`, lines compared by position, the
+entries for line endings, `no stored report: <path>`, and the limit of 20 entries followed by
+`… and <k> more` (`_documented_differences` works them out from the documented rules). Only
+the split of an empty stored file into lines is not documented, and is not compared. The
+messages and exit statuses of the command are compared only where the requirement needs them:
+the build fails (a status other than 0) and the difference is named.
+
+Changes of v0.2.10 re-checked here: the shared helper that writes files (no behaviour
+change), and `--update` with `--write-regenerated` naming the stored report itself.
 """
 
 from __future__ import annotations
@@ -159,6 +165,57 @@ def _lines(data: bytes) -> list[str]:
     lines = data.decode("utf-8").split("\n")
     assert lines[-1] == ""
     return lines[:-1]
+
+
+def _lines_with_endings(data: bytes) -> list[tuple[str, str]]:
+    """(text, ending) of each line of a non-empty report, as architecture section 8.11 splits
+    it: at line feeds; a carriage return just before a line feed belongs to the ending
+    (`CR LF`); a last line without a line feed has the ending `none (no final line feed)`; a
+    report that ends with a line feed has no empty last line."""
+    parts = data.decode("utf-8").split("\n")
+    lines = []
+    for i, part in enumerate(parts):
+        if i == len(parts) - 1:
+            if part:
+                lines.append((part, "none (no final line feed)"))
+        elif part.endswith("\r"):
+            lines.append((part[:-1], "CR LF"))
+        else:
+            lines.append((part, "LF"))
+    return lines
+
+
+def _documented_differences(stored: bytes, regenerated: bytes) -> tuple[str, ...]:
+    """The difference entries that architecture section 8.11 documents, worked out by the test.
+
+    Lines are compared by position. Each position where the texts differ, or where only one
+    report has a line, gives `line <n>: stored <text>, regenerated <text>`, a text shown as it
+    is, `(empty line)` or `(no line)`. Only if no text differs, each position where the
+    endings differ gives `line <n>: same text, line ending stored <e>, regenerated <e>`. The
+    first 20 entries, then `… and <k> more`.
+    """
+    s, r = _lines_with_endings(stored), _lines_with_endings(regenerated)
+
+    def shown(text: str | None) -> str:
+        return "(no line)" if text is None else (text or "(empty line)")
+
+    entries = []
+    for n in range(1, max(len(s), len(r)) + 1):
+        stored_text = s[n - 1][0] if n <= len(s) else None
+        regenerated_text = r[n - 1][0] if n <= len(r) else None
+        if stored_text != regenerated_text:
+            entries.append(
+                f"line {n}: stored {shown(stored_text)}, regenerated {shown(regenerated_text)}"
+            )
+    if not entries:
+        for n, ((_, ending), (_, other)) in enumerate(zip(s, r, strict=True), start=1):
+            if ending != other:
+                entries.append(
+                    f"line {n}: same text, line ending stored {ending}, regenerated {other}"
+                )
+    if len(entries) > 20:
+        entries = [*entries[:20], f"… and {len(entries) - 20} more"]
+    return tuple(entries)
 
 
 def _flip_one_bit(path: Path) -> None:
@@ -488,9 +545,15 @@ def test_stored_report_with_other_bytes_fails(
     or as an empty file.
     Expected: the check raises `SubsetReportMismatchError`; each difference names a line
     (`line <n>: …`), and the first one names the line where the bytes first differ: line 1,
-    the line `Software`, the last line, or the line after the last one. For CR LF on one
-    line or a missing final line feed, that is the only difference. (The wording of an
-    entry for a line ending is not documented and is not compared.)
+    the line `Software`, the last line, or the line after the last one. Except for the empty
+    file, the entries are exactly those documented in architecture section 8.11 (v0.2.10),
+    worked out by the test: `line <n>: same text, line ending stored CR LF, regenerated LF`
+    for each line (20 entries, then `… and <k> more`) or for the line `Software` only;
+    `line <n>: same text, line ending stored none (no final line feed), regenerated LF` for
+    the last line; `line <n>: stored (empty line), regenerated (no line)` for the extra line
+    feed; `line <n>: stored <CR>, regenerated (no line)` for the carriage return at the end.
+    (How an empty file splits into lines, none or one empty line without an ending, is not
+    documented; for it only the first named line is checked.)
     """
     stored_data, first_line = _altered_bytes(reference, case)
     stored = tmp_path / STORED_NAME
@@ -507,6 +570,8 @@ def test_stored_report_with_other_bytes_fails(
     assert differences[0].startswith(f"line {first_line}: "), differences
     if case in ("crlf-on-one-line", "no-final-line-feed"):
         assert len(differences) == 1, differences
+    if case != "empty-file":
+        assert differences == _documented_differences(stored_data, reference)
 
 
 @pytest.mark.requirement("SRS-016")
@@ -565,7 +630,11 @@ def test_lines_present_in_only_one_report_are_named(
     inserted after line 3.
     Expected: `SubsetReportMismatchError`; the first difference names the first line that
     differs (the line after the last one, the last line, or line 4) and gives the text of the
-    line concerned; with a line added or removed at the end, it is the only difference.
+    line concerned; with a line added or removed at the end, it is the only difference. The
+    entries are exactly those documented in architecture section 8.11 (lines compared by
+    position): `line <n>: stored An added line., regenerated (no line)`, `line <n>: stored
+    (no line), regenerated <last line>`, and for the inserted line one entry per later
+    position whose texts differ, 20 at most, then `… and <k> more`.
     """
     lines = _lines(reference)
     if case == "extra-line-at-the-end":
@@ -585,6 +654,7 @@ def test_lines_present_in_only_one_report_are_named(
     assert text in differences[0], differences
     if case != "line-inserted":
         assert len(differences) == 1, differences
+    assert differences == _documented_differences(stored.read_bytes(), reference)
 
 
 @pytest.mark.requirement("SRS-016")
@@ -627,9 +697,9 @@ def test_absent_stored_report_fails(
 
     Input: the spike subset fixture; a stored report path where no file exists; a path for
     the regenerated report.
-    Expected: `SubsetReportMismatchError` with one difference, which names the stored report
-    (its path); the regenerated report is written, byte-identical to the report regenerated
-    earlier; no file is created at the stored path.
+    Expected: `SubsetReportMismatchError` with the single difference `no stored report:
+    <stored path>` (architecture, section 8.11); the regenerated report is written,
+    byte-identical to the report regenerated earlier; no file is created at the stored path.
     """
     stored = tmp_path / "docs" / STORED_NAME
     regenerated = tmp_path / "regenerated.md"
@@ -637,8 +707,7 @@ def test_absent_stored_report_fails(
     with pytest.raises(SubsetReportMismatchError) as excinfo:
         _check(subset_fixture, stored, make_spike_detector(), regenerated=regenerated)
 
-    assert len(excinfo.value.differences) == 1
-    assert str(stored) in excinfo.value.differences[0]
+    assert excinfo.value.differences == (f"no stored report: {stored}",)
     assert regenerated.read_bytes() == reference
     assert not stored.exists()
 
@@ -1101,7 +1170,8 @@ def test_command_passes_only_when_the_stored_report_equals_the_regenerated_one(
     first character.
     Expected: equal reports: exit status 0. One value differs: exit status 1, and standard
     error gives the documented entry `line <n>: stored <stored line>, regenerated <line>` and
-    names no other line. Absent: exit status 1, standard error names the stored report.
+    names no other line. Absent: exit status 1, standard error gives the documented entry
+    `no stored report: <stored path>`.
     Not UTF-8: a status other than 0 (the build fails), standard error names the stored
     report. In every case: no traceback; the regenerated report is written, byte-identical to
     the report regenerated earlier (so the build can publish it), and the stored report is
@@ -1153,7 +1223,7 @@ def test_command_passes_only_when_the_stored_report_equals_the_regenerated_one(
         assert _differences_named(completed.stderr) == {int(entry.split()[1].rstrip(":"))}
     elif stored_kind == "absent":
         assert completed.returncode == 1, completed.stderr
-        assert str(stored) in completed.stderr
+        assert f"no stored report: {stored}" in completed.stderr
     else:
         assert completed.returncode != 0
         assert STORED_NAME in completed.stderr
@@ -1162,9 +1232,9 @@ def test_command_passes_only_when_the_stored_report_equals_the_regenerated_one(
 
 
 @pytest.mark.requirement("SRS-016")
-@pytest.mark.parametrize("update", [False, True], ids=["check", "update"])
+@pytest.mark.parametrize("mode", ["check", "update", "update-same-path"])
 def test_command_fails_without_writing_a_report_when_verification_fails(
-    update: bool,
+    mode: str,
     tmp_path: Path,
     subset_fixture: Any,
     reference: bytes,
@@ -1174,12 +1244,14 @@ def test_command_fails_without_writing_a_report_when_verification_fails(
     """The command of the build when a record file fails verification.
 
     Input: `subset_check.py --offline --data-dir <copy> --stored <path> --write-regenerated
-    <path>`, and the same with `--update`, run in a separate process without network, on a
-    copy of the spike subset fixture with 105.dat altered and 203.atr deleted, the pinned
-    list set to the fixture list; the stored report holds a previous report.
+    <path>`; the same with `--update`; and with `--update` and `--write-regenerated` naming
+    the stored report itself (allowed since architecture v0.2.10), each run in a separate
+    process without network, on a copy of the spike subset fixture with 105.dat altered and
+    203.atr deleted, the pinned list set to the fixture list; the stored report holds a
+    previous report.
     Expected: exit status 1; standard error says that the database is not verified and names
     105.dat and 203.atr, with no traceback; no regenerated report is written; the stored
-    report is unchanged, also with `--update`.
+    report is unchanged, also with `--update` and when both options name it.
     """
     copy = copy_subset_fixture(subset_fixture, tmp_path / "data")
     _damage(copy.folder, "one-file-altered-one-missing")
@@ -1188,6 +1260,7 @@ def test_command_fails_without_writing_a_report_when_verification_fails(
     stored = output / STORED_NAME
     stored.write_bytes(reference)
     driver = write_command_driver(tmp_path)
+    regenerated = stored if mode == "update-same-path" else output / "regenerated.md"
     arguments = [
         "--offline",
         "--data-dir",
@@ -1195,8 +1268,8 @@ def test_command_fails_without_writing_a_report_when_verification_fails(
         "--stored",
         str(stored),
         "--write-regenerated",
-        str(output / "regenerated.md"),
-        *(["--update"] if update else []),
+        str(regenerated),
+        *(["--update"] if mode != "check" else []),
     ]
 
     completed = _run_script(driver, copy.checksum_list_sha256, arguments, cwd=tmp_path)
@@ -1210,7 +1283,9 @@ def test_command_fails_without_writing_a_report_when_verification_fails(
 
 
 @pytest.mark.requirement("SRS-016")
+@pytest.mark.parametrize("regenerated", ["none", "other-path", "same-path"])
 def test_command_update_replaces_the_stored_report_with_the_regenerated_one(
+    regenerated: str,
     tmp_path: Path,
     subset_ecg_fixture: Any,
     ecg_reference: bytes,
@@ -1219,25 +1294,38 @@ def test_command_update_replaces_the_stored_report_with_the_regenerated_one(
     """The documented way of updating the stored report, followed by the check of the build.
 
     Input: a stored report holding "previous report"; `subset_check.py --offline --data-dir
-    <fixture> --stored <path> --update` on the synthetic ECG subset fixture, then the same
-    command without `--update`, each in a separate process without network.
-    Expected: the first run exits with status 0 and the stored report becomes byte-identical
-    to the report regenerated earlier by the check; the second run exits with status 0.
+    <fixture> --stored <path> --update` on the synthetic ECG subset fixture, alone, with
+    `--write-regenerated <other path>`, or with `--write-regenerated` naming the stored
+    report itself (architecture section 8.11, v0.2.10); then the same command without
+    `--update` and `--write-regenerated`; each in a separate process without network.
+    Expected: the first run exits with status 0, without a traceback, and the stored report
+    becomes byte-identical to the report regenerated earlier by the check (and so does the
+    file at the other path); the second run exits with status 0.
     """
     fixture = subset_ecg_fixture
     stored = tmp_path / STORED_NAME
     stored.write_bytes(b"previous report\n")
+    other = tmp_path / "artifact" / STORED_NAME
+    other.parent.mkdir()
     driver = write_command_driver(tmp_path)
     arguments = ["--offline", "--data-dir", str(fixture.data_root), "--stored", str(stored)]
+    extra = {
+        "none": [],
+        "other-path": ["--write-regenerated", str(other)],
+        "same-path": ["--write-regenerated", str(stored)],
+    }[regenerated]
 
     first = _run_script(
-        driver, fixture.checksum_list_sha256, [*arguments, "--update"], cwd=tmp_path
+        driver, fixture.checksum_list_sha256, [*arguments, "--update", *extra], cwd=tmp_path
     )
     after_update = stored.read_bytes()
     second = _run_script(driver, fixture.checksum_list_sha256, arguments, cwd=tmp_path)
 
     assert first.returncode == 0, first.stderr
+    assert "Traceback" not in first.stderr
     assert after_update == ecg_reference
+    if regenerated == "other-path":
+        assert other.read_bytes() == ecg_reference
     assert second.returncode == 0, second.stderr
 
 

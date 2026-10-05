@@ -1966,3 +1966,262 @@ def copy_subset_fixture() -> Callable[..., SubsetFixture]:
     """``copy_subset_fixture(source, data_root, *, only_subset=False)``: see
     ``_copy_subset_fixture``."""
     return _copy_subset_fixture
+
+
+# --------------------------------------------------------------------------------------------
+# Golden-vector files (SRS-015): the documented format read by the test, and the documented
+# synthetic inputs
+# --------------------------------------------------------------------------------------------
+
+# The header keys of a golden-vector file, in their order (architecture, section 7.3).
+GOLDEN_HEADER_KEYS = (
+    "format",
+    "format_version",
+    "input_id",
+    "input_source",
+    "input_parameters",
+    "sampling_frequency_hz",
+    "mains_frequency_hz",
+    "software_version",
+    "source_sha256",
+    "stages",
+    "n_samples",
+    "n_beats",
+    "n_reference_beats",
+)
+_GOLDEN_FLOAT = re.compile(r"-?[0-9]+(\.[0-9]+)?(e[+-][0-9]+)?")
+_GOLDEN_INTEGER = re.compile(r"0|[1-9][0-9]*")
+_GOLDEN_INPUT_ID = re.compile(r"[A-Za-z0-9_-]+")
+_GOLDEN_STAGE = re.compile(r"[a-z][a-z0-9_]*")
+_GOLDEN_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+class GoldenFormatError(AssertionError):
+    """A golden-vector file that breaks a rule of architecture section 7.3.
+
+    ``line`` is the 1-based number of the first offending line (the last line for a text
+    that ends too early), or ``None`` for a file that is not UTF-8 text.
+    """
+
+    def __init__(self, line: int | None, reason: str) -> None:
+        super().__init__(reason if line is None else f"line {line}: {reason}")
+        self.line = line
+        self.reason = reason
+
+
+@dataclass(frozen=True)
+class GoldenFile:
+    """A golden-vector file as read by the test.
+
+    - ``header``: the value of each header key, in file order;
+    - ``coefficients``: for each stage, one row ``(b0, b1, b2, a1, a2)`` per section, in order;
+    - ``signals``: one row per sample, the columns ``input_mv`` then ``<stage>_mv`` for each
+      stage in the order of ``stages``;
+    - ``beats``, ``reference_beats``: the rows of ``[beats]`` and ``[reference_beats]``;
+    - ``not_shortest``: (line, number) for each float that is not written as Python's
+      ``repr()`` of its value (the first 10), which the writer must never produce.
+    """
+
+    header: dict[str, str]
+    stages: tuple[str, ...]
+    coefficients: dict[str, FloatArray]
+    signals: FloatArray
+    beats: IndexArray
+    reference_beats: IndexArray
+    not_shortest: tuple[tuple[int, str], ...]
+
+    @property
+    def input_mv(self) -> FloatArray:
+        return self.signals[:, 0]
+
+    def stage_mv(self, stage: str) -> FloatArray:
+        """The output of ``stage``, column ``<stage>_mv``."""
+        return self.signals[:, 1 + self.stages.index(stage)]
+
+
+def _read_golden_file(data: bytes) -> GoldenFile:
+    """Read a golden-vector file with every rule of architecture section 7.3.
+
+    Written by the test from the documented format, independently of the readers of the
+    software. Raises ``GoldenFormatError`` naming the first offending line: a file that is not
+    UTF-8 text; a space, tab or carriage return; an empty line; a text that ends before
+    ``[end]`` or without a line feed after it, or has anything after it; header lines that
+    are not the documented keys in order, or whose values break the documented rules;
+    sections missing or out of order; column lines other than those of ``stages``;
+    coefficient rows that do not follow ``stages`` and the numbering of their sections from 0
+    or do not have seven fields; rows with the wrong number of fields; a float that does not
+    match ``-?[0-9]+(\\.[0-9]+)?(e[+-][0-9]+)?`` or is not finite; an integer that does not
+    match ``0|[1-9][0-9]*``; a detected beat not greater than the one before, a reference beat
+    smaller than the one before, or a beat outside ``[0, n_samples)``.
+    """
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise GoldenFormatError(None, "not UTF-8 text") from error
+    lines = text.split("\n")
+    ends_with_line_feed = lines[-1] == ""
+    if ends_with_line_feed:
+        lines.pop()
+    for n, line in enumerate(lines, start=1):
+        if line == "":
+            raise GoldenFormatError(n, "empty line")
+        for character, name in ((" ", "a space"), ("\t", "a tab"), ("\r", "a carriage return")):
+            if character in line:
+                raise GoldenFormatError(n, f"holds {name}")
+
+    position = 0
+    not_shortest: list[tuple[int, str]] = []
+
+    def next_line() -> tuple[int, str]:
+        nonlocal position
+        if position >= len(lines):
+            raise GoldenFormatError(len(lines), "the text ends too early")
+        position += 1
+        return position, lines[position - 1]
+
+    def expect(text: str) -> None:
+        n, line = next_line()
+        if line != text:
+            raise GoldenFormatError(n, f"expected {text!r}, found {line!r}")
+
+    def as_float(n: int, token: str) -> float:
+        if not _GOLDEN_FLOAT.fullmatch(token):
+            raise GoldenFormatError(n, f"not a float of the documented syntax: {token!r}")
+        value = float(token)
+        if not math.isfinite(value):
+            raise GoldenFormatError(n, f"not finite: {token!r}")
+        if repr(value) != token and len(not_shortest) < 10:
+            not_shortest.append((n, token))
+        return value
+
+    def as_integer(n: int, token: str) -> int:
+        if not _GOLDEN_INTEGER.fullmatch(token):
+            raise GoldenFormatError(n, f"not an integer of the documented syntax: {token!r}")
+        return int(token)
+
+    header: dict[str, str] = {}
+    lines_of: dict[str, int] = {}
+    for key in GOLDEN_HEADER_KEYS:
+        n, line = next_line()
+        found, separator, value = line.partition("=")
+        if not separator or found != key:
+            raise GoldenFormatError(n, f"expected the header key {key!r}, found {line!r}")
+        header[key], lines_of[key] = value, n
+        if key == "format" and value != "sinus-golden-vector":
+            raise GoldenFormatError(n, f"unknown format {value!r}")
+        if key == "format_version" and value != "1":
+            raise GoldenFormatError(n, f"unknown format version {value!r}")
+        if key == "input_id" and not _GOLDEN_INPUT_ID.fullmatch(value):
+            raise GoldenFormatError(n, f"invalid input identifier {value!r}")
+        if key in ("input_source", "input_parameters", "software_version") and not value:
+            raise GoldenFormatError(n, f"empty {key}")
+        if key == "sampling_frequency_hz" and not as_float(n, value) > 0.0:
+            raise GoldenFormatError(n, f"sampling frequency not positive: {value!r}")
+        if key == "mains_frequency_hz" and value not in ("50", "60"):
+            raise GoldenFormatError(n, f"mains frequency not 50 or 60: {value!r}")
+        if key == "source_sha256" and not _GOLDEN_SHA256.fullmatch(value):
+            raise GoldenFormatError(n, f"not 64 lowercase hexadecimal digits: {value!r}")
+        if key == "stages":
+            names = value.split(",")
+            if not all(_GOLDEN_STAGE.fullmatch(s) for s in names) or len(set(names)) != len(names):
+                raise GoldenFormatError(n, f"invalid stages {value!r}")
+        if key in ("n_samples", "n_beats", "n_reference_beats"):
+            count = as_integer(n, value)
+            if key == "n_samples" and count < 1:
+                raise GoldenFormatError(n, "n_samples is 0")
+    stages = tuple(header["stages"].split(","))
+    n_samples = int(header["n_samples"])
+
+    expect("[coefficients]")
+    expect("stage,section,b0,b1,b2,a1,a2")
+    rows: dict[str, list[list[float]]] = {stage: [] for stage in stages}
+    stage_index = 0
+    while position < len(lines) and not lines[position].startswith("["):
+        n, line = next_line()
+        fields = line.split(",")
+        if len(fields) != 7:
+            raise GoldenFormatError(n, f"a coefficient row with {len(fields)} fields, not 7")
+        stage, section = fields[0], fields[1]
+        current = stages[stage_index]
+        if stage == current and section == str(len(rows[current])):
+            pass
+        elif (
+            rows[current]
+            and stage_index + 1 < len(stages)
+            and stage == stages[stage_index + 1]
+            and section == "0"
+        ):
+            stage_index += 1
+        else:
+            raise GoldenFormatError(n, f"coefficient row out of order: {line!r}")
+        rows[stage].append([as_float(n, token) for token in fields[2:]])
+    if stage_index != len(stages) - 1 or not rows[stages[-1]]:
+        raise GoldenFormatError(position + 1, "a stage without coefficient rows")
+
+    expect("[signals]")
+    expect(",".join(["input_mv", *(f"{stage}_mv" for stage in stages)]))
+    signals = np.empty((n_samples, 1 + len(stages)), dtype=np.float64)
+    for row in range(n_samples):
+        n, line = next_line()
+        fields = line.split(",")
+        if len(fields) != 1 + len(stages):
+            raise GoldenFormatError(n, f"a signal row with {len(fields)} fields")
+        signals[row] = [as_float(n, token) for token in fields]
+
+    def read_beats(name: str, count: int, strictly: bool) -> IndexArray:
+        expect(f"[{name}]")
+        expect("sample_index")
+        values: list[int] = []
+        for _ in range(count):
+            n, line = next_line()
+            value = as_integer(n, line)
+            if value >= n_samples:
+                raise GoldenFormatError(n, f"{name}: {value} outside [0, {n_samples})")
+            if values and (value <= values[-1] if strictly else value < values[-1]):
+                raise GoldenFormatError(n, f"{name}: {value} out of order")
+            values.append(value)
+        return np.asarray(values, dtype=np.int64)
+
+    beats = read_beats("beats", int(header["n_beats"]), strictly=True)
+    reference_beats = read_beats("reference_beats", int(header["n_reference_beats"]), False)
+    expect("[end]")
+    if position < len(lines):
+        raise GoldenFormatError(position + 1, "text after [end]")
+    if not ends_with_line_feed:
+        raise GoldenFormatError(position, "no line feed after [end]")
+    return GoldenFile(
+        header=header,
+        stages=stages,
+        coefficients={stage: np.asarray(rows[stage], dtype=np.float64) for stage in stages},
+        signals=signals,
+        beats=beats,
+        reference_beats=reference_beats,
+        not_shortest=tuple(not_shortest),
+    )
+
+
+def _golden_r_peaks(fs_hz: int, heart_rate_bpm: int) -> list[int]:
+    """The R-wave centres of a synthetic input, by the integer rule of architecture 7.2.
+
+    Beat k exists if 60 k <= 29 hr, and r_k = (hr (fs + 1) + 120 k fs) // (2 hr).
+    """
+    hr = heart_rate_bpm
+    return [(hr * (fs_hz + 1) + 120 * k * fs_hz) // (2 * hr) for k in range(29 * hr // 60 + 1)]
+
+
+@pytest.fixture(scope="session")
+def read_golden_file() -> Callable[[bytes], GoldenFile]:
+    """``read_golden_file(data)``: see ``_read_golden_file``."""
+    return _read_golden_file
+
+
+@pytest.fixture(scope="session")
+def golden_format_error() -> type[GoldenFormatError]:
+    """The error raised by ``read_golden_file``."""
+    return GoldenFormatError
+
+
+@pytest.fixture(scope="session")
+def golden_r_peaks() -> Callable[[int, int], list[int]]:
+    """``golden_r_peaks(fs_hz, heart_rate_bpm)``: see ``_golden_r_peaks``."""
+    return _golden_r_peaks

@@ -1,10 +1,12 @@
 """Requirement tests of SRS-016: the subset report stored in the repository (RC-004).
 
-SRS-016 (v0.7): the build compares the regenerated subset report with "the subset report
+SRS-016 (v0.7.1): the build compares the regenerated subset report with "the subset report
 stored in the repository", `docs/validation/qrs-ec57-subset-report.md` (architecture, section
 8.11). That stored report shall contain the items of SRS-012 for records 100, 105, 108, 119,
-203 and 207, except the pass or fail of the SRS-007 thresholds, and state that it covers a
-subset of records for regression checking and is not the performance evaluation of SRS-007.
+203 and 207, with the outcome of the verification of their files in place of the outcome of
+the SRS-001 verification and without the pass or fail of the SRS-007 thresholds, and state
+that it covers a subset of records for regression checking and is not the performance
+evaluation of SRS-007.
 
 Without data, the tests read the stored file: its statements, its items, the software that it
 states (the identity of the package under test, computed by the test as for SRS-012), and the

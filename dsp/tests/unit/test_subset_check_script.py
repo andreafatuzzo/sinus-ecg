@@ -172,6 +172,48 @@ def test_update_replaces_a_stored_report_that_differs(
     assert regenerated.read_bytes() == expected
 
 
+@pytest.mark.parametrize("spelling", ["same", "through-parent"])
+def test_update_may_write_the_regenerated_report_over_the_stored_report(
+    script: ModuleType,
+    fixture_run: tuple[Path, Database, Path],
+    fake_detector: Detector,
+    capsys: pytest.CaptureFixture[str],
+    spelling: str,
+) -> None:
+    """Architecture §8.11 (v0.2.10): the bytes are read, then written; no ``SameFileError``."""
+    root, database, stored = fixture_run
+    stored.parent.mkdir()
+    stored.write_bytes(b"an old report\n")
+    regenerated = stored if spelling == "same" else stored.parent / ".." / "docs" / stored.name
+    argv = ["--offline", "--data-dir", str(root), "--stored", str(stored), "--update"]
+    assert script.main([*argv, "--write-regenerated", str(regenerated)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        f"regenerated report written: {regenerated}",
+        f"stored report updated: {stored}",
+    ]
+    assert captured.err == ""
+    assert stored.read_bytes() == expected_report(root, database, fake_detector)
+    assert sorted(path.name for path in stored.parent.iterdir()) == [stored.name]
+
+
+def test_update_writes_the_regenerated_copy_atomically(
+    script: ModuleType,
+    fixture_run: tuple[Path, Database, Path],
+    fake_detector: Detector,
+    tmp_path: Path,
+) -> None:
+    root, database, stored = fixture_run
+    regenerated = tmp_path / "new" / "folder" / "regenerated.md"
+    regenerated.parent.mkdir(parents=True)
+    (regenerated.parent / "regenerated.md.part~").write_bytes(b"stale temporary file\n")
+    argv = ["--offline", "--data-dir", str(root), "--stored", str(stored), "--update"]
+    assert script.main([*argv, "--write-regenerated", str(regenerated)]) == 0
+    expected = expected_report(root, database, fake_detector)
+    assert regenerated.read_bytes() == expected
+    assert sorted(path.name for path in regenerated.parent.iterdir()) == ["regenerated.md"]
+
+
 def test_mismatch_gives_status_1_with_the_differences(
     script: ModuleType,
     fixture_run: tuple[Path, Database, Path],

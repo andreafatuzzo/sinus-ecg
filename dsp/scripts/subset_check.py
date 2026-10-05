@@ -23,11 +23,11 @@ verified or if a file is malformed (nothing written); 2 on a usage error.
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from sinus_dsp._files import write_atomically
 from sinus_dsp.data.physionet import FetchFunction, fetch_https
 from sinus_dsp.errors import DataVerificationError, MalformedFileError, SubsetReportMismatchError
 from sinus_dsp.evaluation.subset import check_subset_report
@@ -125,8 +125,9 @@ def main(argv: Sequence[str] | None = None, *, fetch: FetchFunction = fetch_http
         return EXIT_FAILED
     if args.update:
         if regenerated is not None:
-            regenerated.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(stored, regenerated)
+            # The bytes are read first and then written, so that the path of
+            # --write-regenerated may name the stored report itself.
+            write_atomically(regenerated, stored.read_bytes())
             print(f"regenerated report written: {regenerated}")
         print(f"stored report updated: {stored}")
     else:

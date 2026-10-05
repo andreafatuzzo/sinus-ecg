@@ -1,10 +1,11 @@
 """Requirement tests of SRS-016: content of the subset report (RC-004).
 
-SRS-016 (v0.7): the subset report shall contain the items of SRS-012 for records 100, 105,
-108, 119, 203 and 207, except the pass or fail of the SRS-007 thresholds, and shall state that
-it covers a subset of records for regression checking and is not the performance evaluation of
-SRS-007. The check runs QRS detection with the settings of SRS-007 and the evaluation of
-SRS-008 and SRS-011 on these records.
+SRS-016 (v0.7.1): the subset report shall contain the items of SRS-012 for records 100, 105,
+108, 119, 203 and 207, with the outcome of the verification of their files in place of the
+outcome of the SRS-001 verification and without the pass or fail of the SRS-007 thresholds,
+and shall state that it covers a subset of records for regression checking and is not the
+performance evaluation of SRS-007. The check runs QRS detection with the settings of SRS-007
+and the evaluation of SRS-008 and SRS-011 on these records.
 
 The report tested is the one that the check regenerates (`check_subset_report` with a path
 for the regenerated report) from fixture databases whose records are named as the subset

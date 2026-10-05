@@ -33,7 +33,11 @@ class InvalidInputError(SinusError, ValueError):
     a record loaded with a channel other than that of the settings; invalid counts or target
     in the comparison with a target; evaluations without records 118 and 119 exactly once
     for the noise stress comparison; a name that is not a noise stress record name; results
-    of the wrong kind given to a report renderer.
+    of the wrong kind given to a report renderer. In the golden-vector export (architecture
+    §8.12) it is raised for a sampling frequency, heart rate or variant that the synthetic
+    generator does not list, an input identifier, source or parameters or reference beats
+    that are rejected, a golden vector that cannot be written as a valid file, an invalid or
+    empty record selection, and a record shorter than its 60 s segment.
     """
 
 
@@ -46,7 +50,9 @@ class DataVerificationError(SinusError):
     SRS-012, SRS-014: the command that writes the validation report raises it, before
     anything is written, when either database is not verified (architecture §8.10).
     SRS-016: the subset check raises it, before any report is rendered or written, when a
-    file of the subset records is not verified (architecture §8.11).
+    file of the subset records is not verified (architecture §8.11). The golden-vector export
+    does not raise it: it skips the record segments and states the reason (architecture
+    §8.12).
 
     Attributes:
         database: Name and version of the database, e.g. ``mitdb 1.0.0``.
@@ -89,7 +95,9 @@ class MalformedFileError(SinusError, ValueError):
     SRS-001: a checksum list with a line that is not an entry, an unsafe path, a duplicate
     path or no entry is rejected with this error. SRS-002: so is an annotation file whose
     sample indices decrease. SRS-016: so is a stored subset report that is not UTF-8 text
-    (architecture §8.11). It is also raised for a record list ``RECORDS`` that is not UTF-8
+    (architecture §8.11). SRS-015: so is a golden-vector file that a reader rejects,
+    including one that is not UTF-8 text (architecture §7.3, §8.12); the line is that of the
+    first rule broken. It is also raised for a record list ``RECORDS`` that is not UTF-8
     text, names an invalid record or a record twice, or names none (architecture §8.10).
 
     Attributes:
@@ -138,6 +146,11 @@ class SubsetReportMismatchError(SinusError):
 
 class NonFiniteOutputError(SinusError):
     """The golden-vector export found a value that is not finite (architecture §7.3).
+
+    SRS-015: a golden-vector file never holds a value that is not finite; the export fails
+    with this error, naming the input, instead. With the inputs of the golden-vector set
+    this cannot happen; with a finite input of extreme amplitude the filters can overflow
+    (OP-063).
 
     Attributes:
         input_id: Identifier of the input whose output is not finite.

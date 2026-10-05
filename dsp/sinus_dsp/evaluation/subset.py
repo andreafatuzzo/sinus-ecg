@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
+from sinus_dsp._files import write_atomically
 from sinus_dsp.data.physionet import (
     MITDB,
     Database,
@@ -35,7 +36,6 @@ from sinus_dsp.evaluation.run import (
     EvaluationSettings,
     RecordLoader,
     ValidationResults,
-    _write_atomically,
     evaluate_records,
 )
 from sinus_dsp.pipeline import detect_beats
@@ -214,7 +214,7 @@ def check_subset_report(
     )
     regenerated = render_subset_report(results)
     if regenerated_path is not None:
-        _write_atomically(Path(regenerated_path), regenerated.encode("utf-8"))
+        write_atomically(Path(regenerated_path), regenerated.encode("utf-8"))
     stored_file = Path(stored_path)
     try:
         stored = stored_file.read_bytes()

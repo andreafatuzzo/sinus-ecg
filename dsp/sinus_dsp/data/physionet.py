@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import http.client
-import os
 import re
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
@@ -27,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from sinus_dsp._files import write_atomically
 from sinus_dsp.errors import DataVerificationError, InvalidInputError, MalformedFileError
 
 PHYSIONET_FILES_URL: Final = "https://physionet.org/files"
@@ -34,9 +34,6 @@ CHECKSUM_LIST_NAME: Final = "SHA256SUMS.txt"
 
 _FETCH_TIMEOUT_S: Final = 60
 _HASH_BLOCK_BYTES: Final = 1024 * 1024
-# Suffix of the temporary file of an atomic write. ``~`` is not allowed in a listed path
-# (``_PATH_COMPONENT``), so a temporary file never has the name of a listed file.
-_PART_SUFFIX: Final = ".part~"
 
 # One entry of a checksum list, in the formats written by ``sha256sum``.
 _ENTRY: Final = re.compile(r"^([0-9a-fA-F]{64}) [ *]?(\S+)$")
@@ -361,7 +358,7 @@ def download_database(
             ) from error
         if _sha256_bytes(content) != database.checksum_list_sha256:
             raise DataVerificationError(_database_name(database), mismatched=(CHECKSUM_LIST_NAME,))
-        _write_atomically(list_path, content)
+        write_atomically(list_path, content)
     checksums = _parse_list_content(content, list_path)
 
     for path in select_files(checksums, names):
@@ -376,7 +373,7 @@ def download_database(
         except OSError:
             # Not raised here: the final verification names the file.
             continue
-        _write_atomically(local, body)
+        write_atomically(local, body)
 
     return verify_database(database, data_root, records=names)
 
@@ -460,11 +457,3 @@ def _sha256_file(path: Path) -> str:
         while block := stream.read(_HASH_BLOCK_BYTES):
             digest.update(block)
     return digest.hexdigest()
-
-
-def _write_atomically(path: Path, content: bytes) -> None:
-    """Write a file through ``<name>.part~`` in the same folder, creating the folders."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    part = path.with_name(path.name + _PART_SUFFIX)
-    part.write_bytes(content)
-    os.replace(part, path)

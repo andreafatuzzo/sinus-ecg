@@ -2,7 +2,8 @@
 
 Baseline wander removal (SRS-004), then mains interference removal (SRS-005), then QRS
 detection (SRS-006) on the output of the mains stage. The chain is defined once, here, and
-every user of the detector on a raw ECG goes through it.
+every user of the detector on a raw ECG goes through it: the evaluation, and the golden-vector
+export (SRS-015), which writes everything :func:`run_pipeline` returns.
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ from sinus_dsp.filters import apply_sos, baseline_sos, mains_sos
 from sinus_dsp.input_checks import validate_input, validate_mains
 from sinus_dsp.qrs import _detect
 
+#: SRS-015: names of the conditioning stages, in the order applied, as golden-vector files
+#: state them.
 STAGES: Final = ("baseline", "mains")
 
 
@@ -38,7 +41,9 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
 
     SRS-006: the detected QRS sample indices, in the time base of the input. SRS-010: the
     baseline wander and the mains interference are removed before the detection, so that the
-    detection criteria hold on an ECG with both.
+    detection criteria hold on an ECG with both. SRS-015: the result holds the checked input,
+    the coefficients and the output of each conditioning stage in the order of
+    :data:`STAGES`, and the beats, which a golden-vector file states.
 
     The input and the mains setting are checked once, before any other computation; then the
     baseline filter, the mains filter and the detection on the mains output run in this
