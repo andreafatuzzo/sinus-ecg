@@ -13,6 +13,7 @@ from sinus_dsp.data.physionet import (
     MITDB,
     NSTDB,
     Database,
+    DatabaseLicence,
     database_url,
     fetch_https,
 )
@@ -35,7 +36,17 @@ def checksum_list(files: Mapping[str, bytes]) -> bytes:
 
 def fixture_database(slug: str, title: str, files: Mapping[str, bytes]) -> Database:
     digest = hashlib.sha256(checksum_list(files)).hexdigest()
-    return Database(slug=slug, version="1.0.0", title=title, checksum_list_sha256=digest)
+    return Database(
+        slug=slug,
+        version="1.0.0",
+        title=title,
+        checksum_list_sha256=digest,
+        licence=FIXTURE_LICENCE,
+    )
+
+
+#: The licence of the fixture databases (the script never shows it).
+FIXTURE_LICENCE = DatabaseLicence("Fixture Licence 1.0", "https://licences.example/fixture/")
 
 
 FIXTURE_MITDB = fixture_database("mitdb", "Fixture Arrhythmia Database", MITDB_FILES)
@@ -169,7 +180,9 @@ def test_malformed_checksum_list_gives_status_1(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     content = b"not a checksum list\n"
-    database = Database("mitdb", "1.0.0", "Broken Database", hashlib.sha256(content).hexdigest())
+    database = Database(
+        "mitdb", "1.0.0", "Broken Database", hashlib.sha256(content).hexdigest(), FIXTURE_LICENCE
+    )
     monkeypatch.setattr(script, "DATABASES", {"mitdb": database})
     (tmp_path / "mitdb").mkdir()
     (tmp_path / "mitdb" / CHECKSUM_LIST_NAME).write_bytes(content)

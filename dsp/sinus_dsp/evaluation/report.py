@@ -1,16 +1,19 @@
 """Deterministic Markdown rendering of the validation reports (architecture §8.10, §8.11).
 
 SRS-012: the full report states the statistics per record and for the set of records, the
-records with the lowest Se and +P, the pass or fail of each target, the database and its
-verification, the software version with the digest of the source code that produced the
-report (architecture §8.14) and the settings, what was not scored, and that the results are
-not a clinical validation. SRS-014: it adds the noise stress section. SRS-016: the subset
-report states the same items for the records of a subset, except the targets, and says that
-it is a regression check, not the performance evaluation. SRS-009: the text depends only on
-the results it is given: records are sorted, every number is an integer count or is computed
-from counts by correctly rounded operations and formatted with a fixed number of decimals,
-and nothing depends on the date, the time, the host, the user or a path. The text is UTF-8,
-with line feeds, no trailing spaces and one line feed at the end.
+records with the lowest Se and +P, the pass or fail of each target, the database, the licence
+under which it is published with the address of the licence text, and its verification, the
+software version with the digest of the source code that produced the report (architecture
+§8.14) and the settings, what was not scored, and that the results are not a clinical
+validation. SRS-014: it adds the noise stress section, which states the noise stress database,
+its licence and its verification in the same way. The licence text comes from the
+``Database`` of each verification result, never from this module (architecture §8.15).
+SRS-016: the subset report states the same items for the records of a subset, except the
+targets, and says that it is a regression check, not the performance evaluation. SRS-009: the
+text depends only on the results it is given: records are sorted, every number is an integer
+count or is computed from counts by correctly rounded operations and formatted with a fixed
+number of decimals, and nothing depends on the date, the time, the host, the user or a path.
+The text is UTF-8, with line feeds, no trailing spaces and one line feed at the end.
 
 :func:`stale_software_rows` lets a release check compare the software rows of a stored
 report with the running software.
@@ -242,6 +245,7 @@ def _settings_section(results: ValidationResults) -> list[str]:
     )
     rows = [
         ["Database", _database(results.mitdb)],
+        ["Database licence", _licence(results.mitdb)],
         ["Verification", describe_verification(results.mitdb)],
         ["Records", str(len(results.records))],
         ["Signal", signal],
@@ -399,6 +403,7 @@ def _noise_stress_section(noise: NoiseStressResults, mitdb: VerificationResult) 
     """Section 7: the noise stress test."""
     database_rows = [
         ["Database", _database(noise.nstdb)],
+        ["Database licence", _licence(noise.nstdb)],
         ["Verification", describe_verification(noise.nstdb)],
     ]
     record_rows: list[list[str]] = []
@@ -459,6 +464,12 @@ def _sorted_records(records: Sequence[RecordEvaluation]) -> list[RecordEvaluatio
 
 def _database(verification: VerificationResult) -> str:
     return f"{verification.database.title}, version {verification.database.version}"
+
+
+def _licence(verification: VerificationResult) -> str:
+    """The value of the row ``Database licence``: ``<name>, <url>`` of the database's licence."""
+    licence = verification.database.licence
+    return f"{licence.name}, {licence.url}"
 
 
 def _percent(value: float | None) -> str:

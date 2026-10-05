@@ -17,7 +17,7 @@ import pytest
 import wfdb
 
 from sinus_dsp import golden
-from sinus_dsp.data.physionet import CHECKSUM_LIST_NAME, MITDB, Database
+from sinus_dsp.data.physionet import CHECKSUM_LIST_NAME, MITDB, Database, DatabaseLicence
 from sinus_dsp.data.records import Record, load_record
 from sinus_dsp.errors import InvalidInputError, MalformedFileError, NonFiniteOutputError
 from sinus_dsp.evaluation.subset import SUBSET_RECORDS
@@ -391,7 +391,8 @@ def test_a_malformed_checksum_list_is_raised_before_anything_is_written(tmp_path
     folder.mkdir(parents=True)
     content = b"not a checksum entry\n"
     (folder / CHECKSUM_LIST_NAME).write_bytes(content)
-    database = Database("mitdb", "1.0.0", "Fixture", hashlib.sha256(content).hexdigest())
+    licence = DatabaseLicence("Fixture Licence 1.0", "https://licences.example/mitdb/")
+    database = Database("mitdb", "1.0.0", "Fixture", hashlib.sha256(content).hexdigest(), licence)
     with pytest.raises(MalformedFileError, match="not a checksum entry"):
         export_golden_vectors(tmp_path / "out", data_root=root, database=database)
     assert not (tmp_path / "out").exists()

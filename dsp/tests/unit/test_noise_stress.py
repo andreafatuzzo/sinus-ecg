@@ -12,7 +12,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from sinus_dsp.data.physionet import Database, VerificationResult
+from sinus_dsp.data.physionet import Database, DatabaseLicence, VerificationResult
 from sinus_dsp.data.records import Record, load_record
 from sinus_dsp.errors import InvalidInputError
 from sinus_dsp.evaluation.metrics import RecordCounts, aggregate_statistics
@@ -28,7 +28,13 @@ from sinus_dsp.evaluation.run import EvaluationSettings, RecordEvaluation
 
 SNRS = (24, 18, 12, 6, 0, -6)
 VERIFICATION = VerificationResult(
-    database=Database("nstdb", "1.0.0", "Fixture Noise Database", "0" * 64),
+    database=Database(
+        "nstdb",
+        "1.0.0",
+        "Fixture Noise Database",
+        "0" * 64,
+        DatabaseLicence("Fixture Licence 1.0", "https://licences.example/nstdb/"),
+    ),
     records=None,
     files=("118e24.dat",),
 )

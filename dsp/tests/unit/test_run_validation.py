@@ -250,6 +250,36 @@ def test_software_identity_is_taken_once(
     assert all(row in lines for row in software_rows(identity))
 
 
+def test_written_report_states_the_licence_of_each_fixture_database(
+    data: tuple[Path, Database, Database], fake_detector: Detector
+) -> None:
+    root, mitdb, nstdb = data
+    output = root.parent / "report.md"
+    write_validation_report(
+        output, root, mitdb=mitdb, nstdb=nstdb, detector=fake_detector, fetch=None
+    )
+    lines = output.read_text(encoding="utf-8").split("\n")
+    rows = [
+        (line, lines[number + 1])
+        for number, line in enumerate(lines)
+        if line.startswith("| Database |")
+    ]
+    assert rows == [
+        (
+            "| Database | Fixture Arrhythmia Database, version 1.0.0 |",
+            "| Database licence | Fixture Licence of mitdb 1.0, https://licences.example/mitdb/ |",
+        ),
+        (
+            "| Database | Fixture Noise Stress Database, version 1.0.0 |",
+            "| Database licence | Fixture Licence of nstdb 1.0, https://licences.example/nstdb/ |",
+        ),
+    ]
+    assert (mitdb.licence.name, nstdb.licence.url) == (
+        "Fixture Licence of mitdb 1.0",
+        "https://licences.example/nstdb/",
+    )
+
+
 def test_no_software_identity_without_verified_data(
     data: tuple[Path, Database, Database],
     fake_detector: Detector,

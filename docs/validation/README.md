@@ -8,3 +8,12 @@ Generated evaluation reports (EC57-style Se / +P for QRS detection, beat classif
 | [`qrs-ec57-subset-report.md`](qrs-ec57-subset-report.md): QRS detection on records 100, 105, 108, 119, 203 and 207 of the MIT-BIH Arrhythmia Database, for regression checking; not the performance evaluation | SRS-016 | `uv run python scripts/subset_check.py --update` (from `dsp/`; it downloads the six records if needed). CI regenerates it on every push and fails if it differs from the stored one |
 
 A report states the software and the data it was produced from. The full report is regenerated whenever the code that produces it changes, and at each milestone release (`docs/regulatory/sdp.md`). The subset report is updated in the same change as any change to the package (`CONTRIBUTING.md`).
+
+## Data sources
+
+The reports contain information from the [MIT-BIH Arrhythmia Database, version 1.0.0](https://physionet.org/content/mitdb/1.0.0/) (both reports) and the [MIT-BIH Noise Stress Test Database, version 1.0.0](https://physionet.org/content/nstdb/1.0.0/) (`qrs-ec57-report.md`), which are made available by PhysioNet under the [Open Data Commons Attribution License v1.0](https://opendatacommons.org/licenses/by/1-0/). Each report states the licence of each database it uses, in the row `Database licence`.
+
+PhysioNet asks users of these databases to cite the original publication of each database and the standard citation for PhysioNet:
+- MIT-BIH Arrhythmia Database: Moody GB, Mark RG. The impact of the MIT-BIH Arrhythmia Database. IEEE Eng in Med and Biol 20(3):45-50 (May-June 2001). (PMID: 11446209)
+- MIT-BIH Noise Stress Test Database: Moody GB, Muldrow WE, Mark RG. A noise stress test for arrhythmia detectors. Computers in Cardiology 1984; 11:381-384.
+- PhysioNet: Pollard, T., Moody, B. E., Lehman, L., Gow, B., Fernandes, C., Xie, C., Johnson, A., Mark, R. G., & Heldt, T. (2026). PhysioNet as a global platform for biomedical research. Nature Health. https://doi.org/10.1038/s44360-026-00096-z. Available from: https://rdcu.be/faatM

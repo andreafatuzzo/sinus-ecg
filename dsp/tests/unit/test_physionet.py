@@ -1,5 +1,6 @@
 """Unit tests of the download and verification of a database. No test uses the network."""
 
+import dataclasses
 import hashlib
 import http.client
 import inspect
@@ -16,8 +17,10 @@ from sinus_dsp.data.physionet import (
     CHECKSUM_LIST_NAME,
     MITDB,
     NSTDB,
+    ODC_BY_1_0,
     PHYSIONET_FILES_URL,
     Database,
+    DatabaseLicence,
     VerificationResult,
     database_url,
     describe_verification,
@@ -31,6 +34,8 @@ from sinus_dsp.errors import DataVerificationError, InvalidInputError, Malformed
 
 DIGEST_A = "a" * 64
 DIGEST_B = "0123456789abcdef" * 4
+#: The licence of the fixture databases, not that of the real ones.
+LICENCE = DatabaseLicence("Fixture Licence 1.0", "https://licences.example/fixdb/")
 
 FILES: Mapping[str, bytes] = {
     "100.atr": b"annotations of 100",
@@ -60,6 +65,7 @@ def fixture_database(files: Mapping[str, bytes] = FILES, slug: str = "fixdb") ->
         version="1.0.0",
         title="Fixture Database",
         checksum_list_sha256=sha256(checksum_list(files)),
+        licence=LICENCE,
     )
 
 
@@ -129,13 +135,47 @@ def test_pinned_databases() -> None:
         version="1.0.0",
         title="MIT-BIH Arrhythmia Database",
         checksum_list_sha256="b61158a96d5f2ca80edfb354a9a66a6324836c390a84e1966dcee2b907d6be43",
+        licence=ODC_BY_1_0,
     )
     assert NSTDB == Database(
         slug="nstdb",
         version="1.0.0",
         title="MIT-BIH Noise Stress Test Database",
         checksum_list_sha256="b76bd98c5111439fcfff2f410afd70d64e79f072049c45b5a9916a3044fdb84f",
+        licence=ODC_BY_1_0,
     )
+
+
+def test_licence_of_the_pinned_databases() -> None:
+    # Architecture §8.3, §8.15: the name and the address of the text of version 1.0.
+    assert ODC_BY_1_0 == DatabaseLicence(
+        name="Open Data Commons Attribution License v1.0",
+        url="https://opendatacommons.org/licenses/by/1-0/",
+    )
+    assert MITDB.licence is ODC_BY_1_0
+    assert NSTDB.licence is ODC_BY_1_0
+
+
+def test_licence_fields_and_database_fields() -> None:
+    assert [field.name for field in dataclasses.fields(DatabaseLicence)] == ["name", "url"]
+    fields = dataclasses.fields(Database)
+    assert [field.name for field in fields] == [
+        "slug",
+        "version",
+        "title",
+        "checksum_list_sha256",
+        "licence",
+    ]
+    # No default: every database names its licence.
+    assert fields[-1].default is dataclasses.MISSING
+    assert fields[-1].default_factory is dataclasses.MISSING
+    with pytest.raises(TypeError, match="licence"):
+        Database("fixdb", "1.0.0", "Fixture", DIGEST_A)  # type: ignore[call-arg]
+
+
+def test_licence_is_frozen() -> None:
+    with pytest.raises(AttributeError):
+        ODC_BY_1_0.url = "https://licences.example/"  # type: ignore[misc]
 
 
 @pytest.mark.parametrize("database", [MITDB, NSTDB])
@@ -153,7 +193,8 @@ def test_database_is_frozen() -> None:
 def test_database_url() -> None:
     assert database_url(MITDB) == "https://physionet.org/files/mitdb/1.0.0/"
     assert database_url(NSTDB) == "https://physionet.org/files/nstdb/1.0.0/"
-    assert database_url(Database("abc", "2.1.0", "T", DIGEST_A)).endswith("/files/abc/2.1.0/")
+    database = Database("abc", "2.1.0", "T", DIGEST_A, LICENCE)
+    assert database_url(database).endswith("/files/abc/2.1.0/")
 
 
 # fetch_https (the network is replaced)
@@ -663,7 +704,7 @@ def test_verify_rejects_an_empty_selection(tmp_path: Path, records: Sequence[str
 
 def test_verify_reports_a_pinned_list_that_is_malformed(tmp_path: Path) -> None:
     content = f"{DIGEST_A} good\nnot an entry\n".encode()
-    database = Database("fixdb", "1.0.0", "Fixture", sha256(content))
+    database = Database("fixdb", "1.0.0", "Fixture", sha256(content), LICENCE)
     list_path = tmp_path / "fixdb" / CHECKSUM_LIST_NAME
     list_path.parent.mkdir()
     list_path.write_bytes(content)
@@ -675,7 +716,7 @@ def test_verify_reports_a_pinned_list_that_is_malformed(tmp_path: Path) -> None:
 
 def test_verify_reports_a_pinned_list_that_is_not_utf8(tmp_path: Path) -> None:
     content = b"\xff\xfe not text\n"
-    database = Database("fixdb", "1.0.0", "Fixture", sha256(content))
+    database = Database("fixdb", "1.0.0", "Fixture", sha256(content), LICENCE)
     list_path = tmp_path / "fixdb" / CHECKSUM_LIST_NAME
     list_path.parent.mkdir()
     list_path.write_bytes(content)
@@ -688,7 +729,7 @@ def test_verify_reports_a_pinned_list_that_is_not_utf8(tmp_path: Path) -> None:
 def test_verify_a_list_written_with_carriage_returns(tmp_path: Path) -> None:
     files = {"a.dat": b"a", "b.dat": b"b"}
     content = checksum_list(files).replace(b"\n", b"\r\n")
-    database = Database("fixdb", "1.0.0", "Fixture", sha256(content))
+    database = Database("fixdb", "1.0.0", "Fixture", sha256(content), LICENCE)
     folder = write_database(tmp_path, database, files)
     (folder / CHECKSUM_LIST_NAME).write_bytes(content)
     assert verify_database(database, tmp_path).files == ("a.dat", "b.dat")
@@ -1035,7 +1076,7 @@ def _prepare(state: str, tmp_path: Path) -> tuple[Database, Path]:
     elif state == "malformed pinned checksum list":
         content = b"not a checksum list\n"
         (folder / CHECKSUM_LIST_NAME).write_bytes(content)
-        database = Database(database.slug, "1.0.0", "Fixture", sha256(content))
+        database = Database(database.slug, "1.0.0", "Fixture", sha256(content), LICENCE)
     return database, data_root
 
 

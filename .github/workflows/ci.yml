@@ -29,7 +29,9 @@ jobs:
       # Subset report check (SRS-016, architecture §8.11): records 100, 105, 108, 119, 203 and
       # 207 of the MIT-BIH Arrhythmia Database 1.0.0. The cache is only a copy: every run
       # verifies it against the pinned checksum list, and a missing or altered file is
-      # downloaded again. With a complete cache the check uses no network.
+      # downloaded again. A run restores only an entry saved by its own branch, by main or, for
+      # a pull request, by its base branch: the first push on a new branch finds none and
+      # downloads the records. When a complete copy is restored, the check uses no network.
       - name: Cache of the subset records
         uses: actions/cache@v6.1.0
         with:

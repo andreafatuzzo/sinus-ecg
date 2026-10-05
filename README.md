@@ -102,9 +102,9 @@ Rules followed throughout the project:
 - On every push, CI runs the tests and the traceability checks, and publishes an SBOM of the Python reference. The checks fail when:
   - the traceability matrix is out of date;
   - a requirement cited in the code has no verifying test;
-  - a test cites a requirement from the wrong folder.
+  - a test cites a requirement from the wrong folder;
+  - the subset validation report, regenerated from six records of the MIT-BIH Arrhythmia Database, differs from the stored one ([`docs/validation/qrs-ec57-subset-report.md`](docs/validation/qrs-ec57-subset-report.md)).
 - A milestone is merged into `main` only when every one of its requirements has a verifying test: CI enforces this on pull requests into `main` ([ADR 0004](docs/adr/0004-test-tagging-and-traceability-gates.md)).
-- During Milestone 1, CI will also regenerate the subset validation report.
 
 ## Repository structure
 
@@ -192,11 +192,18 @@ _Setup instructions will be added as each component lands._
 
 ## Data sources
 
-- [MIT-BIH Arrhythmia Database](https://physionet.org/content/mitdb/) (PhysioNet)
-- [MIT-BIH Noise Stress Test Database](https://physionet.org/content/nstdb/) (PhysioNet), for noise stress testing
+- [MIT-BIH Arrhythmia Database, version 1.0.0](https://physionet.org/content/mitdb/1.0.0/) (PhysioNet, https://doi.org/10.13026/C2F305)
+- [MIT-BIH Noise Stress Test Database, version 1.0.0](https://physionet.org/content/nstdb/1.0.0/) (PhysioNet, https://doi.org/10.13026/C2HS3T), for noise stress testing
 - A further database, not used during development, is planned for independent evidence (OP-029 in [open-points.md](docs/regulatory/open-points.md)).
 
 Datasets are downloaded by script and never committed to the repository.
+
+Both databases are made available by PhysioNet under the [Open Data Commons Attribution License v1.0](https://opendatacommons.org/licenses/by/1-0/). The validation reports in [`docs/validation/`](docs/validation/README.md) contain information from the MIT-BIH Arrhythmia Database and the MIT-BIH Noise Stress Test Database, which are made available under that licence; each report states the database, its version and its licence.
+
+PhysioNet asks users of these databases to cite the original publication of each database and the standard citation for PhysioNet:
+- MIT-BIH Arrhythmia Database: Moody GB, Mark RG. The impact of the MIT-BIH Arrhythmia Database. IEEE Eng in Med and Biol 20(3):45-50 (May-June 2001). (PMID: 11446209)
+- MIT-BIH Noise Stress Test Database: Moody GB, Muldrow WE, Mark RG. A noise stress test for arrhythmia detectors. Computers in Cardiology 1984; 11:381-384.
+- PhysioNet: Pollard, T., Moody, B. E., Lehman, L., Gow, B., Fernandes, C., Xie, C., Johnson, A., Mark, R. G., & Heldt, T. (2026). PhysioNet as a global platform for biomedical research. Nature Health. https://doi.org/10.1038/s44360-026-00096-z. Available from: https://rdcu.be/faatM
 
 ## License
 

@@ -87,6 +87,10 @@ _STAGE_NAME: Final = re.compile(r"[a-z][a-z0-9_]*")
 _SHA256: Final = re.compile(r"[0-9a-f]{64}")
 _FLOAT: Final = re.compile(r"-?[0-9]+(\.[0-9]+)?(e[+-][0-9]+)?")
 _INTEGER: Final = re.compile(r"0|[1-9][0-9]*")
+# The largest integer of a file, 2**63 - 1, written as the file writes it.
+_INTEGER_MAX_TEXT: Final = str(2**63 - 1)
+# A significand with one of these digits is not zero.
+_NON_ZERO_DIGITS: Final = "123456789"
 # Characters that no line of a file holds, and that no header value holds (with the line feed).
 _LINE_FORBIDDEN: Final = ((" ", "a space"), ("\t", "a tab"), ("\r", "a carriage return"))
 _BYTE_ORDER_MARK: Final = "﻿"
@@ -821,22 +825,38 @@ def _header_value_problem(key: str, value: str) -> str | None:
 
 
 def _float_problem(text: str) -> str | None:
-    """Why a text is not a float of the file format, or ``None``."""
+    """Why a text is not a float of the file format, or ``None``.
+
+    SRS-015: the text must match the float syntax, and its value, converted after that check,
+    must be finite and must not be zero unless every digit of its significand (the part before
+    ``e``, or the whole text) is zero: ``1e-400`` underflows to zero and is rejected, while
+    ``0.0e-400`` and ``-0.0`` are zero and accepted (architecture §7.3). The two rules on the
+    value give the same outcome as a reader that reports an out-of-range value.
+    """
     if _FLOAT.fullmatch(text) is None:
         return f"not a float: {_shown(text)}"
-    if not math.isfinite(float(text)):
+    value = float(text)
+    if not math.isfinite(value):
         return f"not a finite float: {_shown(text)}"
+    if value == 0.0 and any(digit in _NON_ZERO_DIGITS for digit in text.partition("e")[0]):
+        return f"float that converts to zero although its significand is not zero: {_shown(text)}"
     return None
 
 
 def _integer_problem(text: str) -> str | None:
-    """Why a text is not an integer of the file format, or ``None``."""
+    """Why a text is not an integer of the file format, or ``None``.
+
+    SRS-015: the text must match the integer syntax and must not be greater than 2**63 - 1,
+    checked on the text before any conversion, so that every integer that a reader accepts fits
+    a signed 64-bit integer (architecture §7.3). The syntax has no sign and no leading zero,
+    so a text of the same length as the bound is compared with it digit by digit.
+    """
     if _INTEGER.fullmatch(text) is None:
         return f"not an integer: {_shown(text)}"
-    try:
-        int(text)
-    except ValueError:
-        return f"integer with too many digits: {_shown(text)}"
+    if len(text) > len(_INTEGER_MAX_TEXT) or (
+        len(text) == len(_INTEGER_MAX_TEXT) and text > _INTEGER_MAX_TEXT
+    ):
+        return f"integer greater than {_INTEGER_MAX_TEXT}: {_shown(text)}"
     return None
 
 
