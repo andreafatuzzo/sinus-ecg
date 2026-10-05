@@ -1,6 +1,6 @@
 # Software development plan
 
-_Inspired by IEC 62304 §5.1. Version 0.4.1, 2026-10-03. Status: draft (Milestone 0); the changes of version 0.4 were approved by the project owner on 2026-10-03._
+_Inspired by IEC 62304 §5.1. Version 0.4.2, 2026-10-06. Status: draft (Milestone 0); the changes of version 0.4 were approved by the project owner on 2026-10-03, those of version 0.4.2 on 2026-10-06._
 
 > Sinus is not a medical device and claims no compliance with IEC 62304. This plan borrows the standard's structure so that the project is developed the way medical device software is.
 >
@@ -16,6 +16,7 @@ _Inspired by IEC 62304 §5.1. Version 0.4.1, 2026-10-03. Status: draft (Mileston
 | 0.3.1 | 2026-09-29 | §6: rule for parameters tuned on the evaluation data |
 | 0.4 | 2026-10-02 | Software version and identification of `dsp` (OP-061; pending approval by the project owner). §4: the version follows the milestones, and every report and golden vector states the version and a digest of the package source; tags of correction releases. §3, activity 7: the release sets the version and regenerates the validation reports from the released code. §5.1: the release check of the reports. §6: results apply to the software they state; tuned parameters are recorded with the software identity before and after. §9: validation reports regenerated at each release |
 | 0.4.1 | 2026-10-03 | Changes of version 0.4 (software version and identification of `dsp`, OP-061) approved by the project owner; their implementation is pending |
+| 0.4.2 | 2026-10-06 | §5.1: vulnerability scan of the SBOM and dependency updates (OP-045); §7: vulnerability scanners are development tools, not SOUP. Approved by the project owner on 2026-10-06 |
 
 ## 1. Purpose and scope
 
@@ -128,6 +129,8 @@ The same rules apply to work drafted with AI assistance (§5.3).
 | Traceability | `dsp/scripts/traceability.py`: generated matrix, `--check` on every push (including the version rule of §4), `--release-gate` on pull requests into `main` ([ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md)) |
 | Software identity of the reports | `dsp/scripts/software_check.py`, on pull requests into `main`: every report in `docs/validation/` states the software being released (§4; [`architecture.md`](architecture.md) §8.14) |
 | SBOM | CycloneDX JSON of the `dsp` runtime environment, generated in CI with `cyclonedx-py` from the `cyclonedx-bom` package (a development tool), published as a build artifact ([`cybersecurity.md`](cybersecurity.md) §6) |
+| Vulnerability scan | OSV-Scanner on the CycloneDX SBOM of `dsp`, in the CI job `dsp` on every push and pull request; it fails on a known vulnerability that has not been triaged (`dsp/osv-scanner.toml`). Dependabot alerts on `main` between pushes ([`cybersecurity.md`](cybersecurity.md) §7) |
+| Dependency updates | Dependabot version updates for the workflow actions, into `develop` (`.github/dependabot.yml`); Python dependencies are updated deliberately ([`cybersecurity.md`](cybersecurity.md) §7.4) |
 
 ### 5.2 Planned, introduced with the milestone that first needs them
 
@@ -173,7 +176,7 @@ Every validation report and golden vector states the software that produced it: 
 
 - Every third-party runtime component is recorded in [`soup.md`](soup.md) in the same change that introduces it. Each entry records its purpose and version, and the review of its known anomalies. Components planned for later milestones are listed there too.
 - SDKs, frameworks and libraries linked into the product are SOUP: ESP-IDF, FreeRTOS, Qt, FastAPI, and the C and C++ runtime libraries of the toolchains.
-- Development-only tools are not SOUP: compilers, CMake, test frameworks, linters, formatters, SBOM generators.
+- Development-only tools are not SOUP: compilers, CMake, test frameworks, linters, formatters, SBOM generators, vulnerability scanners.
 - Security vulnerabilities in SOUP are handled as described in [`cybersecurity.md`](cybersecurity.md) §7.
 
 ## 8. Problem resolution
