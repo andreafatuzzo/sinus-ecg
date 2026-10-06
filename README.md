@@ -99,12 +99,14 @@ Rules followed throughout the project:
 - Every requirement has an ID and a milestone. It is verified by at least one test that cites it, in `tests/requirements/` or `tests/system/` according to its verification level. Whoever implements a requirement does not write its verifying tests.
 - Every change that affects behavior updates the risk analysis if needed.
 - Every new dependency is added to the SOUP list.
-- On every push, CI runs the tests and the traceability checks, and publishes an SBOM of the Python reference. The checks fail when:
+- On every push, CI runs the tests and the traceability checks, and publishes an SBOM of the Python reference and scans it for known vulnerabilities. The checks fail when:
   - the traceability matrix is out of date;
   - a requirement cited in the code has no verifying test;
-  - a test cites a requirement from the wrong folder.
+  - a test cites a requirement from the wrong folder;
+  - the subset validation report, regenerated from six records of the MIT-BIH Arrhythmia Database, differs from the stored one ([`docs/validation/qrs-ec57-subset-report.md`](docs/validation/qrs-ec57-subset-report.md));
+  - a component listed in the SBOM has a known vulnerability that has not been triaged ([`docs/regulatory/cybersecurity.md`](docs/regulatory/cybersecurity.md) §7).
+- Vulnerabilities are reported privately, as described in [`SECURITY.md`](SECURITY.md).
 - A milestone is merged into `main` only when every one of its requirements has a verifying test: CI enforces this on pull requests into `main` ([ADR 0004](docs/adr/0004-test-tagging-and-traceability-gates.md)).
-- During Milestone 1, CI will also regenerate the subset validation report.
 
 ## Repository structure
 
@@ -124,7 +126,7 @@ sinus-ecg/
 │   ├── regulatory/      # IEC 62304 / ISO 14971 / IEC 62366-1 / IEC 81001-5-1 style artifacts
 │   ├── adr/             # Architecture decision records
 │   ├── process/         # Development process
-│   └── validation/      # Generated evaluation and verification reports
+│   └── validation/      # Generated validation reports, milestone verification reports
 ├── CONTRIBUTING.md
 ├── LICENSE
 └── README.md
@@ -140,13 +142,13 @@ sinus-ecg/
 - [x] Architecture decision records, cybersecurity and development-process documents
 
 **Milestone 1: Python reference**
-- [ ] MIT-BIH download script and data loader
-- [ ] Filtering (baseline wander, powerline noise)
-- [ ] Pan–Tompkins QRS detector
-- [ ] EC57-style evaluation with Se / +P report
-- [ ] Noise stress test (MIT-BIH Noise Stress Test Database): performance versus SNR
-- [ ] Golden-vector export for the C++ library
-- [ ] EC57 subset report regenerated in CI
+- [x] MIT-BIH download script and data loader
+- [x] Filtering (baseline wander, powerline noise)
+- [x] Pan–Tompkins QRS detector
+- [x] EC57-style evaluation with Se / +P report
+- [x] Noise stress test (MIT-BIH Noise Stress Test Database): performance versus SNR
+- [x] Golden-vector export for the C++ library
+- [x] EC57 subset report regenerated in CI
 
 **Milestone 2: Portable C++ DSP library**
 - [ ] `libs/sinus-dsp`: C++17, no dynamic allocation in the real-time path, builds for host and ESP32
@@ -188,15 +190,24 @@ sinus-ecg/
 
 ## Getting started
 
-_Setup instructions will be added as each component lands._
+Each component has a README with the instructions to build, test and run it. So far:
+
+- [`dsp/`](dsp/README.md): the Python reference and the validation pipeline (requires [uv](https://docs.astral.sh/uv/)).
 
 ## Data sources
 
-- [MIT-BIH Arrhythmia Database](https://physionet.org/content/mitdb/) (PhysioNet)
-- [MIT-BIH Noise Stress Test Database](https://physionet.org/content/nstdb/) (PhysioNet), for noise stress testing
+- [MIT-BIH Arrhythmia Database, version 1.0.0](https://physionet.org/content/mitdb/1.0.0/) (PhysioNet, https://doi.org/10.13026/C2F305)
+- [MIT-BIH Noise Stress Test Database, version 1.0.0](https://physionet.org/content/nstdb/1.0.0/) (PhysioNet, https://doi.org/10.13026/C2HS3T), for noise stress testing
 - A further database, not used during development, is planned for independent evidence (OP-029 in [open-points.md](docs/regulatory/open-points.md)).
 
 Datasets are downloaded by script and never committed to the repository.
+
+Both databases are made available by PhysioNet under the [Open Data Commons Attribution License v1.0](https://opendatacommons.org/licenses/by/1-0/). The validation reports in [`docs/validation/`](docs/validation/README.md) contain information from the MIT-BIH Arrhythmia Database and the MIT-BIH Noise Stress Test Database, which are made available under that licence; each report states the database, its version and its licence.
+
+PhysioNet asks users of these databases to cite the original publication of each database and the standard citation for PhysioNet:
+- MIT-BIH Arrhythmia Database: Moody GB, Mark RG. The impact of the MIT-BIH Arrhythmia Database. IEEE Eng in Med and Biol 20(3):45-50 (May-June 2001). (PMID: 11446209)
+- MIT-BIH Noise Stress Test Database: Moody GB, Muldrow WE, Mark RG. A noise stress test for arrhythmia detectors. Computers in Cardiology 1984; 11:381-384.
+- PhysioNet: Pollard, T., Moody, B. E., Lehman, L., Gow, B., Fernandes, C., Xie, C., Johnson, A., Mark, R. G., & Heldt, T. (2026). PhysioNet as a global platform for biomedical research. Nature Health. https://doi.org/10.1038/s44360-026-00096-z. Available from: https://rdcu.be/faatM
 
 ## License
 
@@ -204,4 +215,4 @@ Code (firmware, DSP library and reference, desktop application, backend) is lice
 
 ## Status
 
-🚧 Early development: Milestone 0 (foundations) released; Milestone 1 (Python reference) next.
+🚧 Early development: Milestone 0 (foundations) and Milestone 1 (Python reference) released.

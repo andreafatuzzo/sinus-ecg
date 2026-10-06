@@ -2,12 +2,19 @@ name: Release gate
 
 # A pull request into main releases a milestone: every requirement of a milestone that is in
 # progress or released (docs/regulatory/milestones.md) must have a verifying test
-# (docs/adr/0004-test-tagging-and-traceability-gates.md).
+# (docs/adr/0004-test-tagging-and-traceability-gates.md), the package version must be a release
+# version, and the validation reports must state the released software
+# (docs/regulatory/architecture.md §8.14).
 # This workflow runs only on pull requests into main, so its check "release-gate" is never
 # produced by a push, and the ruleset on main requires it.
 on:
   pull_request:
     branches: [main]
+
+# The token of a run can read the repository and nothing else (docs/regulatory/cybersecurity.md
+# §7.4); no step needs more.
+permissions:
+  contents: read
 
 jobs:
   release-gate:
@@ -17,6 +24,9 @@ jobs:
         working-directory: dsp
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          # The token is not stored in the Git configuration of the runner.
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
@@ -24,3 +34,7 @@ jobs:
       - run: uv sync --locked
       - name: Traceability checks and release gate
         run: uv run python scripts/traceability.py --check --release-gate
+      # Every report in docs/validation/ states the software being released: package version,
+      # source digest and runtime versions (docs/regulatory/architecture.md §8.14).
+      - name: Software stated by the validation reports
+        run: uv run python scripts/software_check.py

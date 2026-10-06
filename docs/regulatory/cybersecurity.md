@@ -1,6 +1,6 @@
 # Cybersecurity
 
-_Inspired by IEC 81001-5-1:2021. Version 0.1.1, 2026-09-29. Status: draft (Milestone 0)._
+_Inspired by IEC 81001-5-1:2021. Version 0.2.1, 2026-10-06. Status: draft (Milestone 1); the changes of v0.2 approved by the project owner on 2026-10-06; v0.2.1 updates the status of controls, with no design change._
 
 > Sinus is not a medical device and claims no compliance with IEC 81001-5-1. This document borrows, in a light form, the structure of its security activities: security context, assets, threat model, security controls, software bill of materials (SBOM) and vulnerability handling. The aim is that security is designed in from the first interface, not added at the end.
 
@@ -17,6 +17,9 @@ _Inspired by IEC 81001-5-1:2021. Version 0.1.1, 2026-09-29. Status: draft (Miles
 |---|---|---|
 | 0.1 | 2026-09-29 | First draft: security context, assets, attack surface, threat model TH-1 to TH-21, security controls SC-1 to SC-20 per milestone, SBOM, vulnerability handling, link to the risk analysis |
 | 0.1.1 | 2026-09-29 | SC-5 made concrete by the Milestone 1 detailed design: pinned digest of each checksum list, paths confined to the database folder, HTTPS only |
+| 0.1.2 | 2026-09-30 | SC-5 and TH-21 corrected (OP-058): the download follows redirects, so "HTTPS only" did not hold; SC-5 now states that integrity rests on the pinned digest of each checksum list and on the local verification of every file, not on the transport |
+| 0.2 | 2026-10-05 | Security policy and vulnerability monitoring (OP-045; approved by the project owner on 2026-10-06). SC-2: actions updated through reviewed pull requests, a new third-party action with movable tags pinned to a commit SHA, tools downloaded in CI verified against a pinned SHA-256. SC-4 made concrete: `SECURITY.md`, Dependabot alerts, OSV-Scanner scan of the SBOM in CI, read-only CI token. §6: the SBOM is scanned. §7: sources, choice of the scanner and rejected alternatives, the CI step and when it fails, the triage procedure and its records, timing confirmed, updates of dependencies, CI token, repository settings |
+| 0.2.1 | 2026-10-06 | Status of controls, no design change. OP-045 closed on 2026-10-06: SC-2 and SC-4 are in place, with the repository settings made by the project owner on 2026-10-06, including the list of actions allowed to run (§7.4); `SECURITY.md` and the configuration of Dependabot version updates take effect on the default branch with the Milestone 1 release. SC-5 is in place for the reference data since Milestone 1 (SRS-001, SRS-013, SRS-016); its golden-vector part applies from Milestone 2, when CI first uses golden vectors. §9: OP-045 stays listed, as closed open points do |
 
 ## 1. Scope and security context
 
@@ -119,17 +122,17 @@ A cable connected to a worn device is an electrical safety hazard, not a securit
 |---|---|---|---|---|---|
 | TH-19 | A dependency (SOUP) has a known vulnerability, or a compromised release is installed | T, E | A-6, all | Depends on the component | SC-2, SC-3, SC-4 |
 | TH-20 | The main branch or the CI pipeline is tampered with (e.g. a compromised third-party CI action) | T | A-6 | Depends on the change | SC-1, SC-2, SC-4 |
-| TH-21 | Reference data or golden vectors are altered, so validation or equivalence results are wrong | T | A-7 | HAZ-004 | SC-5 |
+| TH-21 | Reference data or golden vectors are altered, so validation or equivalence results are wrong. Reference data can be altered on the server, in transit (including through a redirect to another server), in the local copy or in the CI cache | T | A-7 | HAZ-004 | SC-5 |
 
 ## 5. Security controls per milestone
 
 | ID | Control | Threats | Milestone | Status |
 |---|---|---|---|---|
 | SC-1 | `main` changes only through pull requests with green CI; force pushes and deletion are blocked (`sdp.md` §4) | TH-20 | M0 | In place |
-| SC-2 | Dependencies pinned by lock file and installed with `uv sync --locked`; CI actions pinned to exact versions | TH-19, TH-20 | M0 | In place |
+| SC-2 | Dependencies pinned by lock file and installed with `uv sync --locked`. CI actions pinned to exact versions and updated through reviewed pull requests (§7.4); an action whose release tags can be moved, other than GitHub's own `actions/*`, is pinned to a full commit SHA. Tools that CI downloads are verified against a SHA-256 pinned in the workflow before they run | TH-19, TH-20 | M0 (lock file, versions); M1 (verified downloads, updates) | In place (OP-045, closed): the download of OSV-Scanner is verified in `ci.yml`; only actions created by GitHub and `astral-sh/setup-uv` are allowed to run (repository setting, 2026-10-06, §7.4); Dependabot version updates run from the Milestone 1 release, when `.github/dependabot.yml` reaches the default branch |
 | SC-3 | An SBOM of each software item is generated in CI (§6) | TH-19 | M0 (`dsp`); later items: OP-046 | In place for `dsp` |
-| SC-4 | Security policy with private vulnerability reporting, dependency alerts, a vulnerability scan of the SBOMs, least-privilege CI token permissions, and the triage of §7 | TH-19, TH-20 | M1 | OP-045 |
-| SC-5 | Reference data verified against published checksums (RC-004: SRS-001, SRS-013, SRS-016), with the SHA-256 of each published checksum list pinned in the code, listed paths confined to the database folder and downloads over HTTPS only (`architecture.md` §8.3); golden vectors regenerated in the same CI run as the checks that use them (`architecture.md` §7.5) | TH-21 | M1 | Specified |
+| SC-4 | Security policy (`SECURITY.md`) with private vulnerability reporting; Dependabot alerts; a scan of every SBOM for known vulnerabilities in CI on every push and pull request, which fails on an untriaged finding; read-only CI token; the triage of §7 with its records | TH-19, TH-20 | M1 | In place (OP-045, closed): repository settings made by the project owner on 2026-10-06 (§7.4); scan and read-only token in the workflows; GitHub shows `SECURITY.md` as the security policy from the Milestone 1 release, when it reaches the default branch (private reporting is already enabled). The SBOMs of later items are scanned when they are added (OP-046) |
+| SC-5 | Reference data verified against published checksums (RC-004: SRS-001, SRS-013, SRS-016). Integrity rests on two local checks: the SHA-256 of each published checksum list is pinned in the code, and a file counts as verified only when the local copy has the SHA-256 that the list gives for it; every command that uses the data verifies it first, including the copy restored from the CI cache. Integrity does not rest on the transport: downloads are requested from PhysioNet over HTTPS, but redirects issued by the server are followed, possibly to another host or to a connection that is not HTTPS, and whatever is received is subject to the same two checks. Listed paths are confined to the database folder, so a download writes nowhere else (`architecture.md` §8.3). Golden vectors are regenerated in the same CI run as the checks that use them (`architecture.md` §7.5) | TH-21 | M1 | In place for the reference data (SRS-001, SRS-013, SRS-016; `architecture.md` §8.3, §8.11); for golden vectors from Milestone 2, when CI first uses them (`architecture.md` §7.5) |
 | SC-6 | Memory safety of the portable library: no dynamic memory, fixed-size buffers with bounds checks, host tests with AddressSanitizer and UndefinedBehaviorSanitizer, static analysis (OP-043) | TH-8 | M2 | Planned |
 | SC-7 | Test inputs off by default; UDP listens on the local host only unless the user changes it; the data source is always shown (RC-015) | TH-7 | M3 | Planned |
 | SC-8 | File readers check headers, sizes and value ranges, and reject malformed files with an error; tested with malformed and fuzzed inputs | TH-8 | M3 | Planned |
@@ -153,6 +156,7 @@ Beat classification (Milestone 6) adds no new interface. Its datasets are verifi
 - **Format.** CycloneDX, JSON.
 - **Content.** For each software item, every component in its runtime or build output, with version and licence, including transitive dependencies. [`soup.md`](soup.md) lists only the direct runtime dependencies, with their purpose and the review of their known anomalies.
 - **Generation.** In CI, from the locked dependency definitions, on every build. The SBOM is published as a build artifact and is not committed.
+- **Scan.** Every SBOM generated in CI is scanned for known vulnerabilities in the same job (§7).
 - **`dsp`: in place.** The SBOM describes an environment with the locked runtime dependencies only (artifact `sbom-dsp`), with the rules of [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md) §9.
 - **Other items: OP-046.**
   - Portable library (Milestone 2): the toolchain and its C++ standard library.
@@ -162,25 +166,84 @@ Beat classification (Milestone 6) adds no new interface. Its datasets are verifi
 
 ## 7. Vulnerability handling
 
-- **Sources:**
-  - dependency alerts on the repository;
-  - a scan of the SBOMs against public vulnerability databases in CI;
-  - vendor advisories for ESP-IDF, Qt and the Python packages;
-  - reports from anyone, through private vulnerability reporting.
+### 7.1 Sources
 
-  Setting them up: OP-045.
+| Source | What it covers | When |
+|---|---|---|
+| Scan of the SBOM in CI (§7.2) | Every component of each SBOM generated in CI (`dsp`: the runtime packages of `dsp/uv.lock`) on the branch being built, so also what the next release will contain | Every push and pull request |
+| Dependabot alerts (repository setting) | The packages of `dsp/uv.lock` on the default branch, `main`, including the development tools, and the actions that the workflows reference by version; GitHub raises an alert when its advisory database lists a vulnerability for a version in use | Continuously, without a CI run |
+| Vendor advisories | Components outside the SBOM: the Python interpreter (security releases of the 3.11 series, [`soup.md`](soup.md)); from later milestones ESP-IDF, Qt and the backend frameworks | At each milestone, and when a triage needs them |
+| Private vulnerability reporting (repository setting) | Reports from anyone, as described in [`SECURITY.md`](../../SECURITY.md) | When a report arrives |
+
+### 7.2 Scan of the SBOM in CI
+
+- **Scanner: OSV-Scanner** (Google, Apache-2.0). It reads a CycloneDX SBOM by the Package URLs of its components and queries the OSV database (`osv.dev`), which collects, among others, the PyPA advisory database and the GitHub advisory database. It is a single binary: CI downloads a pinned release from the project's GitHub releases and verifies its SHA-256 before running it. It is a development tool, not SOUP ([`soup.md`](soup.md)).
+- **Why this scanner:**
+  - it scans the SBOM that CI publishes, so the scanned list and the published list are the same; the same step will scan the SBOMs of the C++ items (OP-046);
+  - its configuration file records each triaged finding in the repository, with a reason and an expiry date (`ignoreUntil`), and an expired entry makes the scan fail again;
+  - it needs no local vulnerability database.
+- **Rejected alternatives:**
+  - **pip-audit** (PyPA): it reads requirement files, `pyproject.toml` or an installed environment, not a CycloneDX SBOM, and covers Python packages only. It would scan a second description of the dependencies and could not scan the C++ items.
+  - **Grype** (Anchore): it reads CycloneDX SBOMs and covers many ecosystems, but downloads its vulnerability database on every run, matches components that have no Package URL by CPE, which gives false positives for C and C++ components, and its ignore rules have no expiry date. To be reconsidered with OP-046 if the OSV database proves too thin for ESP-IDF, FreeRTOS or Qt.
+  - **Dependabot alerts alone:** they cover only the default branch, so a vulnerable version added on `develop` would be seen only after its release, and they keep no record of the triage in the repository.
+- **Checked on 2026-10-05** with OSV-Scanner 2.6.0 on an SBOM generated locally as CI does: the 33 components found, no vulnerability, exit status 0. The same SBOM with urllib3 2.2.1 in place of 2.8.0: exit status 1 and the published advisories listed. An `[[IgnoredVulns]]` entry for each of them: exit status 0, the aliases of each ID filtered too. The same entries with an `ignoreUntil` date in the past: exit status 1. A missing configuration file: exit status 127.
+- **CI step.** In the job `dsp` of `.github/workflows/ci.yml`, after the SBOM has been generated and uploaded, from `dsp/`:
+
+  ```
+  osv-scanner scan source --config=osv-scanner.toml -L <runner temporary folder>/sbom-dsp.cdx.json
+  ```
+
+  The step, and so the job, fails when:
+  - a component of the SBOM has a known vulnerability that `dsp/osv-scanner.toml` does not list in an `[[IgnoredVulns]]` entry whose `ignoreUntil` date has not passed (any severity);
+  - the scanner fails: no component found in the SBOM, the configuration file missing or invalid, or the OSV service unreachable (the job is then re-run).
+
+  The ruleset on `main` requires the job `dsp`, so a release cannot carry an untriaged finding. A vulnerability published after the last change is found by the next push, even if no dependency changed; on `main` between releases, Dependabot alerts find it (§7.1). The SBOM is uploaded before the scan, so that it is available when the scan fails.
+
+### 7.3 Triage and records
+
 - **Triage.** For each vulnerability in a SOUP item, determine:
-  - whether the vulnerable code is reachable in Sinus;
+  - whether the vulnerable code is reachable in Sinus (what Sinus uses of each item is recorded in [`soup.md`](soup.md));
   - its effect on safety (hazards, §8) and on security (threats, §4).
 
-  The outcome is one of: update the component, mitigate, or accept with a recorded rationale.
-- **Records.** A GitHub issue labelled `security`. The "Known anomalies reviewed" column of [`soup.md`](soup.md). [`risk-analysis.md`](risk-analysis.md), when the vulnerability affects safety. Fixes follow the normal problem-resolution flow (`sdp.md` §8).
-- **Timing** (Milestone 1, as decided for OP-045):
-  - triage within 30 days of an alert;
-  - a reachable vulnerability with an effect on safety is fixed before the next worn session;
-  - other fixes land with the next milestone at the latest.
-- **Disclosure.** Coordinated with the reporter. Fixed vulnerabilities are noted in the pull request and in the milestone verification report.
-- **Support.** Only the latest milestone release is maintained.
+  The outcome is one of: update the component, mitigate, or accept with a recorded rationale. A vulnerability in a development tool is triaged the same way; its effect is on the integrity of the pipeline (A-6, TH-19).
+- **Procedure:**
+  1. For a vulnerability that is already public (a scan finding, a Dependabot alert, a vendor advisory), open a GitHub issue labelled `security`. A vulnerability reported privately in Sinus's own code stays in its private security advisory until it is fixed.
+  2. For a scan finding, add an entry to `dsp/osv-scanner.toml`: `id` = the ID that the scanner reports, `ignoreUntil` = 30 days after the first failing scan, `reason` = `Triage open: #<issue>`. CI passes again while the triage is open, and fails again if it is not concluded in time.
+  3. Record the outcome and its rationale in the issue, then:
+     - **update:** update the locked version (`uv lock --upgrade-package <name>`), review the known anomalies of the new version ([`soup.md`](soup.md)), regenerate the validation reports, whose `Runtime` row changes when a runtime package of that row changes ([`architecture.md`](architecture.md) §8.14), and remove the entry;
+     - **mitigate** or **accept:** change the reason to `Mitigated: #<issue>, <rationale>` or `Accepted: #<issue>, <rationale>`, with `ignoreUntil` at most 180 days later; when it expires, the scan fails and the triage is repeated;
+     - in every case, dismiss the matching Dependabot alert, if there is one, with the corresponding reason and a link to the issue.
+  4. Record the outcome in the "Known anomalies reviewed" column of [`soup.md`](soup.md), and in [`risk-analysis.md`](risk-analysis.md) when the vulnerability affects safety.
+- **Records.** The GitHub issue labelled `security` (or the private security advisory); the entries of `dsp/osv-scanner.toml`; the "Known anomalies reviewed" column of [`soup.md`](soup.md); [`risk-analysis.md`](risk-analysis.md) when the vulnerability affects safety. Fixes follow the normal problem-resolution flow (`sdp.md` §8).
+- **Timing** (decided by the project owner for OP-045; confirmed in v0.2):
+  - triage within 30 days of the first report from any source; for a scan finding, the expiry of the entry of step 2 enforces it;
+  - a reachable vulnerability with an effect on safety is fixed before the next worn session (from Milestone 4, when the device is first worn);
+  - other fixes land with the next milestone at the latest;
+  - a mitigated or accepted finding is triaged again at least every 180 days.
+
+### 7.4 Updates, CI token and repository settings
+
+- **Updates of dependencies:**
+  - The Python packages of `dsp/uv.lock` are updated deliberately: when a triage concludes "update", and when a milestone starts. A new version of a runtime package changes the software that the reports state and needs a review of its known anomalies, so no automatic pull request updates them.
+  - The actions used by the workflows are pinned to exact versions (`@vX.Y.Z`) and updated by Dependabot version updates (`.github/dependabot.yml`): one grouped pull request into `develop` per week, only for releases at least 7 days old.
+  - **Version tags or commit SHAs.** A commit SHA cannot be moved, a tag can. The actions in use are GitHub's own `actions/*`, and `astral-sh/setup-uv`, whose release v10.2.0 is marked immutable on GitHub (its tag cannot be moved; checked on 2026-10-05). They stay pinned by version: Dependabot raises alerts only for actions referenced by version, and the tests of SRS-016 check the versions of the cache and upload actions. An action added later is pinned to a full commit SHA, with its version in a comment, unless it is one of GitHub's `actions/*` or its release is immutable.
+  - Dependabot security updates stay disabled: they open pull requests into the default branch, `main`, which changes only through release pull requests (`sdp.md` §4). The fix of an alert is made on `develop` instead.
+  - The OSV-Scanner release is updated by hand, version and SHA-256 together in `ci.yml`, at least when a milestone starts.
+- **CI token.** Every workflow sets `permissions: contents: read`: the token of a run can read the repository and nothing else, and the checkout step does not store it in the Git configuration of the runner (`persist-credentials: false`). No step needs more. The repository default is also read-only, and workflows cannot approve pull requests.
+- **Repository settings,** made by the project owner on 2026-10-06 and checked the same day through the GitHub API (OP-045, closed):
+  - private vulnerability reporting enabled;
+  - dependency graph and Dependabot alerts enabled; the dependency graph of the default branch lists the packages of its `dsp/uv.lock` and the actions of its workflows;
+  - Dependabot security updates disabled;
+  - label `security` created, for the issues of §7.3;
+  - default workflow token read-only, and workflows cannot create or approve pull requests;
+  - only actions created by GitHub and the selected action `astral-sh/setup-uv` (pattern `astral-sh/setup-uv@*`) allowed to run, which covers every action the workflows use, so that a new third-party action needs the owner's approval.
+
+  GitHub shows the security policy (`SECURITY.md`) and reads the configuration of Dependabot version updates (`.github/dependabot.yml`) from the default branch, `main`. Both files are on `develop`, so they take effect with the Milestone 1 release; until then, private vulnerability reporting and Dependabot alerts work without them, and Dependabot opens no version update.
+
+### 7.5 Disclosure and support
+
+- **Disclosure.** Coordinated with the reporter. Fixed vulnerabilities are noted in the pull request and in the milestone verification report. A GitHub security advisory is published for a vulnerability in Sinus's own code.
+- **Support.** Only the latest milestone release is maintained ([`SECURITY.md`](../../SECURITY.md)).
 
 ## 8. Link to the risk analysis
 

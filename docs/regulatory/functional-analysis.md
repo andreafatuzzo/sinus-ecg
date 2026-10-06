@@ -1,6 +1,6 @@
 # Functional analysis
 
-_Version 0.2.1, 2026-09-29. Status: confirmed by the project owner (Milestone 0)._
+_Version 0.2.3, 2026-10-03. Status: confirmed by the project owner (version 0.2.3 on 2026-10-03)._
 
 This document describes **what** Sinus does, from the point of view of its users: intended use, use scenarios, functional architecture and features per milestone. It is the input to the software requirements in [`srs.md`](srs.md) and to the user-level hazards in [`risk-analysis.md`](risk-analysis.md). How the functions are built is described in [`architecture.md`](architecture.md).
 
@@ -19,6 +19,8 @@ This document describes **what** Sinus does, from the point of view of its users
 | 0.1 | 2026-09-28 | First version, confirmed by the project owner: US-1 to US-8, FB-01 to FB-14, D1 to D12, features F1.1 to F5.4 |
 | 0.2 | 2026-09-29 | New roadmap in seven milestones (M0 to M6): a portable real-time implementation of the signal processing (M2) and a desktop application with replay (M3) come before the device (M4), the backend (M5) and classification (M6). The receiving application is a desktop application. Added US-9 to US-11; FB-15 (replay), FB-16 (signal quality index), FB-17 (reference outputs for equivalence), FB-18 (device state supervision); D13 to D15; features F1.10 to F1.12, F2.5 to F2.9, F3.8 to F3.11, F4.5 to F4.9, F6.1 and F6.2. Features F2.1 to F5.4 moved to their new milestones, with their IDs unchanged. Abstention added to beat classification. Confirmed by the project owner on 2026-09-29 |
 | 0.2.1 | 2026-09-29 | Process review: F4.9 (second front end) moved after Milestone 6 as decided for OP-042; F2.10 and US-10 cite OP-051; wording of the reader example |
+| 0.2.2 | 2026-10-01 | F1.6: each QRS complex is reported once for a regular rhythm from 30 to 200 bpm, as in `srs.md` v0.6 (SRS-006, SRS-010); detection in irregular rhythms is measured on real recordings by F1.7. F1.8: ventricular flutter and fibrillation episodes are also excluded from the scoring. The Milestone 1 feature table refers to `srs.md` v0.6. Confirmed by the project owner on 2026-10-01 |
+| 0.2.3 | 2026-10-03 | F1.9: two runs of the same software on the same inputs give identical reports, and the report identifies the software by its version and its source code, as in `srs.md` v0.7 (SRS-009, SRS-012). D14: the reference outputs state the software version and an identifier of the source code (SRS-015). The Milestone 1 feature table refers to `srs.md` v0.7. Confirmed by the project owner on 2026-10-03 |
 
 ## 1. Purpose
 
@@ -176,7 +178,7 @@ Battery-only operation while worn is a constraint on the whole system, enforced 
 | D11 | Export | HL7 FHIR R4 `Observation` resources (content OP-027) |
 | D12 | Signal status | Usable or not usable, with the reason (input rejected, low signal quality, electrode contact lost, data interrupted, device low battery or in error) |
 | D13 | Signal quality | A signal quality index per window of the signal, with the window position in the source time base, and whether the window is usable (OP-032) |
-| D14 | Reference outputs (golden vectors) | For each defined input: input identifier, sampling frequency, settings, software version, input samples in mV, output of each conditioning stage in mV, detected beat positions; in a documented format, identical on every run |
+| D14 | Reference outputs (golden vectors) | For each defined input: input identifier, sampling frequency, settings, software version and an identifier of the source code, input samples in mV, output of each conditioning stage in mV, detected beat positions; in a documented format, identical on every run |
 | D15 | Device state | Normal, low battery or error (with a fault code); battery level; restart after a watchdog reset; time of each change in the sample time base |
 
 ## 5. Features and acceptance criteria
@@ -185,17 +187,17 @@ Battery-only operation while worn is a constraint on the whole system, enforced 
 
 Scope: FB-04, FB-05 (offline input), FB-06 and FB-07 (offline reference), FB-14 (QRS detection, noise stress), FB-17. Scenario US-1.
 
-| ID | Feature | Acceptance criteria | Specified by (SRS v0.3) |
+| ID | Feature | Acceptance criteria | Specified by (SRS v0.7) |
 |---|---|---|---|
 | F1.1 | Obtain the reference database | MIT-BIH Arrhythmia Database version 1.0.0 is obtained from PhysioNet by one command. Every file is verified against the checksums published by PhysioNet; any missing or altered file stops the process with an error naming it. The data is never committed to the repository. | SRS-001 |
 | F1.2 | Load a record | For a named record and channel: the ECG in mV, the sampling frequency in Hz and the reference beat annotations (sample index and label) are available. Annotations that are not beats are not reported as beats. | SRS-002 |
 | F1.3 | Reject unusable input | Input with non-finite values, shorter than the minimum duration, or with a sampling frequency outside the supported range is rejected with an explicit error, and no beats are reported for it. | SRS-003 |
 | F1.4 | Remove baseline wander | Components at 0.1 Hz and below are attenuated by at least 20 dB; the 1–40 Hz ECG band changes by no more than ±0.5 dB. | SRS-004 |
 | F1.5 | Remove mains interference | For a selected mains frequency (50 Hz or 60 Hz), interference at that frequency is attenuated by at least 30 dB; the 1–40 Hz ECG band changes by no more than ±0.5 dB. | SRS-005 |
-| F1.6 | Detect beats | Each QRS complex is reported once, at a position within 150 ms of the true QRS in the source time base; positions are increasing and at least 200 ms apart. Detection still meets these criteria when baseline wander and mains interference are present in the input. | SRS-006, SRS-010 |
+| F1.6 | Detect beats | For a regular rhythm from 30 to 200 bpm, each QRS complex is reported once. Each reported position is within 150 ms of the true QRS in the source time base; positions are increasing and at least 200 ms apart. Detection still meets these criteria when baseline wander and mains interference are present in the input. Detection in irregular rhythms is measured on real recordings (F1.7). | SRS-006, SRS-010 |
 | F1.7 | Detection performance | On all 48 MIT-BIH records, gross Se and gross +P are both at least 99.5%. | SRS-007 |
-| F1.8 | Score detection per EC57 | Detections are matched to reference beats one to one within 150 ms, excluding the first 5 minutes of each record. Counts, Se and +P are reported per record, and as gross and average values for the whole set. | SRS-008, SRS-011 |
-| F1.9 | Reproducible validation report | One command produces the complete report in `docs/validation/`; two runs on the same inputs and software version give identical reports. The report identifies the software version, the database version and the settings used, lists the records with the weakest performance, and states that the results are a technical evaluation, not a clinical validation. | SRS-009, SRS-012 |
+| F1.8 | Score detection per EC57 | Detections are matched to reference beats one to one within 150 ms, excluding the first 5 minutes of each record and the episodes of ventricular flutter or fibrillation, which have no distinct beats to match. Counts, Se and +P are reported per record, and as gross and average values for the whole set. | SRS-008, SRS-011 |
+| F1.9 | Reproducible validation report | One command produces the complete report in `docs/validation/`; two runs of the same software on the same inputs give identical reports. The report identifies the software (its version and source code), the database version and the settings used, lists the records with the weakest performance, and states that the results are a technical evaluation, not a clinical validation. | SRS-009, SRS-012 |
 | F1.10 | Performance under noise | The MIT-BIH Noise Stress Test Database is obtained and verified like F1.1. Detection is scored per F1.8 on its records (electrode motion noise at 24, 18, 12, 6, 0 and −6 dB SNR), and the report of F1.9 shows Se and +P per record and per SNR, next to the same records without added noise. Performance thresholds under noise: OP-031. | SRS-013, SRS-014 |
 | F1.11 | Reference outputs for equivalence | One command exports, for a defined set of synthetic inputs and record segments, the outputs of each conditioning stage and the detected beats, with the input and settings, in a documented format. Two runs give identical files. The values read back equal the ones computed. | SRS-015 |
 | F1.12 | Regression check on every change | On every change, an automated build obtains and verifies a defined subset of reference records, regenerates a subset report, and fails when the results differ from the stored subset report or the data fails verification. The subset report states that it is a regression check, not the performance evaluation of F1.7. | SRS-016 |

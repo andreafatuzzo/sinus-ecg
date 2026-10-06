@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-09-29
 - **Deciders:** project owner (the rules: implemented ⇒ tested, release gate, verification-level check, SBOM); tech lead (conventions and implementation)
+- **Related:** [`architecture.md`](../regulatory/architecture.md) §8.14 (the release gate also rejects a development version of the package, OP-061) and §8.16 (corrections and clarifications of the script found by its unit tests, OP-052; disabled tests, OP-066)
 
 ## Context
 
@@ -157,4 +158,4 @@ CI generates a CycloneDX (1.6, JSON) SBOM of the `dsp` runtime environment and u
 - **Python and C++ tests share one matrix and one set of rules**, and a mistyped tag fails loudly.
 - **The checks are static.** A tag records what a test claims to verify. Whether the test really checks the pass criterion is reviewed by QA and in the process review.
 - **Every successful build publishes an SBOM** of the Python reference. The dev group gains `cyclonedx-bom` and its dependencies.
-- **Where the rules are written:** the Conventions of `srs.md`, `milestones.md`, `CONTRIBUTING.md`, and the docstring of `traceability.py`. The script reads all paths through one layout object, so it can be tested on a fixture tree.
+- **Where the rules are written:** the Conventions of `srs.md`, `milestones.md`, `CONTRIBUTING.md`, and the docstring of `traceability.py`; the details added later are in `architecture.md` §8.14 and §8.16. The script reads all paths through one layout object, so it can be tested on a fixture tree.

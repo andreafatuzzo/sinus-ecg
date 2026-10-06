@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2, 2026-09-29. Status: approved by the project owner on 2026-09-29 (sections 1 to 7 and 9 to 12 in v0.1, the detailed design of §8 in v0.2)._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2.13, 2026-10-06. Status: approved by the project owner up to v0.2.12 (sections 1 to 7 and 9 to 12 in v0.1 and the detailed design of §8 in v0.2 on 2026-09-29; the corrections of v0.2.2 on 2026-09-30; the corrections of v0.2.4 on 2026-10-01; the software identity and versioning rule of v0.2.6 on 2026-10-03; v0.2.8 is editorial; the readings of §8.10 and §8.14 of v0.2.9 on 2026-10-04; the changes of v0.2.10 and of v0.2.11 on 2026-10-05; the changes of v0.2.12 on 2026-10-06); v0.2.13 is editorial._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;
@@ -28,6 +28,18 @@ The detailed design of each requirement (module, interface, algorithm with refer
 | 0.1 | 2026-09-29 | First version, replacing the Milestone 0 stub: software items, allocation of the functional blocks, interfaces and data flows, constraints of the portable real-time library, outlines of the firmware, desktop application and backend, equivalence principle and golden-vector format (SRS-015), Milestone 1 module structure of `dsp`, SOUP per item, segregation |
 | 0.2 | 2026-09-29 | Detailed design of the Milestone 1 requirements SRS-001 to SRS-016 in §8 (closes OP-008): common conventions and error classes; download and verification against pinned checksum lists; record loading; input validation; filter designs with computed gains and the settling rule for verification; causal Pan–Tompkins detection with delay compensation; EC57 matching as in the WFDB comparator `bxb` (closes OP-030); statistics; evaluation run and report formats; CI subset check and its stability across machines; golden-vector interfaces; implementation order. §7.1 points to the detector initialisation in §8.7.3 |
 | 0.2.1 | 2026-09-29 | Detailed design (§8) approved by the project owner; EC57 scoring as `bxb` confirmed (decision recorded with OP-053) |
+| 0.2.2 | 2026-09-30 | Corrections found while implementing §8.3 to §8.9 (pending approval by the project owner). **OP-058** (closed): §8.2, error table: an empty record selection is an `InvalidInputError`. §8.3: interface comments of `VerificationResult`; `fetch_https` and the new paragraph "Transport and redirects"; `select_files` (selection rule stated for any extension, empty selection rejected, `str` rejected, result sorted); new rule "The record selection is validated first"; `download_database` step 2 (temporary file `<name>.part~`, fetched content written whatever its digest); `describe_verification`; script arguments; edge cases; verification notes. §8.11: the six subset records have 28 listed files, not 24, and the list is given; size of the CI cache. **OP-059** (design side; the requirement wording stays open): §8.8, interface comments of `Episode` and `MatchResult`; §8.8.1: `vf_episodes` rejects annotations out of order, an episode without `]` ends at `max(start_sample, n_samples − 1)`, and the scored part of a record is defined; §8.8.2: step 1 (`reference_excluded` counts only beats at or after the start) and one more difference from `bxb` (episode without `]`); new §8.8.3 (what is not scored and how it is counted, accounting equalities, verification notes); §8.10: `RecordEvaluation` (`vf_episodes_scored` and `vf_samples_scored` replace `vf_samples`), new function `episode_coverage`, the paragraph "Figures on what is not scored", section 6 of the report and the verification notes. **OP-057** (part (b); part (a) stays open): §8.6, edge cases: the mains filter returns a constant input within rounding, not unchanged. §8.13: when the corrections to the modules already implemented are made. §12: OP-057 and OP-059 added |
+| 0.2.3 | 2026-09-30 | Corrections of v0.2.2 approved by the project owner, including following redirects with integrity resting on the pinned checksum lists (OP-058 (e)). OP-059 closed by the SRS-012 wording of `srs.md` v0.5: §8.8.3 and §8.10 cite SRS-012 instead of the open point; §12 updated. OP-055 decided by the project owner (the heart-rate range of SRS-006 is bounded to 30–200 bpm; the detection design is unchanged): §8.7 edge cases state the limitation at short RR intervals and its cause, and the verification notes give the range. §8.2, error table: the `InvalidInputError` row also lists the argument errors of §8.8 and §8.9 |
+| 0.2.4 | 2026-10-01 | Corrections found while implementing §8.10 (pending approval by the project owner). (1) §8.10: `evaluate_noise_stress` takes the verification outcome of the noise stress database as the keyword argument `nstdb`, which the results carry into the report; the database is still verified only by `run_validation`, before anything is evaluated. (2) §8.13: the dependency graph shows the two imports made inside a function (`evaluation.run` calls `evaluation.noise_stress` and `evaluation.report`, which import it), and states which imports it draws. (3) §8.2: new paragraph "Argument defaults" (no call in an argument default; a frozen default instance is a module-level constant); §8.10, §8.11: the public constant `DEFAULT_SETTINGS` is the default of every `settings` argument. (4) §8.11: the subset report names `subset_check.py` as its origin, and its paragraph is built from the evaluated record names and the database title. (5) §8.10: the format of sampling frequencies is removed (no section shows one). (6) §8.10, §8.8: the count of flutter-wave annotations outside the episodes covers the scored part of each record, like the other figures of the section on what is not scored; the introduction sentence of that section states that the episodes in the record are counted over the whole record. (7) §8.2: the error table lists the checks of the evaluation run, the noise stress test and the report rendering, which are design behaviours; §8.10 gives each check with its function, and the subset renderer also rejects results that hold a noise stress test. (8) §8.10: the complete text format of the report (headings, sentences, table columns, row labels, alignment and table syntax), so that the stored subset report of §8.11 is fully specified. (9) §8.4, edge cases: wfdb reads a header as ASCII text and drops other characters, and a header without units gives mV; the first stored signal is MLII in 45 records of the MIT-BIH Arrhythmia Database and V5 in records 102, 104 and 114 (v0.2.3 stated 46 records and 102 and 104). §8.2 Types: the type aliases are in the private module `_types`. §8.13: when the corrections of v0.2.4 are made |
+| 0.2.5 | 2026-10-01 | Corrections of v0.2.4 approved by the project owner, including the count of flutter waves limited to the scored part of each record and the reworded introduction of report section 6. OP-056 decided by the project owner: no change of the detection rules in Milestone 1, so the Milestone 1 results stay untuned (`sdp.md` §6); a refractory test on the fiducial point only is not adopted; the age of the search-back candidate and the two-lobe fiducial are assessed in Milestone 2, with a listing of every false negative and false positive of the evaluation as input |
+| 0.2.6 | 2026-10-02 | Software identity and versioning (OP-061; pending approval by the project owner). New §8.14: every report and golden vector states the package version and the SHA-256 digest of the package source, computed when it is produced, and the reports also state the versions of Python and of the runtime SOUP; the version follows the milestones (`0.N.0.dev0` while milestone N is in progress, `0.N.0` at its release, `0.N.P` for a later correction); checks in `traceability.py`, in the new release check `scripts/software_check.py` and, through the stored subset report, on every push. §7.3: header key `source_sha256`. §7.4: determinism stated with the software identity. §8.1: module `version` and script `software_check.py`. §8.10: `ValidationResults.software` replaces `software_version`; report section 2 gains the source digest in the row `Software` and a new row `Runtime`; determinism and verification notes. §8.11: `run_subset` states the software identity; when the stored subset report must be updated; stability across machines. §8.12: `GoldenVector.source_sha256`, `golden_vector` takes the software identity. §8.13: module `version` in the graph; when the changes of v0.2.6 are made. §12: OP-061 |
+| 0.2.7 | 2026-10-03 | Software identity and versioning rule of v0.2.6 approved by the project owner, including the `Runtime` row of the reports (OP-061, implementation pending). The versioning of the C++ items is tracked by OP-062 |
+| 0.2.8 | 2026-10-03 | Editorial, no design change. §8.14 is implemented (OP-061 closed), so the status line no longer says it is pending. §8.10 "Determinism" quotes the condition of SRS-009 as worded in `srs.md` v0.7. |
+| 0.2.9 | 2026-10-03 | Readings of the implemented §8.14 where the design was silent, recorded as design behaviour (approved by the project owner on 2026-10-04; no behaviour or code change). §8.14: a folder of the package that cannot be listed, `package_dir` included, raises `OSError`; the shell command needs no `__pycache__` exclusion and gives the digest of the implemented package; `stale_software_rows` splits the text at line feeds and ignores a carriage return at the end of a line; the `Runtime` row when there is no runtime package; `software_check.py`: the files it reads and how, the path it prints, a `--folder` that is not a folder (exit status 2), a file that is not UTF-8, the count k; `traceability.py`: how `__version__` is read, the messages of the version rule, a version that cannot be read listed by both `--check` and `--release-gate`; the unit tests of the version rule are not left to OP-052. §8.10: the wording of the `Runtime` row; the public constant `RECORD_LIST_NAME`. §12: OP-052 added |
+| 0.2.10 | 2026-10-04 | Approved by the project owner on 2026-10-05. (1) §8.11: the implemented formats of the subset check recorded as design behaviour: the difference entries (lines compared by position, `(no line)`, `(empty line)`, line endings, at most 20 entries then `… and <k> more`), an absent stored report handled by `check_subset_report` (`compare_reports` takes bytes), the options, messages and exit statuses of `subset_check.py` (1 also on a stored report that is not UTF-8 text, 2 on a usage error), the CI cache saved only when the job succeeds, the existing `.gitattributes` rule in place of a new line, the record list in the `needs_data` check; one code change: `--update` with `--write-regenerated` may name the stored report itself. §8.2: the attribute `differences` and the row `MalformedFileError` worded accordingly. (2) §8.2: new paragraph "Writing files": one private helper `write_atomically` in the new private module `_files` replaces the two copies in `data.physionet` and `evaluation.run` (which `evaluation.subset` imported as a private name), and is also used by the golden-vector export; §8.3 and §8.10 refer to it. (3) Golden vectors, reviewed before implementation against SRS-015 as worded in `srs.md` v0.7: §7.2: the record segments need the verified files of the six records (as in SRS-016), the beats and their positions computed on integers, the order in which the interference is added, the format of the input identifier, a tolerance for tests of the waveform; §7.3: fields, header values, `[coefficients]` rows, reference beats non-decreasing, the number syntax and every reader rule stated completely; §7.4: the determinism condition of SRS-015; §7.5: location, size, why the files are not stored, and the licence of the database (OP-064); §8.12: `synthetic_ecg` without a duration argument, `golden_vector` takes array-likes, `export_golden_vectors` takes a data folder (not `None`), verifies before writing anything, and each step, check and error is stated; the messages and exit statuses of `export_golden.py`; §8.2: `DataVerificationError` is not raised by the export, which skips the record segments instead, and the new `InvalidInputError` cases; `NonFiniteOutputError` can occur with a finite input of extreme amplitude (OP-063). (4) §8.1: files are written by the package functions whose design says so, not only by scripts; no module imports a private name of another, except `qrs._detect` in `pipeline`. §8.13: `synthetic` imports `errors`, not `input_checks`; `_files` is not drawn; group 9 and the changes of v0.2.10. §12: OP-063, OP-064 |
+| 0.2.11 | 2026-10-05 | Approved by the project owner on 2026-10-05. (1) Licences of the databases (OP-064, resolution (c) decided by the project owner on 2026-10-05; the licence item of SRS-012 and SRS-014 in `srs.md` v0.7.2, which SRS-016 inherits). New §8.15: the licence of each database version, checked on its PhysioNet page, is a constant of the code next to its pinned checksum list (`DatabaseLicence`, `ODC_BY_1_0`, `Database.licence`, §8.3); the reports state it in a row `Database licence`, after the row `Database`, in report section 2 (MIT-BIH Arrhythmia Database, full and subset report) and in the table of the noise stress section (Noise Stress Test Database) (§8.10, §8.11); the notice and the citations that PhysioNet asks for, in README §Data sources and in `docs/validation/README.md`, are given literally. §7.5 refers to §8.15. (2) Readings of the implemented golden-vector export (§8.12) recorded as design behaviour: `records=None` rejected; the types that `render_golden_vector` accepts; header values encodable as UTF-8; the reasons of the reader errors are not part of the format, the line numbers are; argument types of `synthetic_ecg`; the order of the checks of `golden_vector`; `skipped` computed from `records`; the script prints its `written:` lines after the export has completed; scripts may import the private module `_files` (§8.1). (3) §7.3: the line that a reader names when a row count differs from the header; two code changes to the readers, so that the Python and C++ readers reject the same texts: an integer above 2⁶³ − 1 is rejected at its line, and so is a float that is not zero in its digits but converts to zero. (4) §8.11: an empty stored subset report has no line; the CI cache is visible only to runs of the branch that saved it, of the base branch of a pull request and of the default branch, so a push on a new branch can download the 28 files again. (5) §8.12 step 1 no longer quotes the SRS-015 wording of `srs.md` v0.7 ("where the verified database is available"); it states the condition as worded since v0.7.1, and that the record segments are written all or none, as the design already did (the wording that `srs.md` v0.7.2 proposes for SRS-015). §8.13: the changes of v0.2.11 |
+| 0.2.12 | 2026-10-05 | Traceability checks (approved by the project owner on 2026-10-06; no change to `sinus_dsp`). New §8.16: corrections and clarifications of `scripts/traceability.py` found by its unit tests (OP-052, closed): the matrix states the outcome of the release gate, per milestone and in a new section `Release gate`; a test in the folder of the other verification level no longer counts as verifying (ADR 0004 §6); folders named `tests`, `test` or `test_apps` are not scanned as production code under the Python code roots either (ADR 0004 §1); a requirement mark in a file under `dsp/tests` that is not a test file fails `--check` (ADR 0004 §2); the Target of an open point must be `Mn` or `After Mn`; deleted requirements are not listed as requirements without tests; disabled and skipped tests: rule now, check with the first C++ tests (OP-066); the order of the items is kept. §8.14: the development-version item is what rejects a milestone still in progress, and the unit tests of the script are those of OP-052. §8.1: `traceability.py` cites §8.16. §8.13: the changes of v0.2.12. §9: the Python interpreter is SOUP of `dsp` (`soup.md`). §12: OP-066 |
+| 0.2.13 | 2026-10-06 | Editorial, no design change. OP-064 closed on 2026-10-06; its Milestone 2 part, notices for golden vectors of record segments made public, continues as OP-067. §7.5 and §8.15 "Golden vectors" cite OP-067 instead of the Milestone 2 part of OP-064; §8.15 "Consequences of the change" records the closure. §12: OP-067 added; OP-064 stays listed, as closed open points do |
 
 ## 1. System context
 
@@ -293,14 +305,16 @@ The command writes one file per input (SRS-015):
 
 | Inputs | Parameters | Settings | Input identifier |
 |---|---|---|---|
-| 18 synthetic ECGs | Sampling frequency 250 Hz and 360 Hz × heart rate 40, 75 and 180 bpm × variant: `clean`, `bw-mains50`, `bw-mains60` | Mains 50 Hz for `clean` and `bw-mains50`; 60 Hz for `bw-mains60` | `syn-fs<fs>-hr<hr, 3 digits>-<variant>`, e.g. `syn-fs360-hr075-bw-mains60` |
-| 6 record segments, only where the verified database is available (SRS-001) | First 60 s of records 100, 105, 108, 119, 203 and 207 of the MIT-BIH Arrhythmia Database 1.0.0, first stored signal | Mains 60 Hz (the settings of SRS-007) | `mitdb-<record>-first60s`, e.g. `mitdb-100-first60s` |
+| 18 synthetic ECGs | Sampling frequency 250 Hz and 360 Hz × heart rate 40, 75 and 180 bpm × variant: `clean`, `bw-mains50`, `bw-mains60` | Mains 50 Hz for `clean` and `bw-mains50`; 60 Hz for `bw-mains60` | `syn-fs<fs>-hr<hr>-<variant>`, with the sampling frequency as a decimal integer and the heart rate with three digits, e.g. `syn-fs360-hr075-bw-mains60`, `syn-fs250-hr040-clean` |
+| 6 record segments, only where the files of these records are available and verified against the pinned checksum list of the database (§8.3), as for SRS-016 | First 60 s of records 100, 105, 108, 119, 203 and 207 of the MIT-BIH Arrhythmia Database 1.0.0, first stored signal | Mains 60 Hz (the settings of SRS-007) | `mitdb-<record>-first60s`, e.g. `mitdb-100-first60s` |
 
-If the database is not available or not verified, the record segments are skipped with a message naming them, and the synthetic files are still written.
+If the files of the six records are not available or not verified, the record segments are skipped with a message naming them and the reason, and the synthetic files are still written. The export never downloads: the records are those already in the data folder (§7.5).
 
 **Synthetic ECG** (`sinus_dsp.synthetic`, deterministic, float64):
 - **Duration and sampling.** 30 s; sample instants t_n = n / fs, for n = 0 … 30·fs − 1.
 - **R-wave centres.** RR = 60 / heart rate (s). The R wave of beat k is centred on the sample r_k = ⌊(0.5 + k·RR)·fs + 0.5⌋, for every k ≥ 0 with 0.5 + k·RR ≤ 29.5 s. These r_k are the true beat positions of the input.
+  - Both are computed on integers, so that no rounding decides a beat at the limit (at 180 bpm, 0.5 + 87·RR is exactly 29.5 s): with hr the heart rate in bpm and fs the sampling frequency as an integer, beat k exists if 60·k ≤ 29·hr, and r_k = ⌊(hr·(fs + 1) + 120·k·fs) / (2·hr)⌋ (integer division). These are the expressions above, exactly.
+  - Each input therefore has 20 beats at 40 bpm, 37 at 75 bpm and 88 at 180 bpm, at both sampling frequencies.
 - **Beat waveform.** Each beat is the sum of five Gaussian waves A·exp(−(t − t_c)² / (2σ²)), centred at t_c = r_k / fs + offset. To keep the waves in order at high heart rates, the P and T offsets and widths scale with s = √(RR / 1 s):
 
   | Wave | Offset from the R centre (ms) | Amplitude A (mV) | Width σ (ms) |
@@ -311,14 +325,15 @@ If the database is not available or not verified, the record segments are skippe
   | S | +30 | −0.20 | 10 |
   | T | +280·s | 0.30 | 45·s |
 
-- **Evaluation order.** The signal is evaluated on every sample, summing the beats in increasing k and the waves in the order P, Q, R, S, T.
-- **Interference variants** (SRS-010), added to the signal:
-  - `bw-mains50`: 1.0 mV · sin(2π · 0.3 Hz · t) + 0.2 mV · sin(2π · 50 Hz · t);
-  - `bw-mains60`: the same with 60 Hz.
+- **Evaluation order.** The signal is evaluated on every sample, summing the beats in increasing k and the waves in the order P, Q, R, S, T. The order of the floating-point operations within one wave is not specified: a test of the waveform compares it with the formulas above within 10⁻⁹ mV, and compares the beat count and the positions r_k exactly. The equivalence tests do not depend on it, because every file holds its input (§7.3).
+- **Interference variants** (SRS-010), added to the signal after all the beats, in this order:
+  - `bw-mains50`: first the baseline wander 1.0 mV · sin(2π · 0.3 Hz · t), then the mains interference 0.2 mV · sin(2π · 50 Hz · t);
+  - `bw-mains60`: the same with 60 Hz;
+  - `clean`: nothing is added.
 
 ### 7.3 File format, version 1
 
-One UTF-8 text file per input, named `<input identifier>.golden.txt`. Lines end with a line feed. There is no byte-order mark and no trailing space, and the file ends with one line feed after `[end]`. It contains a header followed by four sections, always in this order:
+One UTF-8 text file per input, named `<input identifier>.golden.txt`. Lines end with a line feed. There is no byte-order mark, no empty line, and no space, tab or carriage return anywhere, and the file ends with one line feed after `[end]`. The fields of a row are separated by a comma. It contains a header followed by four sections, always in this order:
 
 ```
 format=sinus-golden-vector
@@ -329,6 +344,7 @@ input_parameters=duration_s=30;heart_rate_bpm=75;baseline_wander_hz=0.3;baseline
 sampling_frequency_hz=360.0
 mains_frequency_hz=60
 software_version=0.1.0
+source_sha256=d7cc8c5224968a1bb510508d3d14f62bbe6d228927713144e02dc00a6d443e29
 stages=baseline,mains
 n_samples=10800
 n_beats=37
@@ -354,62 +370,75 @@ sample_index
 | Key | Content |
 |---|---|
 | `format`, `format_version` | Always `sinus-golden-vector` and `1` |
-| `input_id` | Input identifier (§7.2) |
-| `input_source` | `synthetic` or `mitdb` |
-| `input_parameters` | `name=value` pairs separated by `;`, in a fixed order. Synthetic: the generator parameters. Records: `database=mitdb;database_version=1.0.0;record=<name>;signal=0;start_sample=0;duration_s=60` |
-| `sampling_frequency_hz` | Sampling frequency, float |
-| `mains_frequency_hz` | Mains setting, 50 or 60 |
-| `software_version` | `sinus_dsp.__version__` |
-| `stages` | Names of the conditioning stages in the order applied. Version 1 contains `baseline,mains`. A later milestone may add stages, which then get their own columns |
-| `n_samples`, `n_beats`, `n_reference_beats` | Number of rows in `[signals]`, `[beats]` and `[reference_beats]` |
+| `input_id` | Input identifier (§7.2); it matches `[A-Za-z0-9_-]+` |
+| `input_source` | `synthetic`, or the slug of the database of a record segment (`mitdb`) |
+| `input_parameters` | `name=value` pairs separated by `;`, in a fixed order; not empty, and without spaces, like every value. Synthetic: the generator parameters (§8.12). Records: `database=<slug>;database_version=<version>;record=<name>;signal=<channel>;start_sample=0;duration_s=60`, e.g. `database=mitdb;database_version=1.0.0;record=100;signal=0;start_sample=0;duration_s=60` |
+| `sampling_frequency_hz` | Sampling frequency, a float (e.g. `360.0`), finite and positive |
+| `mains_frequency_hz` | Mains setting, `50` or `60` |
+| `software_version` | `sinus_dsp.__version__`, which follows the version rule of §8.14; not empty |
+| `source_sha256` | SHA-256 digest of the package source (§8.14), 64 lowercase hexadecimal digits. With `software_version` it identifies the code that wrote the file |
+| `stages` | Names of the conditioning stages in the order applied, separated by `,`: at least one, each matching `[a-z][a-z0-9_]*`, none twice. Version 1 is written with `baseline,mains`. A later milestone may add stages, which then get their own columns |
+| `n_samples`, `n_beats`, `n_reference_beats` | Number of rows in `[signals]` (at least 1), `[beats]` and `[reference_beats]` (0 or more) |
 
-**Sections.**
-- **`[coefficients]`.** One row per second-order section of each stage, in the order applied, normalised so that a0 = 1. It lets a C++ test check its own filter design separately from its filtering.
-- **`[signals]`.** One row per input sample, in order:
-  - the input in mV;
-  - then the output of each stage in mV, in the order of `stages`, in columns named `<stage>_mv`.
-- **`[beats]`.** The detected QRS sample indices of SRS-006, in increasing order.
-- **`[reference_beats]`.** For synthetic inputs, the R-wave centres r_k (§7.2). For records, the reference beat annotations (SRS-002) within the segment. They are not needed for equivalence, but they let a test check detection on the same file.
-- **`[end]`.** Marks a complete file.
+**Sections.** Each section is a line with its name in brackets, then a line with its column names, then its rows.
+- **`[coefficients]`.** Columns `stage,section,b0,b1,b2,a1,a2`. One row per second-order section of each stage, normalised so that a0 = 1 (a0 is not written): the stages in the order of `stages`, each with at least one row, its sections numbered from 0 in the order applied. Version 1 has the rows `baseline,0,…` and `mains,0,…`. It lets a C++ test check its own filter design separately from its filtering.
+- **`[signals]`.** Columns `input_mv`, then `<stage>_mv` for each stage in the order of `stages` (version 1: `input_mv,baseline_mv,mains_mv`). One row per input sample, in order: the input in mV, then the output of each stage in mV.
+- **`[beats]`.** Column `sample_index`. The detected QRS sample indices of SRS-006, strictly increasing.
+- **`[reference_beats]`.** Column `sample_index`. For synthetic inputs, the R-wave centres r_k (§7.2). For records, the reference beat annotations (SRS-002) whose sample lies in the segment, `0 ≤ sample < n_samples`. They are in non-decreasing order: an annotation file only guarantees that (§8.4), although no two beats of the six records share a sample (checked on their annotation files). They are not needed for equivalence, but they let a test check detection on the same file.
+- **`[end]`.** Marks a complete file. Nothing follows its line feed.
 
 **Numbers.**
-- A float64 value is written as Python's `repr()` of it: the shortest decimal string that converts back to the same float64 under correct rounding (e.g. `0.1`, `-1.2345e-05`, `-0.0`).
-- Integers are written in decimal, without sign or leading zeros.
+- A float64 value is written as Python's `repr()` of it, as a Python `float`: the shortest decimal string that converts back to the same float64 under correct rounding (e.g. `0.1`, `-1.2345e-05`, `-0.0`, `1e+16`, `5e-324`). It matches `-?[0-9]+(\.[0-9]+)?(e[+-][0-9]+)?`.
+- Integers are written in decimal, without sign or leading zeros: `0|[1-9][0-9]*`.
 - Non-finite values are never written. The export fails with an error naming the input if any output is not finite.
 
-**Readers** (Python and C++) reject a file:
+**Readers** (Python and C++) split the text at line feeds and reject a file, naming the first offending line:
+- that is not UTF-8 text, holds a space, a tab or a carriage return, has an empty line, does not end with a line feed after `[end]`, or has anything after it;
 - whose format or version is unknown;
-- whose header keys are missing, extra or out of order;
-- whose sections are missing or out of order;
-- whose column headers do not match `stages`;
-- whose row counts differ from the header;
-- that contains a value that does not parse or is not finite, or a sample index that is not increasing or lies outside `[0, n_samples)`;
-- that lacks `[end]`.
+- whose header lines are not `key=value` lines with the keys of the table above, all present, in that order, each once (the key is the text before the first `=`);
+- whose header values break the rules of the table: `input_id`, `stages`, `mains_frequency_hz`, `source_sha256` (64 lowercase hexadecimal digits), `sampling_frequency_hz` (a float, finite and positive), the counts (integers; `n_samples` at least 1), or an empty `input_source`, `input_parameters` or `software_version`;
+- whose sections are missing or out of order, or whose column lines differ from those given above for its `stages`;
+- whose `[coefficients]` rows do not follow `stages` and the section numbering, or do not have seven fields;
+- whose row counts differ from the header, or whose rows have the wrong number of fields;
+- that contains a float that does not match the float syntax above (e.g. `1e16`, whose exponent has no sign, `1E+16`, `+1.0`, `.5`, `5.`, `inf`, `nan`), that is not finite once converted (e.g. `1e+999`), or that converts to zero although a digit of its significand (the part before `e`, or the whole text if it has no `e`) is not zero (e.g. `1e-400`; `0.0e-400` and `-0.0` are zero and accepted);
+- that contains an integer that does not match the integer syntax, or that is greater than 2⁶³ − 1 (`9223372036854775807`);
+- with a detected beat not greater than the one before it, a reference beat smaller than the one before it, or a beat of either section outside `[0, n_samples)`.
+
+Floats are converted with Python's `float()` and C++'s `std::from_chars`, after the syntax check (each accepts forms that the other does not, such as `1_0` in Python). The two rules on the converted value (finite; not zero unless every digit of the significand is zero) give the same outcome whether a library returns infinity or zero, or reports the value as out of range (`std::errc::result_out_of_range`), so both readers reject the same texts. An integer is converted only after its syntax and its bound are checked, so that it fits `std::int64_t` in C++ and needs no further limit in Python. The writer never writes a text that these rules reject: `repr` of a finite float64 converts back to it, and every integer it writes is a count or an index of an array.
+
+**The line named.** A reader reads the lines in file order and names the first line at which the text breaks a rule; a text that ends too early is named at its last line. A row count that differs from the header is named where the rows and the count disagree, not at the header line:
+- with fewer rows than the count, at the line found where the next row is expected (the line of the next section, e.g. `[beats]` after `[signals]`, or `[end]` after `[reference_beats]`);
+- with more rows than the count, at the first row after the count, where the line of the next section is expected.
+
+The reason given with the line is free text that names the rule. It is not part of the format: the Python and C++ readers name the same line, but need not word the reason alike, and tests compare the line, the error class and the file, not the wording. Only the reason of a file that is not UTF-8 text is fixed (`not UTF-8 text`, with no line, §8.12).
 
 ### 7.4 Determinism and exact read-back
 
-- **Determinism.** The content depends only on the input, the settings and the software version. The file contains no dates, times, host names, user names, paths or random numbers, and nothing depends on the iteration order of an unordered collection. Two runs on the same inputs and software version, on the same machine, therefore give byte-identical files (SRS-015).
+- **Determinism.** The content depends only on the input, the settings, the software identity (version and source digest, §8.14) and the computations of NumPy and SciPy on the computer that runs them. The file contains no dates, times, host names, user names, paths or random numbers, and nothing depends on the iteration order of an unordered collection. Two runs on the same computer and the same inputs, with the same software version and source code and the same versions of the third-party software used, therefore give byte-identical files: the condition of SRS-015. The same version and source digest mean the same source code (§8.14). A file does not state the versions of Python and of the runtime SOUP, which the reports state (§8.10): SRS-015 asks for the software version and the identifier of the source code, byte identity is required on one computer only, and CI compares the C++ library only with files written in the same run (§7.5).
 - **Exact read-back.** Python's `float()` is correctly rounded, so reading back gives exactly the values computed (SRS-015). The C++ reader converts with `std::from_chars` (C++17), which the supported toolchains implement with correct rounding. Its unit tests check exact read-back of edge values: the smallest subnormal and the largest finite value, negative zero, and values that need 17 significant digits.
 - **Across machines.** NumPy and SciPy results may differ in the last bits between machines or library builds. The tolerances of OP-005 absorb this, and CI always compares the C++ library with vectors generated in the same run from the same commit (§7.5).
 
 ### 7.5 Generation and use
 
-- **Command.** From `dsp/`, run `uv run python scripts/export_golden.py`. The files go to `data/golden/` by default; an option sets another folder. The logic is in `sinus_dsp.golden` (§8).
-- **Not stored in the repository.**
-  - Synthetic vectors are regenerated deterministically on demand.
-  - Vectors of record segments are derived from the database, which is never committed (SRS-015).
-- **In CI (from Milestone 2).** The Python build generates the vectors and passes them to the C++ equivalence tests as a build artifact of the same commit. The C++ library is therefore always compared with the current reference, and any change to the reference that the C++ library does not follow fails CI.
+- **Command.** From `dsp/`, run `uv run python scripts/export_golden.py`. The files go to `data/golden/` by default; an option sets another folder. The records are read from `data/` (option `--data-dir`); the export never downloads them, so the record segments are written only after the six records have been obtained, by `scripts/download_data.py --database mitdb --records 100 105 108 119 203 207` or by the subset check (§8.11). The logic is in `sinus_dsp.golden` (§8.12).
+- **Size** (measured on a prototype of §8.12 on 2026-10-04). About 16 MB for the 24 files: 0.45 MB to 0.68 MB per synthetic file (7500 or 10800 rows), about 10 MB for the 18; about 1.0 MB per record segment (21600 rows), about 6 MB for the six. Header, coefficients and beats add a few kilobytes. The export takes a few seconds.
+- **Not stored in the repository.** `data/` is ignored by git.
+  - The files are regenerated deterministically on demand, and in CI from the commit under test (below).
+  - Every file states the source digest (§8.14). Stored files would therefore change with every change of the package, like the stored subset report (§8.11): about 16 MB of text in every such change, for no information that the commit does not already hold.
+  - Vectors of record segments are derived from the database, which the repository never holds (SRS-015). The licence of both PhysioNet databases used (MIT-BIH Arrhythmia Database 1.0.0 and MIT-BIH Noise Stress Test Database 1.0.0) is the Open Data Commons Attribution License v1.0 (checked on their PhysioNet pages on 2026-10-04 and 2026-10-05, §8.15). It allows copies, extracts and works produced from the data, with notices when they are made public: the licence and its address with a database extract that is conveyed publicly, and a notice that the content comes from the database, available under that licence, with a work produced from it that is used publicly. Storing the vectors would therefore be allowed with those notices; it is not done for the reasons above. The notices for what Sinus publishes are in §8.15: the validation reports, which are produced from both databases, state the licence of each, and README §Data sources and `docs/validation/README.md` carry the notice and the citations. In Milestone 1 the golden vectors are written only to the local data folder and are not published, so they need no notice. Whether a golden vector of a record segment is made public from Milestone 2 (for example as a CI artifact of the public repository), and with which notices, is decided with the CI design of Milestone 2 (OP-067).
+- **In CI (from Milestone 2).** The Python build generates the vectors and passes them to the C++ equivalence tests as a build artifact of the same commit. The C++ library is therefore always compared with the current reference, and any change to the reference that the C++ library does not follow fails CI. The export exits successfully when it skips the record segments (§8.12), so the CI step designed at Milestone 2 must also make sure that none was skipped; the CI cache already holds the six records (§8.11).
 - **On the ESP32-S3.** The on-target test image receives the same vectors, in Espressif's QEMU emulator in CI (OP-051 closed).
 
 ## 8. Milestone 1 detailed design of `dsp`
 
-This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requirement, SRS-001 to SRS-016. §8.1 fixes the modules; §8.2 the conventions and errors shared by all of them; §8.3 to §8.12 give, per requirement, the module, the public interface, the errors, the algorithm with its references and parameter values, the edge cases, and what verification can rely on; §8.13 gives the implementation order.
+This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requirement, SRS-001 to SRS-016. §8.1 fixes the modules; §8.2 the conventions and errors shared by all of them; §8.3 to §8.12 give, per requirement, the module, the public interface, the errors, the algorithm with its references and parameter values, the edge cases, and what verification can rely on; §8.13 gives the implementation order; §8.14 the software identity that the reports and golden vectors state, and the versioning rule; §8.15 the licences of the reference databases and the notices that Sinus publishes with what it produces from them.
 
 ### 8.1 Module structure
 
 | Module (`dsp/sinus_dsp/`) | Responsibility | Requirements |
 |---|---|---|
-| `__init__.py` | Package version (`__version__`), written into reports and golden vectors | — |
+| `__init__.py` | Package version (`__version__`, rule of §8.14) | — |
+| `version.py` | Software identity written into reports and golden vectors: package version, SHA-256 digest of the package source, versions of Python and of the runtime SOUP (§8.14) | SRS-009, SRS-012; used for SRS-015, SRS-016 |
 | `errors.py` | Exception hierarchy: one base class for all Sinus errors, and one subclass per error behaviour in the SRS (rejected input, failed data verification, malformed file, subset report mismatch) and in §7.3 (non-finite output), §8.2 | SRS-001, SRS-003, SRS-013, SRS-015, SRS-016 |
 | `input_checks.py` | Input validation before filtering or detection | SRS-003 |
 | `filters.py` | Design of the second-order sections and causal filtering: baseline wander and mains interference | SRS-004, SRS-005 |
@@ -417,7 +446,7 @@ This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requi
 | `pipeline.py` | The conditioning chain and detection in the order of §7.1, defined once and used by the evaluation and the golden-vector export | SRS-006, SRS-010, SRS-015 |
 | `synthetic.py` | Deterministic synthetic ECG (§7.2) | SRS-015 |
 | `golden.py` | Golden-vector writer and reader (§7.3) | SRS-015 |
-| `data/physionet.py` | Download of a PhysioNet database version and verification against its SHA-256 checksum list. Network access goes through an injectable fetch function (the default uses the standard library), so that tests need no network | SRS-001, SRS-013, SRS-016 |
+| `data/physionet.py` | Download of a PhysioNet database version and verification against its SHA-256 checksum list. Network access goes through an injectable fetch function (the default uses the standard library), so that tests need no network. The licence under which each database version is published (§8.15) | SRS-001, SRS-013, SRS-016; the licence: SRS-012, SRS-014 |
 | `data/records.py` | Loading a record, a channel and its beat and non-beat annotations with wfdb | SRS-002 |
 | `evaluation/matching.py` | EC57 beat-by-beat matching | SRS-008 |
 | `evaluation/metrics.py` | TP, FN, FP, Se and +P, per record, gross and average | SRS-011 |
@@ -432,19 +461,22 @@ This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requi
 | `validate.py` | The full validation report, `docs/validation/qrs-ec57-report.md` (SRS-009) |
 | `subset_check.py` | The CI subset check: regenerates the subset report and compares it with `docs/validation/qrs-ec57-subset-report.md` (SRS-016) |
 | `export_golden.py` | The golden-vector export (SRS-015) |
-| `traceability.py` | The traceability matrix, its checks and the release gate (ADR 0004) |
+| `software_check.py` | The release check that every report in `docs/validation/` states the current software (§8.14) |
+| `traceability.py` | The traceability matrix, its checks (including the version rule of §8.14) and the release gate (ADR 0004; corrections and clarifications in §8.16) |
 
 **Rules for `dsp`.**
 - Scripts are thin command-line wrappers: argument parsing, paths, messages, exit codes. The logic they run lives in `sinus_dsp`, where tests import it without running a command.
 - Every function that depends on the sampling frequency takes it as an argument (`fs_hz`). Signals are `numpy.typing.NDArray[numpy.float64]` in mV; indices are `numpy.int64`.
-- Signal-processing functions are pure: no global state, no I/O and no printing. Only scripts write files and messages.
+- Signal-processing functions are pure: no global state, no I/O and no printing. Only scripts print messages. Files are written only by the functions whose design says so (downloads, §8.3; reports, §8.10 and §8.11; golden vectors, §8.12), always with `write_atomically` (§8.2).
 - The algorithms are written so that they port to the C++ library: causal filtering with second-order sections (`scipy.signal.sosfilt`, same difference equations); detection decisions taken on candidate peaks in time order, with bounded look-back; no zero-phase filtering and no whole-signal statistics in the detection logic.
 - Data folders: `data/mitdb/`, `data/nstdb/`, `data/golden/`, all ignored by git.
-- Private helpers shared by several modules (e.g. the time-to-samples conversions of §8.2) may go in private modules whose names start with `_` (e.g. `sinus_dsp/_units.py`). Their content is fixed by this section; they add no public interface.
+- Private helpers shared by several modules (e.g. the time-to-samples conversions of §8.2) may go in private modules whose names start with `_` (e.g. `sinus_dsp/_units.py`). Their content is fixed by this section; they add no public interface. A module does not import a private name (`_name`) of another module that is not such a private module; the one exception is `qrs._detect`, the detection without input check, which `pipeline` calls after checking the input once (§8.7). The private modules are `_types` (type aliases), `_units` (conversions of times to samples) and `_files` (writing files), all in §8.2. The scripts of `dsp/scripts/` follow the same rule: they may import the names of a private module, and no private name of another module. One does: `subset_check.py` writes the copy of the updated stored report with `_files.write_atomically` (§8.11).
 
 ### 8.2 Common conventions and errors
 
-**Types.** `FloatArray = numpy.typing.NDArray[numpy.float64]` (signals in mV, one dimension) and `IndexArray = numpy.typing.NDArray[numpy.int64]` (sample indices, strictly increasing unless stated). Public functions accept signals as `numpy.typing.ArrayLike` and convert them once, in the input check (§8.5). They never modify an array they receive, and return new arrays.
+**Types.** `FloatArray = numpy.typing.NDArray[numpy.float64]` (signals in mV, one dimension) and `IndexArray = numpy.typing.NDArray[numpy.int64]` (sample indices, strictly increasing unless stated), both defined in the private module `sinus_dsp._types`. Public functions accept signals as `numpy.typing.ArrayLike` and convert them once, in the input check (§8.5). They never modify an array they receive, and return new arrays.
+
+**Argument defaults.** An argument default is never a call (the linter rule B008 rejects it, because the call is evaluated once, when the function is defined). A default that is an instance of a frozen dataclass is a module-level `Final` constant, named in the interface and shared by every function that uses it; sharing it is safe because the instance cannot change. The default evaluation settings are `DEFAULT_SETTINGS` of `evaluation.run` (§8.10), also used by `evaluation.subset` (§8.11). Defaults that are constants (`MITDB`, `SUBSET_RECORDS`) or functions (`detect_beats`, `load_record`, `fetch_https`) follow the same rule.
 
 **Times in samples.** Parameters are stated in seconds or Hz and converted to samples at configuration, from the sampling frequency `fs_hz`:
 - `round_samples(t_s, fs_hz) = floor(t_s · fs_hz + 0.5)`: round half up, the rule of the WFDB function `strtim`. Used unless stated otherwise.
@@ -457,6 +489,8 @@ This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requi
 - maxima with `numpy.max` and `numpy.argmax` (exact; `argmax` returns the first index of the maximum, which is the tie rule everywhere in this section);
 - no iteration over unordered collections (`set`, `dict` built from them) where the order reaches an output; record and file lists are sorted.
 
+**Writing files.** Every file that the package writes (downloaded files and checksum lists, §8.3; reports, §8.10 and §8.11; golden vectors, §8.12) is written by `write_atomically(path: Path, content: bytes) -> None` of the private module `sinus_dsp._files`. It creates the folder of `path` and its parents if needed, writes `content` to `<name>.part~` in that folder (`PART_SUFFIX: Final = ".part~"`, in the same module), then replaces `<name>` with it (`os.replace`). A file under its final name is therefore always complete; a `.part~` file left by an interrupted run is overwritten by the next write of that file. Errors of the file system propagate (`OSError`). This one helper replaces the identical private copies of `data.physionet` and `evaluation.run`, the second of which `evaluation.subset` imported (v0.2.10).
+
 **Requirement citations.** Each public function cites in its docstring the requirement IDs it implements, and only those. Citing an ID claims the requirement as implemented, so CI fails until the verifying test tagged with that ID exists on the same branch (ADR 0004 §6). Developer and QA changes for a requirement therefore land together (§8.13).
 
 **Errors** (`sinus_dsp.errors`). Every error that the software raises on purpose derives from `SinusError`. There is one class per error behaviour:
@@ -464,11 +498,13 @@ This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requi
 | Class | Bases | Raised when | Attributes | Requirements |
 |---|---|---|---|---|
 | `SinusError` | `Exception` | Never raised directly; lets a caller catch every Sinus error | — | — |
-| `InvalidInputError` | `SinusError`, `ValueError` | An input or argument is rejected: the checks of §8.5, a mains frequency other than 50 or 60 Hz, a channel that the record does not have, signal units other than mV, an invalid record name | — | SRS-003; also SRS-002, SRS-005 |
-| `DataVerificationError` | `SinusError` | A database, or the requested records of it, is not verified: a listed file is missing or its SHA-256 differs, or the checksum list itself is missing or differs from its pinned digest (§8.3). Also raised, before anything is written, by every command that needs verified data (§8.10 to §8.12) | `database: str` (e.g. `mitdb 1.0.0`); `missing: tuple[str, ...]` and `mismatched: tuple[str, ...]`, relative paths sorted in code-point order | SRS-001, SRS-012, SRS-013, SRS-014, SRS-016 |
-| `MalformedFileError` | `SinusError`, `ValueError` | A file does not follow its format: a golden-vector file that a reader rejects (§7.3), a checksum list (§8.3), an annotation file whose sample indices decrease (§8.4), a stored subset report that is not UTF-8 text (§8.11) | `path: str`; `line: int | None` (1-based); `reason: str` | SRS-015; also SRS-001, SRS-002, SRS-016 |
-| `SubsetReportMismatchError` | `SinusError` | The regenerated subset report differs from the stored one (§8.11) | `differences: tuple[str, ...]`, one entry per differing line | SRS-016 |
-| `NonFiniteOutputError` | `SinusError` | The golden-vector export finds a value that is not finite (§7.3). With finite input and the stable filters of §8.6 this cannot happen; the check guards the file format | `input_id: str` | SRS-015 |
+| `InvalidInputError` | `SinusError`, `ValueError` | An input or argument is rejected: the checks of §8.5, a mains frequency other than 50 or 60 Hz, a channel that the record does not have, signal units other than mV, an invalid record name or an empty record selection (§8.3), annotation, reference or detection samples out of order and a negative match window or start sample (§8.8), invalid counts or duplicate record names (§8.9); in the evaluation (§8.10): record names to evaluate given as a `str`, invalid or given twice, a record loaded with a channel other than that of the settings, a negative or non-integer count or a target outside 0 to 10000 in `meets_target`, evaluations of the MIT-BIH Arrhythmia Database that do not hold records 118 and 119 exactly once for the noise stress comparison, a name that is not a noise stress record name, results of the wrong kind given to a report renderer; in the golden-vector export (§8.12): no record selection (`records=None`), a sampling frequency, heart rate or variant that the synthetic generator does not list, an input identifier, source or parameters or reference beats that `golden_vector` rejects, a golden vector that `render_golden_vector` cannot write as a valid file, a record shorter than its 60 s segment | — | SRS-003; also SRS-002, SRS-005 |
+| `DataVerificationError` | `SinusError` | A database, or the requested records of it, is not verified: a listed file is missing or its SHA-256 differs, or the checksum list itself is missing or differs from its pinned digest (§8.3). Also raised, before anything is written, by the commands that need verified data (§8.10, §8.11). The golden-vector export does not raise it: it skips the record segments and states the reason (§8.12) | `database: str` (e.g. `mitdb 1.0.0`); `missing: tuple[str, ...]` and `mismatched: tuple[str, ...]`, relative paths sorted in code-point order | SRS-001, SRS-012, SRS-013, SRS-014, SRS-016 |
+| `MalformedFileError` | `SinusError`, `ValueError` | A file does not follow its format: a golden-vector file that a reader rejects, including one that is not UTF-8 text (§7.3, §8.12), a checksum list (§8.3), an annotation file whose sample indices decrease (§8.4), a record list `RECORDS` that is not UTF-8 text, names an invalid record or a record twice, or names none (§8.10), a stored subset report that differs from the regenerated one and is not UTF-8 text (§8.11) | `path: str`; `line: int | None` (1-based); `reason: str` | SRS-015; also SRS-001, SRS-002, SRS-016 |
+| `SubsetReportMismatchError` | `SinusError` | The regenerated subset report differs from the stored one (§8.11) | `differences: tuple[str, ...]`: one entry per differing line, at most 20, then the entry `… and <k> more`; or the single entry `no stored report: <path>` (formats in §8.11) | SRS-016 |
+| `NonFiniteOutputError` | `SinusError` | The golden-vector export finds a value that is not finite (§7.3). With the inputs of §7.2 this cannot happen; with a finite input of extreme amplitude the filters can overflow (OP-063), and the check keeps such values out of the file format | `input_id: str` | SRS-015 |
+
+The checks of §8.8, §8.9, §8.10 and §8.12 named in the table that no requirement states are design behaviours: they guard the preconditions of internal functions, whose inputs come from verified functions, and the developer's unit tests verify them.
 
 The message of every error is deterministic and names what failed. `DataVerificationError` formats as `<database> not verified: missing: <a>, <b>; checksum mismatch: <c>` (a part is omitted when empty). Errors raised by the standard library or by SOUP for conditions that the software does not check itself (for example `OSError` when a file cannot be read, or an error of `wfdb` on a corrupted header) propagate unchanged.
 
@@ -487,6 +523,8 @@ The message of every error is deterministic and names what failed. `DataVerifica
 
 If PhysioNet ever serves a different list for these versions, download and verification fail with an error naming `SHA256SUMS.txt`, and the pin is updated only after the change has been reviewed.
 
+**Licence.** Each `Database` also carries the licence under which PhysioNet publishes that version, which the reports state (SRS-012, SRS-014; §8.15). Both versions are published under the same licence, the constant `ODC_BY_1_0`: name `Open Data Commons Attribution License v1.0`, address `https://opendatacommons.org/licenses/by/1-0/` (checked on 2026-10-05, §8.15). The licence is part of the definition of the database version, like its pinned checksum list, and is reviewed in the same way if PhysioNet ever states another one.
+
 **Interface.**
 
 ```python
@@ -494,22 +532,35 @@ PHYSIONET_FILES_URL: Final = "https://physionet.org/files"
 CHECKSUM_LIST_NAME: Final = "SHA256SUMS.txt"
 
 @dataclass(frozen=True)
+class DatabaseLicence:
+    name: str                    # e.g. "Open Data Commons Attribution License v1.0"
+    url: str                     # address of the text of the licence
+
+ODC_BY_1_0: Final = DatabaseLicence(
+    name="Open Data Commons Attribution License v1.0",
+    url="https://opendatacommons.org/licenses/by/1-0/",
+)
+
+@dataclass(frozen=True)
 class Database:
     slug: str                    # folder name on PhysioNet and under data/, e.g. "mitdb"
     version: str                 # e.g. "1.0.0"
     title: str                   # e.g. "MIT-BIH Arrhythmia Database"
     checksum_list_sha256: str    # pinned digest of SHA256SUMS.txt, 64 lowercase hex digits
+    licence: DatabaseLicence     # licence under which PhysioNet publishes this version (§8.15)
 
-MITDB: Final[Database]
-NSTDB: Final[Database]
+MITDB: Final[Database]           # licence=ODC_BY_1_0
+NSTDB: Final[Database]           # licence=ODC_BY_1_0
 
 FetchFunction = Callable[[str], bytes]   # URL -> file content; raises OSError on failure
 
 @dataclass(frozen=True)
 class VerificationResult:
     database: Database
-    records: tuple[str, ...] | None      # None: the whole database was verified
-    files: tuple[str, ...]               # relative paths verified, sorted
+    records: tuple[str, ...] | None      # None: the whole database was verified; otherwise the
+                                         # record names, sorted in code-point order, each once
+    files: tuple[str, ...]               # relative paths verified, sorted in code-point order,
+                                         # each once; never empty
 
 def fetch_https(url: str) -> bytes: ...
 def database_url(database: Database) -> str: ...          # ".../files/<slug>/<version>/"
@@ -526,9 +577,14 @@ def describe_verification(result: VerificationResult) -> str: ...
 `data_root` is the data folder (default for scripts: `data/` at the repository root); the database lives in `data_root / database.slug`, e.g. `data/mitdb/`.
 
 **Behaviour.**
-- `fetch_https` accepts only URLs that start with `https://` (otherwise `ValueError`), opens them with `urllib.request.urlopen` and a timeout of 60 s, and returns the whole body. It raises `OSError` (including `urllib.error.URLError` and `HTTPError`) for any failure or a status other than 200. No retries: re-running the command resumes, because verified files are skipped.
+- `fetch_https` accepts only URLs that start with `https://` (otherwise `ValueError`), opens them with `urllib.request.urlopen` and a timeout of 60 s, and returns the whole body. It raises `OSError` (including `urllib.error.URLError` and `HTTPError`) for any failure or a status other than 200. No retries: re-running the command resumes, because verified files are skipped. Redirects are followed, as `urlopen` does; what the design guarantees in that case is stated under "Transport and redirects" below.
 - `parse_checksum_list` reads one entry per non-empty line, matching `^([0-9a-fA-F]{64}) [ *]?(\S+)$` (the `sha256sum` formats); digests are stored in lowercase. Each path must be relative, with `/` separators, and each component must match `[A-Za-z0-9._+-]+` and differ from `.` and `..`. A line that does not match, an unsafe path, a duplicate path or an empty list raise `MalformedFileError` naming `source` and the line. This keeps a listed name from writing outside the database folder.
-- `select_files` returns every listed path when `records` is `None`. Otherwise it returns, for each record name (which must match `[A-Za-z0-9_]+`, else `InvalidInputError`), the listed top-level files named `<record>.<extension>` (e.g. `100.atr`, `100.dat`, `100.hea`, `100.xws`); a record with no such file is reported as missing under the name `<record>.*`.
+- `select_files` returns every listed path when `records` is `None`. Otherwise:
+  - `records` is a sequence of at least one record name, each a `str` that matches `[A-Za-z0-9_]+` in full. A `str` given in place of the sequence, an empty sequence and an invalid name each raise `InvalidInputError`. A name given several times counts once.
+  - For each record, the selection holds every listed top-level path (one without `/`) that starts with `<record>.` and continues with at least one more character, whatever that extension is: `100.atr`, `100.dat`, `100.hea` and `100.xws` for record 100, and also `108.at_` for record 108. The rule selects every file that the database publishes under the name of the record, which is what SRS-016 asks to verify ("each of their files"); it does not list extensions, so it holds for any database.
+  - A record with no such file is reported as missing under the name `<record>.*`, which no listed path can equal (`*` is not allowed in a listed path).
+  - The result is sorted in code-point order and holds each path once. It is never empty: the list has at least one entry, and every record contributes at least one path or its placeholder.
+- **The record selection is validated first.** `verify_database` and `download_database` apply the rules above to `records` before anything else: before the database folder is created, and before the checksum list is read or fetched. An invalid selection therefore raises `InvalidInputError` whatever the state of the data folder and of the network, and neither creates nor changes any file. An empty selection is rejected rather than verified, because "verified: 0 files" would report as verified a database of which nothing was checked.
 - `verify_database` never uses the network:
   1. It reads `data_root/<slug>/SHA256SUMS.txt`. If it is absent, `DataVerificationError` with `missing=("SHA256SUMS.txt",)`. If its SHA-256 differs from `checksum_list_sha256`, `DataVerificationError` with `mismatched=("SHA256SUMS.txt",)`.
   2. It parses the list and selects the files.
@@ -536,15 +592,24 @@ def describe_verification(result: VerificationResult) -> str: ...
   4. If anything is missing or mismatched, it raises `DataVerificationError` naming every such file (both lists complete and sorted). Otherwise it returns the `VerificationResult`.
 - `download_database` creates the database folder, then:
   1. Uses the local `SHA256SUMS.txt` if its digest equals the pin; otherwise fetches it from `database_url(...)`. A failed fetch raises `DataVerificationError` naming the list as missing; a fetched list whose digest differs from the pin raises it naming the list as mismatched, and the fetched list is not written.
-  2. For each selected file, skips it if the local copy already has the listed digest; otherwise fetches it and writes it atomically (write to `<name>.part` in the same folder, then `os.replace`), creating subfolders as needed. A failed fetch (`OSError`) is not raised here: the file stays absent or outdated, and the final verification names it.
+  2. For each selected file, skips it if the local copy already has the listed digest; otherwise fetches it and writes it atomically (`write_atomically`, §8.2: write to `<name>.part~` in the same folder, then `os.replace`), creating subfolders as needed. The checksum list of step 1 is written the same way. The suffix contains `~`, which no listed path can contain (`parse_checksum_list`), so a temporary file never has the name of a listed file, and two listed files never share a temporary file. A failed fetch (`OSError`) is not raised here: the file stays absent or outdated, and the final verification names it. The fetched content is written whatever its SHA-256: if it differs from the listed one, the final verification names the file as mismatched, and the next run fetches it again.
   3. Returns `verify_database(database, data_root, records=records)`, which raises if any file is still missing or mismatched. The outcome is therefore always decided by the local verification, never by the download.
   - A `<record>.*` placeholder from `select_files` is never fetched; the verification reports it as missing.
-- `describe_verification` returns the text written in reports: `verified: <n> files match the published SHA-256 checksum list (SHA256SUMS.txt, SHA-256 <digest>)`, followed for a subset by `; records <r1>, <r2>, …`.
-- `scripts/download_data.py [--data-dir PATH] [--database mitdb|nstdb|all] [--records NAME ...]` calls `download_database` for each database (default: both, whole). It prints the outcome of each and exits with status 0 if all are verified, 1 on `DataVerificationError` or `MalformedFileError` (message on standard error), 2 on a usage error.
+- `describe_verification` returns the text written in reports: `verified: <n> files match the published SHA-256 checksum list (SHA256SUMS.txt, SHA-256 <digest>)`, followed for a subset by `; records <r1>, <r2>, …` (the names of `VerificationResult.records`, in their sorted order). `<n>` is the number of files verified, at least 1; it comes from the checksum list and is not a constant of the code.
+- `scripts/download_data.py [--data-dir PATH] [--database mitdb|nstdb|all] [--records NAME ...]` calls `download_database` for each database (default: both, whole). `--records` takes at least one name and needs a single database; an invalid name, or the option without a name, is a usage error. The script prints the outcome of each database and exits with status 0 if all are verified, 1 on `DataVerificationError` or `MalformedFileError` (message on standard error), 2 on a usage error.
 
-**Edge cases.** Stale `.part` files from an interrupted run are overwritten. A file present on disk but not listed is ignored (neither verified nor reported). Names are compared exactly; a case-insensitive file system cannot create a mismatch because PhysioNet names differ by more than case.
+**Transport and redirects.** The integrity of the data does not depend on how it was transported:
+- `fetch_https` requests an `https://` URL under `https://physionet.org/files/`. `urllib` follows the redirects that the server answers with (at most 10, to `http`, `https` or `ftp` URLs), so the body may come from another URL, another host, or a connection that is not HTTPS. The design gives no guarantee on the transport beyond that first request, and needs none.
+- The checksum list is accepted only if its SHA-256 equals the digest pinned in the code. A fetched list with another digest is not written.
+- A database, or a selection of its records, is reported as verified only by `verify_database`, which reads the local files and compares each with the SHA-256 that the accepted list gives for it. Every command that uses the data verifies it first (§8.10 to §8.12).
+- A body that differs from the published file, whatever its origin (an altered response, a redirect to another server, a damaged cache), therefore ends as a checksum mismatch naming the file, never as verified data. It is written only under the listed path of that file, inside the database folder.
+- Refusing redirects, or restricting them to `https://` URLs, was considered and not adopted: it would add no integrity, because no content is accepted without its digest, and it would make the download depend on how PhysioNet serves its files.
 
-**Verification notes.** QA's tests need no network (SRS-001, SRS-013): they write a fixture folder with a few files and their `SHA256SUMS.txt`, build a `Database` whose `checksum_list_sha256` is the digest of that fixture list, and call `verify_database`; `download_database` can be exercised with a fake `FetchFunction` that serves the fixture bytes from a dictionary and raises `OSError` for anything else. The error names both the altered and the missing file in its message and in `mismatched` and `missing`.
+The corresponding security control is SC-5 of `cybersecurity.md`.
+
+**Edge cases.** Stale `.part~` files from an interrupted run are overwritten. A file present on disk but not listed is ignored (neither verified nor reported); this includes a file named `<name>.part` left by a version of the software that used that suffix. Names are compared exactly; a case-insensitive file system cannot create a mismatch because PhysioNet names differ by more than case.
+
+**Verification notes.** QA's tests need no network (SRS-001, SRS-013): they write a fixture folder with a few files and their `SHA256SUMS.txt`, build a `Database` whose `checksum_list_sha256` is the digest of that fixture list, and call `verify_database`; `download_database` can be exercised with a fake `FetchFunction` that serves the fixture bytes from a dictionary and raises `OSError` for anything else. The error names both the altered and the missing file in its message and in `mismatched` and `missing`. The rejection of an invalid or empty record selection is a design behaviour, checked by the developer's unit tests: with a data folder that does not exist and a fetch function that fails the test when called, `download_database` raises `InvalidInputError` and the data folder still does not exist.
 
 ### 8.4 Loading a reference record (SRS-002)
 
@@ -585,7 +650,13 @@ def load_record(record_path: Path, channel: int = 0, annotator: str = "atr") -> 
 - Annotations are read with `wfdb.rdann(str(record_path), annotator)` (attributes `sample`, `symbol`, `subtype`, `aux_note`). If the sample indices decrease anywhere, `MalformedFileError`. An annotation whose symbol is in `BEAT_SYMBOLS` goes to `beat_samples` and `beat_symbols`; every other annotation goes to `other_annotations`, in file order. The two lists together hold every annotation exactly once.
 - `BEAT_SYMBOLS` are the 19 beat codes of SRS-002. They are the codes for which the WFDB library function `isqrs()` is true, except `!` (ventricular flutter wave), which `isqrs()` also counts; `!` stays a non-beat annotation, and §8.8 explains why the scoring result is the same.
 
-**Edge cases.** An annotation file with no beat annotation gives empty beat arrays (`numpy.int64`, length 0). An annotation beyond the end of the signal is kept as it is. The channel number is not the signal name: the first stored signal is channel 0 (MLII in 46 records of the MIT-BIH Arrhythmia Database, a modified V5 in records 102 and 104).
+**Edge cases.**
+- An annotation file with no beat annotation gives empty beat arrays (`numpy.int64`, length 0). An annotation beyond the end of the signal is kept as it is.
+- The channel number is not the signal name: the first stored signal is channel 0. In the MIT-BIH Arrhythmia Database it is MLII in 45 records and a modified V5 in records 102, 104 and 114 (in record 114 the two signals are stored in the reverse of the usual order; checked on the headers).
+- **Units as wfdb reads them.** The units check compares the units that wfdb returns for the channel with `mV`, exactly.
+  - A header that gives no units reads as `mV`, the default of the WFDB header format; the headers of the MIT-BIH Arrhythmia and Noise Stress Test databases give none, so their records load.
+  - wfdb (4.3.1) reads a local header as ASCII text and drops every other character (`rdheader` opens it with `encoding="ascii", errors="ignore"`): units written `µV` read as `V`. Such a record is still rejected, but the error names `V`. Units that would read as `mV` only after the drop would be accepted. WFDB headers are ASCII text, and no header of the two databases contains a byte outside ASCII (checked on the 63 headers).
+  - Input to OP-050: a C++ reader of WFDB headers keeps the units as written, so that its error names `µV` as such.
 
 **Verification notes.** QA writes a synthetic record with `wfdb.wrsamp` (units `mV`, format 16 or 212) and an annotation file with `wfdb.wrann` (several beat codes, plus a `+` rhythm change with an aux note and a `~` signal-quality mark with a subtype). The loaded signal equals the written one within one quantization step (`1 / adc_gain` mV); beat and non-beat lists are as described above.
 
@@ -677,7 +748,7 @@ SOS rows are `[b0, b1, b2, 1.0, a1, a2]` (a0 = 1), the layout of `scipy.signal.s
 - Notch at the mains frequency: −6.6 dB (50 Hz) and −7.9 dB (60 Hz) over ten periods (0.2 s), because the notch has not settled; −30.0 and −35.3 dB over 1 s; −55.7 and −65.6 dB over 2 s; −104 and −123 dB over 4 s. Band frequencies stay within ±0.07 dB at any duration of ten periods or more.
 - A notch that settles within ten periods of 50 Hz would need Q ≤ 4.5, which fails the 40 Hz criterion. The design therefore keeps Q = 30, and **the verification inputs of SRS-004 and SRS-005 last at least ten periods and at least 2 s**. This is within the SRS wording ("at least ten periods").
 
-**Edge cases.** A constant input gives exactly 0.0 from the baseline filter and an unchanged value from the notch (whose gain at DC is 1). The functions are linear and time-invariant from the defined initial state, so the output for a given input never depends on earlier calls.
+**Edge cases.** A constant input gives exactly 0.0 from the baseline filter. The notch, whose gain at DC is 1, returns a constant input within rounding, not bit for bit: the designed DC gain `(b0 + b1 + b2) / (1 + a1 + a2)` and the recursion each round, so the output may differ from the input by a relative amount of the order of 10⁻¹⁵ (at most 7 · 10⁻¹⁵ over 60 s in the cases computed: 125, 250, 360, 500 and 1000 Hz, both mains settings, constants from 0.001 mV to 123 mV; exactly equal in most of them). A test of this property compares with a tolerance (a relative 10⁻¹², for example), never with equality (OP-057). The functions are linear and time-invariant from the defined initial state, so the output for a given input never depends on earlier calls.
 
 **Verification notes.** QA measures as above, with inputs of at least 2 s and ten periods. The test of the baseline filter at the offset may see an output of exactly zero; the attenuation is then infinite, and the test should compare the RMS against 1 mV × 10^(−20/20) rather than compute a logarithm of zero.
 
@@ -847,8 +918,9 @@ A single delay constant cannot be exact for every QRS shape, because the band-pa
 - An input shorter than L cannot occur (SRS-003 requires 10 s).
 - A QRS within the first N + 1 samples gets its fiducial from a clipped window; `f` is never negative.
 - The per-sample loop costs a few operations per sample in Python (under a second per 30-minute record). A faster implementation, for example one that jumps between samples where nothing can happen, is allowed only with a unit test showing identical output to the per-sample procedure on the synthetic set and on noise.
+- **Short RR intervals (known limitation).** The refractory period is measured between the integrated peaks `m` and between the fiducial points `f` of consecutive peaks. Neither marks the QRS position exactly: the integrated peak can sit anywhere on the flat top of the integrated pulse, and the fiducial point can move by D samples between two band-pass lobes of similar size. A QRS that follows the previous one by less than about 250 ms can therefore be ignored by step 1 of the classification, and an ignored peak is lost (no level change, no search-back candidate). On the synthetic ECG of §7.2, every QRS is detected exactly once from 20 bpm to 238 bpm at 360 Hz and to 240 bpm at 250 Hz, without and with the interference of SRS-010; above, beats are missed (the second beat of the input from 239 bpm at 360 Hz and 241 bpm at 250 Hz, and more between about 256 and 284 bpm). SRS-006 is bounded to 30–200 bpm accordingly (OP-055, closed). A refractory test on the fiducial point only was assessed with the Milestone 1 validation results and is not adopted; the two-lobe fiducial and the age of the search-back candidate are assessed in Milestone 2 (OP-056).
 
-**Verification notes.** SRS-006 and SRS-010 (QA): call `detect_beats` on synthetic ECGs, with the mains setting of the added interference (any setting for clean signals). Within 150 ms means `|index − r_k| ≤ floor(0.150 · fs_hz)` samples (54 at 360 Hz, 37 at 250 Hz). Each true QRS must have exactly one index within that distance, and there must be no other index. The indices must be strictly increasing, with a spacing of at least `ceil(0.200 · fs_hz)` samples. A flat 10 s input returns an empty array. QA may use its own generator of synthetic ECGs; the generator of §7.2 (`sinus_dsp.synthetic`) is verified under SRS-015.
+**Verification notes.** SRS-006 and SRS-010 (QA): call `detect_beats` on synthetic ECGs with heart rates within 30–200 bpm, with the mains setting of the added interference (any setting for clean signals). Within 150 ms means `|index − r_k| ≤ floor(0.150 · fs_hz)` samples (54 at 360 Hz, 37 at 250 Hz). Each true QRS must have exactly one index within that distance, and there must be no other index. The indices must be strictly increasing, with a spacing of at least `ceil(0.200 · fs_hz)` samples. A flat 10 s input returns an empty array. QA may use its own generator of synthetic ECGs; the generator of §7.2 (`sinus_dsp.synthetic`) is verified under SRS-015.
 
 ### 8.8 EC57 beat-by-beat matching (SRS-008)
 
@@ -860,7 +932,7 @@ A single delay constant cannot be exact for every QRS shape, because the band-pa
 - **Pairing** is sequential and closest-first, with a one-step look-ahead (§8.8.2). It is not a maximum matching: in rare configurations it pairs fewer beats than the largest possible number.
 - **Ventricular flutter and fibrillation.** `bxb` discards every reference annotation from a `[` (VFON) annotation to the next `]` (VFOFF) annotation, and a test annotation that falls in such an episode and is not paired gets the pseudo-label `*`, which is not counted.
 - **Shutdown.** A `~` (NOISE) annotation whose subtype has bits `0x30` set marks the start of a reference shutdown (no signal readable). A detection in it that is not paired is labelled `X` instead of `O`, but the QRS statistics of `bxb` count both as false positives (`QFP = On + … + Oq + Xn + … + Xq`). Reference beats missed during a shutdown of the *test* annotator count as false negatives (`QFN` includes the `x` column); the Sinus detector never declares a shutdown. Shutdown therefore changes no QRS count, and Sinus does not need to process it, although such annotations occur in the database (records 105 and 203, for example).
-- **Beat codes.** `bxb` reads as beats the codes for which `isqrs()` is true: the 19 codes of `BEAT_SYMBOLS` (§8.4) and `!` (ventricular flutter wave). It maps `!` to the non-beat label `O`: a detection paired with a `!` counts as a false positive and an unpaired `!` counts nothing. In record 207 of the MIT-BIH Arrhythmia Database (six VF episodes), every flutter wave lies within a VF episode (checked on the record), where both `bxb` and Sinus discard it. Sinus leaves `!` out of the reference beats; the counts differ from `bxb` only if a `!` outside a VF episode competes with a real beat for the same detection. The evaluation counts such `!` annotations and the report shows the count (§8.10), so that any case is visible.
+- **Beat codes.** `bxb` reads as beats the codes for which `isqrs()` is true: the 19 codes of `BEAT_SYMBOLS` (§8.4) and `!` (ventricular flutter wave). It maps `!` to the non-beat label `O`: a detection paired with a `!` counts as a false positive and an unpaired `!` counts nothing. In record 207 of the MIT-BIH Arrhythmia Database (six VF episodes), every flutter wave lies within a VF episode (checked on the record), where both `bxb` and Sinus discard it. Sinus leaves `!` out of the reference beats; the counts differ from `bxb` only if a `!` outside a VF episode, in the scored part of the record (§8.8.1), competes with a real beat for the same detection. `bxb` skips the reference annotations before the start and stops at the end of the record, so a `!` elsewhere changes nothing. The evaluation counts the `!` annotations in the scored part outside every VF episode, and the report shows the count (§8.10), so that any case is visible.
 - **Statistics.** QRS sensitivity and positive predictivity count every paired beat as a true positive, whatever its class (`QTP` sums the N, S, V, F and Q rows and columns).
 - **Wfdb-python.** `wfdb.processing.compare_annotations` (class `Comparitor`) does not reproduce `bxb`: it pairs from the reference side with a strict `<` window, and has no learning period and no VF exclusion. It is not used.
 
@@ -873,7 +945,7 @@ LEARNING_PERIOD_S: Final = 300
 @dataclass(frozen=True)
 class Episode:
     start_sample: int      # sample of the "[" annotation
-    end_sample: int        # sample of the matching "]", inclusive
+    end_sample: int        # sample of the matching "]", inclusive; never before start_sample
 
 @dataclass(frozen=True)
 class MatchResult:
@@ -883,8 +955,10 @@ class MatchResult:
     matched: tuple[tuple[int, int], ...]     # (reference sample, detection sample), in time order
     false_negatives: tuple[int, ...]         # reference samples
     false_positives: tuple[int, ...]         # detection samples
-    reference_excluded: int                  # reference beats inside VF episodes, never scored
-    detections_excluded: int                 # unpaired detections inside VF episodes, not counted
+    reference_excluded: int                  # reference beats at or after start_sample inside VF
+                                             # episodes (§8.8.3)
+    detections_excluded: int                 # detections at or after start_sample inside VF
+                                             # episodes, not paired (§8.8.3)
 
 def match_window_samples(fs_hz: float) -> int: ...      # floor(150 · fs_hz / 1000)
 def learning_period_samples(fs_hz: float) -> int: ...   # ceil(300 · fs_hz)
@@ -898,13 +972,17 @@ def match_beats(reference_samples: npt.ArrayLike, detection_samples: npt.ArrayLi
 
 - `window_samples = floor(150 · fs_hz / 1000)`: 54 at 360 Hz. "At most 150 ms" (SRS-008) is inclusive, as `bxb`'s `<=`: a detection 54 samples from a reference beat can match, one 55 samples away cannot. `bxb` rounds half up (`strtim`), which gives the same 54 at 360 Hz, the rate of both databases; at rates where `0.15 · fs_hz` has a fraction of one half or more (e.g. 38 samples at 250 Hz, 152 ms), `bxb` would exceed 150 ms, and Sinus keeps the SRS bound.
 - `start_sample = ceil(300 · fs_hz)`: 108000 at 360 Hz. A reference beat at `start_sample` (5:00) is scored; one at `start_sample − 1` is not.
-- `vf_episodes` scans the non-beat annotations in file order. A `[` opens an episode; the next `]` closes it, and the episode covers both samples, inclusive. A `[` while an episode is open and a `]` while none is open are ignored (as `bxb`, which reads and ignores everything up to the next `]`). An episode still open at the end ends at `n_samples − 1`.
+- `vf_episodes` scans the non-beat annotations in file order. Their samples must not decrease (`load_record` guarantees it, §8.4); a sample lower than the previous one raises `InvalidInputError`.
+  - A `[` opens an episode; the next `]` closes it, and the episode covers both samples, inclusive. A `[` while an episode is open and a `]` while none is open are ignored (as `bxb`, which reads and ignores everything up to the next `]`).
+  - An episode still open at the end ends at the last sample of the record: `end_sample = max(start_sample, n_samples − 1)`. The maximum covers a `[` annotated at or beyond `n_samples` (an annotation beyond the end of the signal is kept as it is, §8.4): that episode is the single sample of its `[`, outside the record, and excludes nothing inside the record.
+  - Every episode returned therefore has `start_sample ≤ end_sample`. The episodes are in the order of their onsets, and each starts at or after the end of the previous one (at the same sample only if a `[` follows a `]` at that sample).
+- **Scored part of a record.** The samples from `start_sample` to `n_samples − 1`. It is empty for a record of 5 min or less. The figures on what is not scored (§8.8.3, §8.10) refer to it.
 
 #### 8.8.2 Pairing
 
 Inputs: the reference beat samples (non-decreasing) and the detection samples (strictly increasing); either order violation raises `InvalidInputError`, as do a negative `window_samples` or `start_sample`.
 
-1. **Scored reference sequence.** Remove the reference beats that lie inside any VF episode (`start_sample ≤ s ≤ end_sample`) and count them in `reference_excluded`. Append the sentinel `HUGE = 2**62` to the remaining list R and to the detection list D.
+1. **Scored reference sequence.** Remove the reference beats that lie inside any VF episode (`start_sample ≤ s ≤ end_sample` of the episode). `reference_excluded` is the number of removed beats that lie at or after the `start_sample` of the matching; the removed beats before it are in no count (§8.8.3). Append the sentinel `HUGE = 2**62` to the remaining list R and to the detection list D.
 2. **Cursors.** `T` is the current and `T2` the next element of R; `t` the current and `t2` the next element of D. Advancing the reference moves `T ← T2` and `T2` to the following element (`HUGE` when exhausted); likewise for detections.
 3. **Start.** Set `T` to the first element of R with `T ≥ start_sample`. Set `t2` to the first element of D with `t2 ≥ start_sample`, and `t` to the element before it (if D has no element before `start_sample`, `t` does not exist).
    - If `t` exists, `T − t ≤ window_samples` and `T − t < |T − t2|`: pair `(T, t)`, then advance both. The last detection of the learning period is paired with the first scored beat only under this original `bxb` criterion, without the look-ahead alternative of step 4.
@@ -924,6 +1002,7 @@ The second condition of each pairing test is the look-ahead that `bxb` added in 
 - `bxb` stops at the end of the record; Sinus stops when both lists are exhausted. They agree because annotations and detections lie within the record.
 - `bxb` remembers only the two most recent VF episodes of each file when labelling a detection. Sinus checks every episode. They differ only if three VF episodes fall between two consecutive scored reference beats.
 - With no detection before the start, `bxb` compares the first scored beat with a placeholder at time 0; Sinus skips that comparison. They agree whenever `start_sample > window_samples`, which the 5-minute learning period guarantees.
+- An episode without a `]`: `bxb` discards every later reference annotation, as Sinus does. It leaves the later unpaired detections uncounted only when the record has no earlier episode; after an earlier, closed episode it still holds the end of that one, and counts them as false positives. Sinus does not count them in either case, as SRS-008 states (the episode lasts until the end of the record). In the MIT-BIH Arrhythmia Database only record 207 has `[` annotations, and each has its `]`; the 12 noise stress records have none (checked on the annotation files).
 - `!` annotations outside VF episodes, and the match window at rates where `0.15 · fs_hz` has a fraction of one half or more: see §8.8 and §8.8.1.
 
 **Verification notes** (the SRS-008 cases, at 360 Hz with `window_samples = 54` and `start_sample = 108000`; each case assumes no other detection or reference beat within 108 samples, otherwise the look-ahead of step 4 also applies):
@@ -933,6 +1012,32 @@ The second condition of each pairing test is the look-ahead that `bxb` added in 
 - A reference beat at 107999 is not scored and one at 108000 is scored. The last detection before 108000 is paired with the first scored beat only under the criterion of step 3.
 - An empty detection list gives every scored reference beat as a false negative. An empty reference list gives every detection at or after 108000 as a false positive, except that the first detection within 54 samples after 108000 is dropped by step 3 (as `bxb` does).
 - Reference beats inside a VF episode are neither true positives nor false negatives. An unpaired detection inside it is not a false positive, but a detection inside it can still be paired with a scored beat outside it within the window.
+
+#### 8.8.3 What is not scored, and how it is counted
+
+`bxb` reports no count of what it leaves out: it discards the reference annotations of an episode while reading them, reads the annotations of the learning period without counting them, and gives an unpaired detection inside an episode a label that its tables do not count. The pairs, the false negatives and the false positives of §8.8.2 are those of `bxb`. The two counts below are defined by Sinus for the report (SRS-012, §8.10), so that they state exactly what the episode rule removes from the scored part of the record (§8.8.1). SRS-012 states them as requirements.
+
+An item is left out of the scoring for one of two reasons, and the learning period comes first:
+
+1. **Learning period.** None of the following is in a list or in a count of `MatchResult`, whether or not it lies inside a VF episode:
+   - every reference beat before `start_sample`;
+   - every detection before `start_sample`, except the one that step 3 pairs with the first scored reference beat, which is a match;
+   - the first detection at or after `start_sample`, when step 3 drops it (at most one per record, at most `window_samples` after `start_sample`).
+2. **VF episodes**, for the items that the learning period does not already leave out:
+   - `reference_excluded` is the number of reference beats at or after `start_sample` that lie inside an episode;
+   - `detections_excluded` is the number of detections at or after `start_sample` that lie inside an episode and are not paired, the detection dropped by step 3 not included. These are the detections for which step 4 finds no pair while they lie inside an episode.
+
+   A detection inside an episode that is paired with a scored reference beat outside it is a match, and is in neither count. A sample equal to the `start_sample` or to the `end_sample` of an episode is inside it, for reference beats and for detections.
+
+**Accounting.** Every reference beat and every detection is in exactly one class, so for any input:
+- `number of reference beats = (reference beats before start_sample) + reference_excluded + tp + fn`;
+- `number of detections = (detections left out by the learning period) + detections_excluded + tp + fp`, where the detections left out by the learning period are those before `start_sample`, minus one if step 3 makes its pair, plus one if step 3 drops the first detection at or after `start_sample`.
+
+**Verification notes** (at 360 Hz, `start_sample = 108000`):
+- An episode that ends before 108000, with reference beats and detections inside it: `reference_excluded = 0` and `detections_excluded = 0`.
+- An episode from 107000 to 109000, reference beats at 107500 and 108500, detections at 107500 and 108500, and nothing else: no pair, `reference_excluded = 1` and `detections_excluded = 1`.
+- An episode from 107000 to 109000, a first scored reference beat at 110000 and detections at 108020 and 110000: the detection at 108020 is dropped by step 3 and `detections_excluded = 0`.
+- The two accounting equalities hold in every case of §8.8.2.
 
 ### 8.9 Detection statistics (SRS-011)
 
@@ -1002,28 +1107,36 @@ class EvaluationSettings:
     channel: int = 0             # first stored signal (SRS-007)
     mains_hz: int = 60           # MIT-BIH was recorded on 60 Hz mains (SRS-007)
 
+DEFAULT_SETTINGS: Final = EvaluationSettings()   # the settings of SRS-007 (§8.2, argument defaults)
+
 @dataclass(frozen=True)
 class RecordEvaluation:
     record: str
     signal_name: str
     fs_hz: float
     counts: RecordCounts
-    vf_episodes: int
-    vf_samples: int                  # total length of the VF episodes, samples
-    reference_excluded: int
-    detections_excluded: int
-    flutter_waves_outside_vf: int    # "!" annotations outside every VF episode (§8.8)
+    vf_episodes: int                 # VF episodes annotated in the record (§8.8.1)
+    vf_episodes_scored: int          # of which with at least one sample in the scored part
+    vf_samples_scored: int           # samples of the scored part inside a VF episode
+    reference_excluded: int          # MatchResult.reference_excluded (§8.8.3)
+    detections_excluded: int         # MatchResult.detections_excluded (§8.8.3)
+    flutter_waves_outside_vf: int    # "!" annotations in the scored part outside every VF
+                                     # episode (§8.8)
 
 @dataclass(frozen=True)
 class ValidationResults:
-    software_version: str
+    software: SoftwareIdentity                  # §8.14
     settings: EvaluationSettings
     mitdb: VerificationResult
     records: tuple[RecordEvaluation, ...]       # sorted by record name
     noise_stress: NoiseStressResults | None     # None in the subset report
     subset: bool
 
+RECORD_LIST_NAME: Final = "RECORDS"            # the record list of a PhysioNet database
+
 def read_record_list(database_dir: Path) -> tuple[str, ...]: ...
+def episode_coverage(episodes: Sequence[Episode], first_sample: int,
+                     last_sample: int) -> tuple[int, int]: ...   # (episodes, samples) in the range
 def evaluate_record(record: Record, settings: EvaluationSettings,
                     detector: Detector = detect_beats) -> RecordEvaluation: ...
 def evaluate_records(database_dir: Path, records: Sequence[str], settings: EvaluationSettings, *,
@@ -1032,12 +1145,12 @@ def evaluate_records(database_dir: Path, records: Sequence[str], settings: Evalu
 def meets_target(tp: int, other: int,
                  target_hundredths: int = TARGET_HUNDREDTHS_OF_PERCENT) -> bool: ...
 def run_validation(data_root: Path, *, mitdb: Database = MITDB, nstdb: Database = NSTDB,
-                   settings: EvaluationSettings = EvaluationSettings(),
+                   settings: EvaluationSettings = DEFAULT_SETTINGS,
                    detector: Detector = detect_beats, loader: RecordLoader = load_record,
                    fetch: FetchFunction | None = fetch_https) -> ValidationResults: ...
 def write_validation_report(output_path: Path, data_root: Path, *, mitdb: Database = MITDB,
                             nstdb: Database = NSTDB,
-                            settings: EvaluationSettings = EvaluationSettings(),
+                            settings: EvaluationSettings = DEFAULT_SETTINGS,
                             detector: Detector = detect_beats, loader: RecordLoader = load_record,
                             fetch: FetchFunction | None = fetch_https) -> None: ...
 
@@ -1060,39 +1173,125 @@ class NoiseStressResults:
 
 def snr_db(record: str) -> int: ...             # "118e24" -> 24, "119e_6" -> -6
 def evaluate_noise_stress(nstdb_dir: Path, mitdb_records: Sequence[RecordEvaluation],
-                          settings: EvaluationSettings, *, detector: Detector,
-                          loader: RecordLoader) -> NoiseStressResults: ...
+                          settings: EvaluationSettings, *, nstdb: VerificationResult,
+                          detector: Detector, loader: RecordLoader) -> NoiseStressResults: ...
 
 # evaluation/report.py
 def render_full_report(results: ValidationResults) -> str: ...
 def render_subset_report(results: ValidationResults) -> str: ...
+def software_rows(software: SoftwareIdentity) -> tuple[str, str]: ...   # the table lines
+                                                # "| Software | … |" and "| Runtime | … |"
+def stale_software_rows(text: str, software: SoftwareIdentity) -> tuple[str, ...]: ...
 ```
 
 **Run.**
 1. `run_validation` verifies both databases first: with `fetch` given, `download_database` (which downloads what is missing and then verifies); with `fetch=None`, `verify_database` only (no network). Either raises `DataVerificationError` before any evaluation, so nothing is written when a verification fails (SRS-012, SRS-014).
-2. It reads the record list from the `RECORDS` file of the database (one name per line, blank lines ignored; 48 names for MIT-BIH) and evaluates each record: `load_record(path, settings.channel)`; `detector(record.signal_mv, record.fs_hz, settings.mains_hz)`; `vf_episodes(...)`; `match_beats(...)` with the parameters of §8.8.1 at the record's sampling frequency; the counts and the exclusion figures.
-3. It evaluates the 12 noise stress records the same way, with the reference annotations of each (`atr`), and aggregates per SNR from the summed counts of the two records at that SNR. The comparison values are the gross statistics of MIT-BIH Arrhythmia records 118 and 119 from step 2. `snr_db` reads the suffix after `e`: digits give a positive value, `_` followed by digits a negative one; any other name raises `InvalidInputError`.
-4. `write_validation_report` calls `run_validation` and `render_full_report`, then writes the text atomically (temporary file in the same folder, then `os.replace`), UTF-8 with line feeds. The report is written only after everything has succeeded.
+2. It reads the record list with `read_record_list(data_root / mitdb.slug)` (48 names for MIT-BIH) and evaluates the records with `evaluate_records`, in the sorted order of their names. Each record goes through `load_record(path, settings.channel)`; `detector(record.signal_mv, record.fs_hz, settings.mains_hz)`; `vf_episodes(...)`; `match_beats(...)` with the parameters of §8.8.1 at the record's sampling frequency; the counts and the exclusion figures.
+3. It calls `evaluate_noise_stress(data_root / nstdb.slug, <evaluations of step 2>, settings, nstdb=<verification result of nstdb from step 1>, detector=detector, loader=loader)`.
+   - `evaluate_noise_stress` first takes the counts of records 118 and 119 from the evaluations it is given, before it loads any record. Each must be there exactly once, otherwise it raises `InvalidInputError`.
+   - It then evaluates the 12 noise stress records with `evaluate_records`, in the order of `NOISE_STRESS_RECORDS`, with the reference annotations of each (`atr`). It aggregates per SNR from the summed counts of the two records at that SNR, in decreasing order of SNR.
+   - The comparison values (`clean`) are the gross statistics of MIT-BIH Arrhythmia records 118 and 119.
+   - It neither verifies nor downloads anything. The verification outcome that the results carry, and the report states, is the one `run_validation` obtained in step 1, before anything was evaluated.
+4. `run_validation` calls `software_identity()` (§8.14) once and puts the result in `ValidationResults.software`.
+5. `write_validation_report` calls `run_validation` and `render_full_report`, then writes the text atomically (`write_atomically`, §8.2): the UTF-8 bytes, with line feeds, go to `<name>.part~` in the folder of the report, which is replaced into `<name>` with `os.replace`. The folder is created if it does not exist. The report is written only after everything has succeeded.
+
+`evaluation.run` imports `evaluation.noise_stress` and `evaluation.report` inside `run_validation` and `write_validation_report`, because both modules import `evaluation.run` (§8.13).
+
+**Functions and their checks.**
+- `read_record_list(database_dir)` reads `database_dir / RECORD_LIST_NAME` (`RECORDS`) as UTF-8. It splits the text at line feeds, removes a carriage return at the end of a line and the white space around the name (`str.strip`), and ignores empty lines. It returns the names sorted in code-point order. `MalformedFileError` (naming the file, and the 1-based line where there is one): the file is not UTF-8; a name does not match `[A-Za-z0-9_]+` (the record-name rule of §8.3); a name is listed twice; no name is listed. An absent file raises `OSError`. In practice it cannot be absent: `RECORDS` is listed in the checksum list, and step 1 has verified it.
+- `evaluate_records(database_dir, records, settings, …)` checks the names first, before it loads any record. Each name must be a `str` matching `[A-Za-z0-9_]+`, given once, and `records` must not be a `str` itself; otherwise `InvalidInputError`. It returns the evaluations in the order of `records`; it does not sort, because the noise stress order relies on it.
+- `evaluate_record(record, settings, detector)` raises `InvalidInputError` if `record.channel` differs from `settings.channel`, so that the settings stated in the report are those of every evaluated record.
+- `meets_target(tp, other, target_hundredths)` raises `InvalidInputError` if `tp` or `other` is negative or not an integer (`bool` is not accepted), or if `target_hundredths` is not an integer from 0 to 10000.
+- `snr_db(record)` accepts names that match `[0-9]+e(_?)([0-9]+)` in full. The digits after `e` give the SNR in dB, negative if `_` precedes them (`118e24` → 24, `118e00` → 0, `119e_6` → −6). Any other value raises `InvalidInputError`.
+- `render_full_report(results)` raises `InvalidInputError` if `results.subset` is true or `results.noise_stress` is `None`. `render_subset_report(results)` raises it if `results.subset` is false or `results.noise_stress` is not `None`.
+
+These checks are design behaviours (§8.2).
+- **Figures on what is not scored** (`evaluate_record`; definitions of §8.8.1 and §8.8.3; requirement SRS-012). With `S = learning_period_samples(fs_hz)`, `n = record.n_samples` and `episodes = vf_episodes(record.other_annotations, n)`:
+  - `vf_episodes = len(episodes)`: every episode annotated in the record, wherever it lies.
+  - `vf_episodes_scored, vf_samples_scored = episode_coverage(episodes, S, n − 1)`: the number of episodes with at least one sample in the scored part `S … n − 1`, and the number of samples of the scored part that lie inside at least one episode. An episode that contains `S` counts from `S`; an episode that ends before `S` counts in neither figure.
+  - `reference_excluded` and `detections_excluded` are those of `match_beats`, which count only items at or after `S` (§8.8.3).
+  - `flutter_waves_outside_vf` is the number of `!` annotations with `S ≤ sample ≤ n − 1` that lie outside every episode; a `!` at the `start_sample` or the `end_sample` of an episode is inside it. Like the figures above, it covers the scored part, the only part where a `!` can change a count (§8.8). Of the figures of a record, only `vf_episodes` covers the whole record.
+  - All these figures are integers. The duration shown in the report is `vf_samples_scored / fs_hz` seconds: an episode from `[` at sample `a` to `]` at sample `b`, both in the scored part, lasts `(b − a + 1) / fs_hz`.
+  - Record 207 of the MIT-BIH Arrhythmia Database (checked on its annotation file) has six episodes. Five end before 5:00 (the last one at 280.9 s). One lies in the scored part, from sample 554682 to sample 589926: 35245 samples, 97.9 s. No beat annotation lies inside any of the six, so `reference_excluded` is 0 for this record.
+- `episode_coverage(episodes, first_sample, last_sample)` takes episodes in the order returned by `vf_episodes` and works on integers. With `covered_to = first_sample − 1`, for each episode in order: `hi = min(episode.end_sample, last_sample)`; the episode is counted if `max(episode.start_sample, first_sample) ≤ hi`; then, with `lo = max(episode.start_sample, covered_to + 1)`, if `hi ≥ lo`, `hi − lo + 1` is added to the samples and `covered_to = hi`. A sample shared by two consecutive episodes is therefore counted once. An empty range (`last_sample < first_sample`) gives `(0, 0)`.
 - The detector and loader are injectable: QA's tests of SRS-009, SRS-012 and SRS-014 use fixture databases and a fake detector whose output, and so whose counts, are known.
 - `meets_target` compares exactly on integers: `10000 · tp ≥ target_hundredths · (tp + other)`, i.e. `10000 · tp ≥ 9950 · (tp + other)` for the 99.50% targets, where `other` is FN for Se and FP for +P. A value that is not defined (`tp + other = 0`) fails.
 
-**Report content and format** (`render_full_report`). Deterministic text, UTF-8, line feeds, no trailing spaces, one line feed at the end, no date, time, host, user or path. Values: counts as decimal integers; percentages with two decimals (`f"{value:.2f}"`, correctly rounded from the float64 value); `not defined` for a `None`; durations in s with one decimal; sampling frequencies with `f"{fs_hz:g}"`. Sections, in this order:
-1. Title `# QRS detection: EC57 beat-by-beat evaluation`, then the statement of SRS-012, verbatim, in its own paragraph: `Technical evaluation only. Sinus is not a medical device; these results are not a clinical validation.`, then `Generated by dsp/scripts/validate.py; do not edit by hand.`
-2. **Software, data and settings**, a two-column table: software (`sinus-dsp <__version__>`); database title and version; verification outcome (`describe_verification`); number of records; signal (`first stored signal of each record (channel 0)`); mains interference filter (`60 Hz`); matching (`EC57 beat by beat, pairing rules of the WFDB comparator bxb; match window 150 ms; first 5 min of each record not scored; ventricular flutter and fibrillation episodes not scored`).
-3. **Performance targets**: gross Se and gross +P, each with its value, the target `≥ 99.50` and `pass` or `fail` (`meets_target`).
-4. **Results per record**: record, signal name, TP, FN, FP, Se (%), +P (%), sorted by record name; then a `Gross` row (summed counts and gross values) and an `Average` row (average Se and +P), followed by a sentence giving `n_se_defined` and `n_ppv_defined` out of the number of records.
-5. **Lowest sensitivity** and **Lowest positive predictivity**: rank, record, value, for the five records with the lowest defined value, ties ordered by record name (sort key `(value, record)`). Records whose value is not defined are not ranked.
-6. **Segments not scored**: for each record with at least one VF episode, the number of episodes, their total duration in s (`vf_samples / fs_hz`), the reference beats and detections not scored; otherwise a sentence stating that no episode is annotated. Then the number of flutter-wave annotations outside VF episodes over all records.
-7. **Noise stress test** (full report only): database title and version and the verification outcome; a table per record in `NOISE_STRESS_RECORDS` order (record, SNR in dB, TP, FN, FP, Se, +P); a table per SNR in decreasing order (SNR, summed TP, FN, FP, gross Se, gross +P) with a last row for records 118 and 119 without added noise; and the sentence `No pass threshold is set for these results (OP-031).`
+**Report format** (`render_full_report`; `render_subset_report` uses the same sections, §8.11). The format is normative. The stored subset report is compared byte for byte (§8.11), so every heading, sentence, column, label and separator below is part of the design.
 
-The rendered text contains no requirement ID, so the report module does not need to cite SRS-007 for its text; the modules cite the requirements they implement.
+*Text.* UTF-8, line feeds, no trailing spaces, one line feed at the end, no date, time, host, user or path. The report is a sequence of blocks: headings, paragraphs and tables. Consecutive blocks are separated by exactly one empty line. Headings are `# ` (title), `## ` (sections) and `### ` (subsections of section 7).
 
-**Script.** `scripts/validate.py [--data-dir PATH] [--output PATH] [--offline]`: default data folder `data/`, default output `docs/validation/qrs-ec57-report.md`. Without `--offline` it downloads what is missing (SRS-001, SRS-013); with it, it only verifies. Exit status 0 on success; 1 on `DataVerificationError` or `MalformedFileError`, with the message on standard error and no report written.
+*Tables.* A header line, an alignment line, then one line per row.
+- Each line is `| `, then its cells separated by ` | `, then ` |`. An empty cell is therefore two spaces between bars.
+- The alignment line holds `---` for a left-aligned and `---:` for a right-aligned column, separated by `|`, with a `|` at both ends and no spaces.
+- A `|` inside a cell is written `\|`.
+- Below, a column is left-aligned unless it is marked as right-aligned.
 
-**Determinism** (SRS-009). The report depends only on the verified data, the software version and the settings: records are sorted, every number comes from integer counts through the correctly rounded operations of §8.9, and nothing depends on time or environment. Two runs on the same inputs therefore give byte-identical reports.
+For example (values invented):
+
+```text
+| Record | Signal | TP | FN | FP | Se (%) | +P (%) |
+|---|---|---:|---:|---:|---:|---:|
+| 100 | MLII | 2000 | 1 | 0 | 99.95 | 100.00 |
+| Gross |  | 2000 | 1 | 0 | 99.95 | 100.00 |
+| Average |  |  |  |  | 99.95 | 100.00 |
+```
+
+*Values.*
+- Counts are decimal integers.
+- Percentages have two decimals (`f"{value:.2f}"`, correctly rounded from the float64 value); a `None` is written `not defined`.
+- Durations are in s with one decimal (`f"{value:.1f}"` of `vf_samples_scored / fs_hz`).
+- SNR values are in dB, as decimal integers, with the hyphen-minus `-` (U+002D) for negative values.
+
+Sections of the full report, in this order:
+1. **Title and statement.** Three blocks:
+   - `# QRS detection: EC57 beat-by-beat evaluation`;
+   - the statement of SRS-012, verbatim: `Technical evaluation only. Sinus is not a medical device; these results are not a clinical validation.`;
+   - `Generated by dsp/scripts/validate.py; do not edit by hand.`
+2. **Software, data and settings.** The heading `## Software, data and settings`, then a table with the columns `Item` and `Value` and these rows:
+   - `Software`: `sinus-dsp <version>, source SHA-256 <source_sha256>`, with the version and the 64-digit source digest of `results.software` (§8.14), e.g. `sinus-dsp 0.1.0.dev0, source SHA-256 d7cc8c52…6d443e29` (shortened here; the report gives all 64 digits);
+   - `Runtime`: `Python <python>`, then `, <distribution> <version>` for each runtime SOUP package of `results.software.runtime`, in the order of `RUNTIME_DISTRIBUTIONS`; e.g. `Python 3.11, numpy 2.4.6, scipy 1.17.1, wfdb 4.3.1`;
+   - `Database`: `<title>, version <version>` of `results.mitdb.database`;
+   - `Database licence`: `<name>, <url>` of `results.mitdb.database.licence` (§8.3, §8.15), e.g. `Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/`;
+   - `Verification`: `describe_verification(results.mitdb)`;
+   - `Records`: the number of evaluated records;
+   - `Signal`: `first stored signal of each record (channel 0)` for channel 0, otherwise `channel <c> of each record`;
+   - `Mains interference filter`: `<mains_hz> Hz`;
+   - `Matching`: `EC57 beat by beat, pairing rules of the WFDB comparator bxb; match window 150 ms; first 5 min of each record not scored; ventricular flutter and fibrillation episodes not scored`, where 150 is `MATCH_WINDOW_MS` and 5 is `LEARNING_PERIOD_S / 60`.
+3. **Performance targets** (full report only). The heading `## Performance targets`, then a table with the columns `Statistic`, `Value (%)` (right-aligned), `Target (%)` and `Result`. Its two rows are `Gross Se` and `Gross +P`, each with:
+   - the gross value;
+   - the target `≥ 99.50`: `≥ ` followed by `TARGET_HUNDREDTHS_OF_PERCENT` written with two decimals;
+   - `pass` or `fail`, from `meets_target` with FN for Se and FP for +P.
+4. **Results per record.** The heading `## Results per record`, then a table with the columns `Record`, `Signal`, `TP`, `FN`, `FP`, `Se (%)` and `+P (%)`, the last five right-aligned:
+   - one row per record, sorted by record name;
+   - the row `Gross`: an empty signal cell, the summed counts and the gross values;
+   - the row `Average`: empty signal, TP, FN and FP cells, and the average values.
+
+   Then the paragraph `The averages are the means of the defined per-record values: Se is defined for <n_se_defined> of <n_records> records, +P for <n_ppv_defined> of <n_records> records.`
+5. **Lowest values.** The heading `## Lowest sensitivity`, then:
+   - if at least one record has a defined Se, the paragraph `The records with the lowest defined Se, at most 5, lowest first; ties are ordered by record name.` and a table with the columns `Rank` (right-aligned), `Record` and `Se (%)` (right-aligned). It lists the at most five records with the lowest defined values, ranked from 1, with the sort key `(value, record)`;
+   - otherwise, the paragraph `No record has a defined Se.`
+
+   Then the heading `## Lowest positive predictivity`, with the same content for `+P` in place of `Se`. Records whose value is not defined are not ranked.
+6. **Segments not scored** (content and definitions: §8.8.3 and "Figures on what is not scored" above; requirement SRS-012). The heading `## Segments not scored`, then, in this order:
+   - the paragraph `The first 5 min of each record are not scored. Ventricular flutter and fibrillation episodes are not scored either. The durations and counts below cover the part of each record from 5:00 to its end, except the episodes in the record, which are counted over the whole record.`;
+   - if at least one record has `vf_episodes ≥ 1`, a table with one row per such record, sorted by record name. Its columns, all but the first right-aligned, are `Record`, `Episodes in the record` (`vf_episodes`), `Episodes from 5:00` (`vf_episodes_scored`), `Duration from 5:00 (s)` (the duration of `vf_samples_scored`), `Reference beats not scored` (`reference_excluded`) and `Detections not scored` (`detections_excluded`). A record whose episodes all end before 5:00 has its row, with 0 episodes from 5:00, a duration of `0.0` and counts of 0;
+   - otherwise, the paragraph `No ventricular flutter or fibrillation episode is annotated in these records.`;
+   - the paragraph `Flutter-wave annotations outside ventricular flutter and fibrillation episodes, in all records: <n>.`, with the sum of `flutter_waves_outside_vf`. That figure covers the part from 5:00, as the first paragraph states.
+7. **Noise stress test** (full report only). The heading `## Noise stress test`, then:
+   - a table with the columns `Item` and `Value`, and the rows `Database` (`<title>, version <version>` of `noise_stress.nstdb.database`), `Database licence` (`<name>, <url>` of `noise_stress.nstdb.database.licence`, as in section 2) and `Verification` (`describe_verification(noise_stress.nstdb)`), in this order;
+   - the heading `### Results per record`, then a table with the columns `Record`, `SNR (dB)`, `TP`, `FN`, `FP`, `Se (%)` and `+P (%)`, all but the first right-aligned. It has one row per record, in the order of `NOISE_STRESS_RECORDS`, with the SNR from `snr_db`;
+   - the heading `### Results per SNR`, then a table with the columns `SNR (dB)`, `TP`, `FN`, `FP`, `Gross Se (%)` and `Gross +P (%)`, all but the first right-aligned. It has one row per SNR, in decreasing order, with the summed counts and the gross values, then the row `no added noise (<title of results.mitdb.database>, records 118 and 119)` with the values of `clean`;
+   - the paragraph `No pass threshold is set for these results (OP-031).`
+
+The rendered text contains no requirement ID, so the report module does not need to cite SRS-007 for its text; the modules cite the requirements they implement. The licence rows take their text from the `Database` of the verification result, never from a literal of the renderer, so a fixture database states its own licence (§8.15). The values pass through the cell rule above, like every other cell.
+
+**Script.** `scripts/validate.py [--data-dir PATH] [--output PATH] [--offline]`: default data folder `data/`, default output `docs/validation/qrs-ec57-report.md`. Without `--offline` it downloads what is missing (SRS-001, SRS-013); with it, it only verifies. Exit status 0 on success; 1 on `DataVerificationError` or `MalformedFileError`, with the message on standard error and no report written; 2 on a usage error.
+
+**Determinism** (SRS-009). The report depends only on the verified data, the software identity (version, source digest and runtime versions, §8.14) and the settings: records are sorted, every number comes from integer counts through the correctly rounded operations of §8.9, and nothing depends on time or environment. Two runs on the same inputs therefore give byte-identical reports. The condition of SRS-009, "the same software version and source code and the same versions of the third-party software used", is the same software identity: the same version and source digest, which means the same source code of the package, and the same runtime versions (§8.14).
 
 **Verification notes.**
-- SRS-009, SRS-012 and SRS-014 (QA): fixture databases under a temporary `data_root` (records written with `wfdb`, `RECORDS` files, checksum lists, and `Database` values pinned to the fixture lists), a fake detector with known output, `fetch=None`. The noise stress fixture uses the 12 names of `NOISE_STRESS_RECORDS`, and the MIT-BIH fixture includes records 118 and 119. Records must be longer than 5 min for beats to be scored.
+- SRS-009, SRS-012 and SRS-014 (QA): fixture databases under a temporary `data_root` (records written with `wfdb`, `RECORDS` files, checksum lists, and `Database` values pinned to the fixture lists), a fake detector with known output, `fetch=None`. The noise stress fixture uses the 12 names of `NOISE_STRESS_RECORDS`, and the MIT-BIH fixture includes records 118 and 119. Records must be longer than 5 min for beats to be scored. For the section on what is not scored, a fixture record with one episode that ends before 5:00 and one after it, each with reference beats and detections inside, shows that only the second one enters the figures from 5:00, while both count in the episodes of the record. A `!` before 5:00 and one after 5:00, both outside the episodes, show that only the second one is counted (a design behaviour, §8.8). The sentences and table columns of §8.10 are the documented format, and tests may compare them literally. For the software version of SRS-012, the test computes the source digest itself from the package files with the steps of §8.14 (not by calling `source_digest`) and compares the row `Software` with it; the row `Runtime` is compared with `sys.version_info` and `importlib.metadata.version` of each runtime SOUP package. For the licence of SRS-012 and SRS-014, the fixture `Database` values carry a fixture licence that differs from `ODC_BY_1_0`, so that the rows `Database licence` are seen to come from the database; one case renders a report with the real licence (for example a fixture database built with `dataclasses.replace(MITDB, checksum_list_sha256=…)`) and compares the row with the text of §8.15.
 - SRS-007 (test engineer): a `needs_data` system test calls `run_validation(data_root, fetch=None)` on the full local databases and checks `meets_target` for gross Se and +P; the test engineer runs `validate.py` for the milestone report.
 
 ### 8.11 Subset report in continuous integration (SRS-016)
@@ -1105,50 +1304,92 @@ The rendered text contains no requirement ID, so the report module does not need
 SUBSET_RECORDS: Final = ("100", "105", "108", "119", "203", "207")
 
 def run_subset(data_root: Path, *, database: Database = MITDB,
-               settings: EvaluationSettings = EvaluationSettings(),
+               settings: EvaluationSettings = DEFAULT_SETTINGS,
                detector: Detector = detect_beats, loader: RecordLoader = load_record,
                fetch: FetchFunction | None = fetch_https) -> ValidationResults: ...
 def compare_reports(stored: bytes, regenerated: str, stored_name: str) -> None: ...
 def check_subset_report(stored_path: Path, data_root: Path, *,
                         regenerated_path: Path | None = None, database: Database = MITDB,
-                        settings: EvaluationSettings = EvaluationSettings(),
+                        settings: EvaluationSettings = DEFAULT_SETTINGS,
                         detector: Detector = detect_beats, loader: RecordLoader = load_record,
                         fetch: FetchFunction | None = fetch_https) -> None: ...
 ```
 
 **Behaviour.**
-- `run_subset` obtains the six records as in §8.3 with `records=SUBSET_RECORDS` (their `.atr`, `.dat`, `.hea` and `.xws` files, 24 in all, plus the checksum list), verifies them, and evaluates them with the settings of SRS-007. The result has `subset=True` and no noise stress.
-- `render_subset_report` produces the full report's sections 1, 2, 4, 5 and 6 with the title `# QRS detection: EC57 subset report for regression checking` and, after the SRS-012 statement, the paragraph `This report covers records 100, 105, 108, 119, 203 and 207 of the MIT-BIH Arrhythmia Database. It is a regression check run on every change, not the performance evaluation against the targets, which uses all 48 records (qrs-ec57-report.md).` There is no targets section and no noise stress section (SRS-016).
-- `compare_reports` compares the bytes of the stored report with the UTF-8 encoding of the regenerated one. If they differ, it raises `SubsetReportMismatchError`, whose `differences` name each differing line as `line <n>: stored <text>, regenerated <text>` (lines only in one of the two are named too), at most 20 entries and then `… and <k> more`. If the lines are equal but the bytes differ (line endings, final line feed), the difference says so. A stored report that is absent is one difference; a stored report that is not UTF-8 raises `MalformedFileError`.
-- `check_subset_report` runs `run_subset` (a `DataVerificationError` stops it before any report is rendered or written), renders the report, writes it to `regenerated_path` if given, and calls `compare_reports`.
-- `scripts/subset_check.py [--data-dir PATH] [--stored PATH] [--write-regenerated PATH] [--update] [--offline]`: default stored report `docs/validation/qrs-ec57-subset-report.md`. `--update` replaces the stored report with the regenerated one (after a successful verification) and exits 0. Exit status 1 on a mismatch, with the differences on standard error, or on a verification failure.
+- `run_subset` obtains the six records as in §8.3 with `records=SUBSET_RECORDS`, verifies them, and evaluates them with the settings of SRS-007. The result has `subset=True`, no noise stress, and the software identity `software_identity()` (§8.14).
+  - The selection rule of §8.3 gives **28 files** in the published list of the database, plus the checksum list itself: the `.atr`, `.dat`, `.hea` and `.xws` files of the six records (24 files), and `108.at_`, `119.at_`, `203.at-` and `203.at_`, which are further annotation files that the database publishes for records 108, 119 and 203. The evaluation reads only the `.hea`, `.dat` and `.atr` files (§8.4).
+  - The selection is not restricted to the files that the evaluation reads. SRS-016 requires each file of the six records to be verified, the four additional files are small (the six `.dat` files hold nearly all of the 12 MB), and a list of extensions would be a second selection rule tied to one database.
+  - The number 28 is not a constant of the code. It appears in the subset report through `describe_verification` (`verified: 28 files match …; records 100, 105, 108, 119, 203, 207`), so the stored report states how many files were verified.
+- `render_subset_report` produces the sections 2, 4, 5 and 6 of the full report, in the format of §8.10, after its own first section of four blocks:
+  - the title `# QRS detection: EC57 subset report for regression checking`;
+  - the statement of SRS-012, as in the full report;
+  - the paragraph `This report covers records <names> of the <title>. It is a regression check run on every change, not the performance evaluation against the targets, which uses all 48 records (qrs-ec57-report.md).` `<names>` are the names of the evaluated records in sorted order, written `a, b and c` (`record a` for a single record), and `<title>` is the title of `results.mitdb.database`. For `SUBSET_RECORDS` this reads `This report covers records 100, 105, 108, 119, 203 and 207 of the MIT-BIH Arrhythmia Database. …`;
+  - the origin `Generated by dsp/scripts/subset_check.py; do not edit by hand.`
+
+  There is no targets section and no noise stress section (SRS-016). `render_subset_report` rejects results that do not cover a subset or that hold a noise stress test (§8.10).
+
+  Section 2 is that of the full report, so it holds the row `Database licence` of the MIT-BIH Arrhythmia Database, after the row `Database` (§8.10, §8.15): SRS-016 asks for the items of SRS-012, and the licence is one of them. For the real data the subset report reads `| Database licence | Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/ |`.
+- `compare_reports(stored, regenerated, stored_name)` returns if the bytes `stored` equal the UTF-8 encoding of `regenerated`. Otherwise:
+  - If `stored` is not UTF-8 text, it raises `MalformedFileError(stored_name, None, "not UTF-8 text")`.
+  - Each report is split into lines at line feeds. A carriage return just before a line feed belongs to the line ending (`CR LF`), not to the text; a last line without a line feed has the ending `none (no final line feed)`; a report that ends with a line feed has no empty last line. An empty report (no bytes) has no line, so an empty stored report gives `line <n>: stored (no line), regenerated <text>` for every line of the regenerated one, up to the limit below.
+  - The lines are compared **by position**: line n of one report with line n of the other, with n from 1. Each position where the texts differ, or where only one report has a line, gives the entry `line <n>: stored <text>, regenerated <text>`. A text is shown as it is, `(empty line)` for an empty line and `(no line)` for the report that has no line n.
+  - Only if no text differs (both reports then have the same number of lines), each position where the endings differ gives `line <n>: same text, line ending stored <ending>, regenerated <ending>`, where `<ending>` is `LF`, `CR LF` or `none (no final line feed)`.
+  - It raises `SubsetReportMismatchError` with the first 20 entries, in order of n, followed, if there are more, by the entry `… and <k> more` (U+2026, then the number of entries not shown).
+  - One inserted or removed line therefore names every later line, up to the limit. That is enough: the check has to fail and show where the reports diverge, and the reviewer sees the change itself in the pull request and in the `subset-report` artifact. An alignment of the lines as by a diff program (`difflib`) was considered and not adopted: its output would be a further format to specify, and it would not change the outcome.
+- `check_subset_report(stored_path, data_root, *, regenerated_path, …)`, in this order:
+  1. runs `run_subset`: a `DataVerificationError` or `MalformedFileError` (checksum list) stops it before any report is rendered or written;
+  2. renders the report (`render_subset_report`);
+  3. writes it to `regenerated_path`, if given (`write_atomically`, §8.2; the folder is created if needed);
+  4. reads the stored report as bytes: if it does not exist (`FileNotFoundError`), it raises `SubsetReportMismatchError` with the single entry `no stored report: <stored_path>`; any other `OSError` propagates (§8.2). `compare_reports` takes bytes and cannot see an absent file, so the absence is handled here;
+  5. calls `compare_reports(stored, regenerated, str(stored_path))`.
+
+  With `regenerated_path` equal to `stored_path`, step 3 replaces the stored report (only after a successful verification, step 1), and step 5 passes: this is how the stored report is updated (`--update`), and how a first stored report is created.
+- `scripts/subset_check.py [--data-dir PATH] [--stored PATH] [--write-regenerated PATH] [--update] [--offline]`. Defaults: data folder `data/` and stored report `docs/validation/qrs-ec57-subset-report.md`, at the repository root. Without `--offline` it obtains the six records with `download_database` (§8.3), printing `fetching <url>` before each download; with it, it only verifies.
+  - Check (default): `check_subset_report(<stored>, <data folder>, regenerated_path=<path of --write-regenerated, or None>)`.
+  - `--update`: `check_subset_report(<stored>, <data folder>, regenerated_path=<stored>)`. With `--write-regenerated PATH` too, the updated stored report is then also written to PATH: its bytes are read first and then written, so that PATH may name the stored report itself (v0.2.10; a file copy with `shutil.copyfile` fails in that case).
+  - Standard output: `regenerated report written: <PATH>` when the report was written to the path of `--write-regenerated` and the reports were found equal or different (not after an error); then `subset report equals the stored report: <stored>` or, with `--update`, `stored report updated: <stored>`.
+  - Standard error: on `DataVerificationError` or `MalformedFileError`, `subset check failed: <message>` (`no report written: <message>` with `--update`); on a mismatch, `subset report differs from the stored report <stored>:`, then each entry of `differences` on its own line, indented by two spaces, then a hint to update the stored report with `--update` and, if CI still finds a difference, to replace it with the `subset-report` artifact (CONTRIBUTING.md).
+  - Exit status: 0 when the reports are equal or the stored report was updated; 1 on a mismatch (an absent stored report included), on `DataVerificationError` and on `MalformedFileError` (a malformed checksum list, or a stored report that differs and is not UTF-8 text); 2 on a usage error (`argparse`). These are the statuses of `validate.py` (§8.10). Any other error propagates with its traceback, which also exits with status 1 (§8.2).
 
 **CI** (`.github/workflows/ci.yml`, job `dsp`, after the traceability check):
-1. `actions/cache` (pinned to an exact version, like the other actions) with path `data/mitdb` and a fixed key, e.g. `mitdb-1.0.0-subset-v1`. The cache is only a copy: every run verifies it against the pinned checksum list, and a corrupted file is downloaded again.
+1. `actions/cache` (pinned to an exact version, like the other actions) with path `data/mitdb` and a fixed key, e.g. `mitdb-1.0.0-subset-v1`. The cache holds the checksum list and the 28 files of the subset, about 12 MB (8.3 MiB compressed). It is only a copy: every run verifies it against the pinned checksum list, and a corrupted file is downloaded again. When a complete copy is restored, the step uses no network. The action saves the cache in its post step, which runs only when the job succeeds, and an entry is never overwritten under the same key: the copy that is saved is therefore one that a successful check has verified. If the first run under a key fails, the next run downloads the records again.
+   - **Scope of a cache entry.** A GitHub Actions run restores only an entry saved by its own branch or by the default branch (`main`), and, for a run of a pull request, also by the base branch of the pull request. A run of a pull request into `develop` therefore restores the entry saved by `develop`, while the first push on a new branch finds none until `main` holds one: it downloads the checksum list and the 28 files from PhysioNet (29 requests, about 2 min, observed on 2026-10-04 and 2026-10-05) and saves an entry for that branch. `main` saves its entry at its first CI run with this step, after the Milestone 1 release; from then on every branch restores it.
+   - This is accepted, and nothing is changed. The cache only saves time; the outcome never depends on it, because every copy, restored or downloaded, is verified against the pinned checksum list (§8.3). A failed download fails the check with a `DataVerificationError` naming the missing files (SRS-016); it never passes with unverified data. An entry for `main` cannot be saved earlier, because a run on `main` uses the workflow of `main`, which gets this step only with the release. Each branch keeps its own entry, and GitHub removes entries that are not used for 7 days.
 2. `uv run python scripts/subset_check.py --write-regenerated "${{ runner.temp }}/qrs-ec57-subset-report.md"`.
 3. `actions/upload-artifact` with `if: always()`, artifact name `subset-report`, so that the report regenerated in CI is always available.
 
 The step runs on every push and pull request, like the rest of the job, and fails the job on a mismatch or a verification failure (SRS-016).
 
-Two supporting changes:
-- `.gitattributes` gets `docs/validation/*.md text eol=lf`, so that a checkout on Windows keeps the stored reports byte-identical.
-- The `needs_data` marker (`dsp/tests/conftest.py`) must not be satisfied by the CI subset. The check becomes: `data/mitdb/RECORDS` exists and every record it lists has its `.hea`, `.dat` and `.atr` files (the subset download does not fetch `RECORDS`). Tests that also need the noise stress database use a second marker, `needs_nstdb`, checked the same way on `data/nstdb/` for the 12 records of `NOISE_STRESS_RECORDS`.
+**When the stored report changes.** The stored subset report states the software identity (§8.10, section 2; §8.14), and the comparison makes no exception for it. A change of any of the following therefore changes the stored report, which is updated in the same change, like `traceability.md`:
+- any file of the package `dsp/sinus_dsp/` (the row `Software`, through the source digest), even a comment;
+- the version (`dsp/pyproject.toml`, `sinus_dsp/__init__.py`);
+- the Python minor version (`dsp/.python-version`) or the version of a runtime SOUP package in `dsp/uv.lock` (the row `Runtime`);
+- the counts, when the change alters detection or evaluation.
+
+The reviewer of the pull request sees which rows changed: the software rows alone (the change did not alter any result on the six records), or the counts too. A pull request that changes the package and does not update the stored report fails CI, and the difference names the row `Software`. Two branches that both change the package conflict on that row; after the merge the report is regenerated, as the matrix is.
+
+Rejected alternatives: leaving the software rows out of the comparison (SRS-016 requires any difference to fail, and the stored report would state a software that did not produce it); leaving them out of the subset report only (SRS-016 requires the items of SRS-012, so the two reports would identify the software differently); a commit identifier (a stored file cannot contain the identifier of the commit that contains it).
+
+Two supporting points:
+- A checkout on Windows must keep the stored reports byte-identical. The existing rule `* text=auto eol=lf` of `.gitattributes` already does it: a UTF-8 Markdown report is detected as text, so it has line feeds in the index and in the working tree on every platform, whatever `core.autocrlf` (checked with `git check-attr` and `git ls-files --eol` on 2026-10-04). No line is added for `docs/validation/`; a later change of that rule must keep `eol=lf` for the reports. The report generators never write a carriage return.
+- The `needs_data` marker (`dsp/tests/conftest.py`) must not be satisfied by the CI subset. The check is: the record list `data/mitdb/RECORDS`, read with `read_record_list` (§8.10), and the `.hea`, `.dat` and `.atr` files of every record it lists (the subset download does not fetch `RECORDS`); a record list that is absent, cannot be read or is rejected leaves the marker unsatisfied. Tests that also need the noise stress database use a second marker, `needs_nstdb`, checked the same way on `data/nstdb/` for the 12 records of `NOISE_STRESS_RECORDS`.
 
 **Stability across machines.** The stored subset report must equal the one regenerated in CI, byte for byte, although it may be produced on another machine:
 - The report contains only text, integer counts, and values computed from those counts by correctly rounded operations (§8.9) and formatted by Python's correctly rounded formatting. These are identical on every machine for the same counts. No signal value appears in it.
+- The software rows are identical on every machine for the same commit: the source digest is computed from the package files with line feeds (§8.14; the checkout keeps line feeds through `.gitattributes`), and the runtime versions follow from `dsp/.python-version` (Python minor version only) and `dsp/uv.lock`, which both the local environment and CI use (`uv sync --locked`).
 - The counts depend on detection decisions made in float64. The operations of §8.2 remove the known sources of machine dependence in NumPy (summation order). Two remain outside the software's control: the platform's mathematical library (`tan` and `cos` in the filter design, §8.6) and floating-point contraction in the SciPy build. They change results by a few units in the last place, which changes a count only if a peak lies within that distance of a threshold: possible, but rare.
 - **Decision.** The CI environment is the authority: `ubuntu-latest`, Python from `dsp/.python-version`, dependencies from `uv.lock`. The stored report is the one CI regenerates. A developer normally updates it locally with `subset_check.py --update`; if CI then still reports a difference, the stored report is replaced with the `subset-report` artifact of that CI run, and the pull request shows the change for review.
 - Rejected alternatives: comparing parsed values within a tolerance (it could hide a changed count, and SRS-016 requires any difference to fail); leaving the counts out of the report (it would no longer be a regression check).
 
-**Verification notes.** QA's SRS-016 tests call `check_subset_report` (or `compare_reports`) with fixture records named as the subset, a fixture checksum list and a fake detector; `fetch=None`. Inspection of `ci.yml` covers "on every push".
+**Verification notes.** QA's SRS-016 tests call `check_subset_report` (or `compare_reports`) with fixture records named as the subset, a fixture checksum list and a fake detector; `fetch=None`. Inspection of `ci.yml` covers "on every push". A stored report that differs from the regenerated one only in the row `Software` fails the check like any other difference. The difference entries, their limit, and the messages and exit statuses of `subset_check.py` above are the documented format; tests may compare them literally, including the entries for an empty stored report. The subset report states the licence of its fixture database in the row `Database licence` (§8.10 verification notes).
 
 ### 8.12 Golden-vector export (SRS-015)
 
-**Modules.** `sinus_dsp.synthetic` (§7.2), `sinus_dsp.golden` (§7.3, §7.4). Script: `scripts/export_golden.py`. The file format and the input set are those of §7; this section adds the interfaces.
+**Modules.** `sinus_dsp.synthetic` (§7.2), `sinus_dsp.golden` (§7.3, §7.4). Script: `scripts/export_golden.py`. The file format and the input set are those of §7; this section adds the interfaces and the behaviour.
 
 ```python
 # synthetic.py
-SYNTHETIC_DURATION_S: Final = 30.0
+SYNTHETIC_DURATION_S: Final = 30                       # s
 SYNTHETIC_FS_HZ: Final = (250.0, 360.0)
 SYNTHETIC_HEART_RATES_BPM: Final = (40, 75, 180)
 SYNTHETIC_VARIANTS: Final = ("clean", "bw-mains50", "bw-mains60")
@@ -1156,7 +1397,7 @@ SYNTHETIC_VARIANTS: Final = ("clean", "bw-mains50", "bw-mains60")
 @dataclass(frozen=True)
 class SyntheticEcg:
     input_id: str                 # e.g. "syn-fs360-hr075-bw-mains60"
-    fs_hz: float
+    fs_hz: float                  # 250.0 or 360.0
     heart_rate_bpm: int
     variant: str
     mains_hz: int                 # 50 for "clean" and "bw-mains50", 60 for "bw-mains60"
@@ -1164,55 +1405,96 @@ class SyntheticEcg:
     signal_mv: FloatArray
     r_peaks: IndexArray           # the true beat positions r_k
 
-def synthetic_ecg(fs_hz: float, heart_rate_bpm: int, variant: str,
-                  duration_s: float = SYNTHETIC_DURATION_S) -> SyntheticEcg: ...
+def synthetic_ecg(fs_hz: float, heart_rate_bpm: int, variant: str) -> SyntheticEcg: ...
 def synthetic_set() -> tuple[SyntheticEcg, ...]: ...   # 18 inputs: fs, then heart rate, then variant, in the orders above
 
 # golden.py
 FORMAT_NAME: Final = "sinus-golden-vector"
 FORMAT_VERSION: Final = 1
-GOLDEN_SEGMENT_S: Final = 60
+GOLDEN_SEGMENT_S: Final = 60                           # s, from the first sample of the record
+GOLDEN_FILE_SUFFIX: Final = ".golden.txt"
 
 @dataclass(frozen=True)
 class GoldenVector:
     input_id: str
-    input_source: str                      # "synthetic" or "mitdb"
+    input_source: str                      # "synthetic", or the database slug ("mitdb")
     input_parameters: str
     fs_hz: float
     mains_hz: int
-    software_version: str
-    stages: tuple[str, ...]                # ("baseline", "mains")
+    software_version: str                  # SoftwareIdentity.version (§8.14)
+    source_sha256: str                     # SoftwareIdentity.source_sha256 (§8.14)
+    stages: tuple[str, ...]                # pipeline.STAGES: ("baseline", "mains")
     coefficients: tuple[FloatArray, ...]   # SOS matrix of each stage, shape (n_sections, 6), a0 = 1
     input_mv: FloatArray
-    stage_outputs_mv: tuple[FloatArray, ...]
-    beats: IndexArray
-    reference_beats: IndexArray
+    stage_outputs_mv: tuple[FloatArray, ...]   # one per stage, as long as input_mv
+    beats: IndexArray                      # strictly increasing
+    reference_beats: IndexArray            # non-decreasing
 
 @dataclass(frozen=True)
 class ExportSummary:
     written: tuple[str, ...]              # file names, in the order written
     skipped: tuple[str, ...]              # input identifiers not exported
-    skip_reason: str | None
+    skip_reason: str | None               # message of the DataVerificationError; None if nothing skipped
 
-def golden_vector(input_id: str, input_source: str, input_parameters: str, signal_mv: FloatArray,
-                  fs_hz: float, mains_hz: int, reference_beats: IndexArray) -> GoldenVector: ...
+def golden_vector(input_id: str, input_source: str, input_parameters: str,
+                  signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int,
+                  reference_beats: npt.ArrayLike, *,
+                  software: SoftwareIdentity) -> GoldenVector: ...
 def render_golden_vector(vector: GoldenVector) -> str: ...
 def parse_golden_vector(text: str, source: str) -> GoldenVector: ...
 def read_golden_vector(path: Path) -> GoldenVector: ...
-def export_golden_vectors(output_dir: Path, *, data_root: Path | None,
+def export_golden_vectors(output_dir: Path, *, data_root: Path,
                           database: Database = MITDB,
                           records: Sequence[str] = SUBSET_RECORDS,     # from evaluation.subset
                           loader: RecordLoader = load_record) -> ExportSummary: ...
 ```
 
-**Behaviour.**
-- `synthetic_ecg` follows §7.2 exactly: sample instants `n / fs_hz`; beats `k` with `0.5 + k · RR ≤ 29.5 s`; each Gaussian evaluated with NumPy on the whole time axis, added in increasing `k` and in the order P, Q, R, S, T; the interference added last. `parameters` is `duration_s=30;heart_rate_bpm=<hr>;baseline_wander_hz=0.3;baseline_wander_mv=<a>;mains_hz=<mains>;mains_mv=<m>` with `<a>`, `<m>` = `1.0`, `0.2` for the interference variants and `0.0`, `0.0` for `clean` (floats with `repr`, integers in decimal). Arguments outside the listed values raise `InvalidInputError`.
-- `golden_vector` runs `run_pipeline` (§8.7) once and takes the conditioning outputs, the beats and the SOS matrices from its result, so a file holds exactly what the public functions compute (SRS-015 verification). Record segments have the identifier `<slug>-<record>-first60s` and carry `input_parameters = database=<slug>;database_version=<version>;record=<name>;signal=0;start_sample=0;duration_s=60`, from the `Database` given (for the real data: `mitdb-100-first60s`, `database=mitdb;database_version=1.0.0;…`).
-- `render_golden_vector` writes §7.3 exactly (floats with `repr`, integers in decimal) and raises `NonFiniteOutputError` if any value is not finite. `parse_golden_vector` applies every reader rule of §7.3 and raises `MalformedFileError` with the line number.
-- `export_golden_vectors` writes the 18 synthetic files, then the record segments (by default the six records of SRS-016): it calls `verify_database(database, data_root, records=records)`; if `data_root` is `None` or the verification fails, the record segments are skipped with the reason (the error message) and the synthetic files are still written. Otherwise each record is loaded (channel 0), cut to its first `round_samples(60, fs_hz)` samples (21600 at 360 Hz), with the reference beats inside the segment, and processed with mains 60 Hz. Files are written atomically; files already in `output_dir` with other names are left untouched.
-- `scripts/export_golden.py [--output DIR] [--data-dir PATH]`: default output `data/golden/`. It prints the written and skipped inputs and exits 0, or 1 on an error.
+Changes of v0.2.10 to this interface, before implementation: `synthetic_ecg` has no duration argument (SRS-015 fixes the set; the writer and the reader are tested on any input through `golden_vector`), and the duration is an integer number of seconds, as `input_parameters` writes it (`duration_s=30`); `golden_vector` takes array-likes, like the other public functions (§8.2); `export_golden_vectors` takes a data folder, never `None` (a folder without the database gives the same skip, with a reason that names what is missing); `GOLDEN_FILE_SUFFIX` is new.
 
-**Verification notes.** QA runs the export twice into two temporary folders and compares the files byte for byte; checks that the file names are the 18 synthetic identifiers plus the record segments of a fixture record set; parses each file with `read_golden_vector`; and compares its content with `run_pipeline` called directly on the same input (exact equality, since both run the same code on the same machine).
+**Behaviour.**
+- `synthetic_ecg(fs_hz, heart_rate_bpm, variant)` follows §7.2.
+  - Arguments: `fs_hz` equal to 250 or 360 (an `int` or a `float`, not a `bool`); `heart_rate_bpm` one of 40, 75 and 180 (an `int`, not a `bool`); `variant` one of `SYNTHETIC_VARIANTS`. Anything else raises `InvalidInputError` naming the argument and its value. The type test is `isinstance`, so a subclass is accepted (`numpy.float64` is a `float`); a NumPy integer scalar (`numpy.int64`) is not an `int` and is rejected, for either argument.
+  - Signal: `30 · fs` samples, time axis `numpy.arange(n) / fs_hz`; the beats and their positions computed on integers (§7.2); each Gaussian evaluated with NumPy on the whole time axis and added in increasing `k`, in the order P, Q, R, S, T; then the baseline wander, then the mains sinusoid (nothing for `clean`).
+  - Result: `fs_hz` as a `float`; `input_id` as in §7.2, `syn-fs<fs as an integer>-hr<hr with three digits>-<variant>`; `mains_hz` of the variant; `r_peaks` the r_k (`int64`); `parameters` = `duration_s=30;heart_rate_bpm=<hr>;baseline_wander_hz=0.3;baseline_wander_mv=<a>;mains_hz=<mains>;mains_mv=<m>`, where `<a>`, `<m>` are `1.0`, `0.2` for the interference variants and `0.0`, `0.0` for `clean`, and `<mains>` is `mains_hz` (floats with `repr`, integers in decimal).
+- `synthetic_set()` returns the 18 inputs: sampling frequency first, then heart rate, then variant, each in the order of its constant.
+- `golden_vector(...)`, in this order:
+  1. It checks the identifiers before any computation: `input_id` is a `str` that matches `[A-Za-z0-9_-]+`; `input_source` and `input_parameters` are `str` values that are not empty, hold no space, tab, carriage return or line feed, and can be encoded as UTF-8 (a lone surrogate cannot). Any other character is allowed, non-ASCII included. Otherwise `InvalidInputError`.
+  2. It runs `run_pipeline(signal_mv, fs_hz, mains_hz)` once (§8.7), which checks the input and the mains setting (§8.5) and raises `InvalidInputError` on them.
+  3. It converts `reference_beats` to `int64` and checks that it is one-dimensional, of integer kind (an empty sequence is allowed), non-decreasing and within `[0, n_samples)`. Otherwise `InvalidInputError`. This check comes after the pipeline, because `n_samples` is known only once the input has been checked; invalid reference beats are therefore reported after the computation.
+  4. It returns the vector: the input, the stage outputs (`baseline_mv`, `mains_mv`), the coefficients and the beats of the pipeline result, `stages = pipeline.STAGES`, `fs_hz` and `mains_hz` as the pipeline checked them, and `software_version` and `source_sha256` from `software`. A file therefore holds exactly what the public functions compute (SRS-015).
+- `render_golden_vector(vector)` returns the text of §7.3.
+  - It raises `NonFiniteOutputError(vector.input_id)` if any float of the vector (sampling frequency, coefficients, input, stage outputs) is not finite, before any other check.
+  - It raises `InvalidInputError` for any other content that would give a file that the reader rejects: header values, lengths and shapes, an a0 other than 1, order and range of the beats. Every text that it returns is accepted by `parse_golden_vector`, which gives back an equal vector.
+  - It also requires the types that `golden_vector` and `parse_golden_vector` give a vector, and raises `InvalidInputError` for any other type, even where the text would be valid: `input_id`, `input_source`, `input_parameters`, `software_version` and `source_sha256` are `str` (the text values encodable as UTF-8, as in `golden_vector`); `fs_hz` is a real number, not a `bool`; `mains_hz` an integer (`numbers.Integral`, NumPy integers included), not a `bool`; `stages`, `coefficients` and `stage_outputs_mv` are tuples with one item per stage; each coefficient matrix is a `float64` array of shape `(n_sections, 6)` with at least one section; `input_mv` and each stage output are one-dimensional `float64` arrays, the input not empty; `beats` and `reference_beats` are one-dimensional integer arrays. A vector is built by these two functions, so a stricter check costs nothing and keeps every written file the image of a vector of known types.
+  - Floats are written as `repr(float(value))`. Under NumPy 2, `repr` of a NumPy scalar is `np.float64(…)`, so the value is converted to a Python `float` first. Integers are written as `str(int(value))`.
+- `parse_golden_vector(text, source)` applies every reader rule of §7.3, in the order of the file, and raises `MalformedFileError(source, <line>, <reason>)` at the first failure, with the 1-based number of the line that §7.3 names ("The line named": the last line for a text that ends too early; the line where the rows and the count disagree for a row count). The `reason` is the implemented free text, which names the rule and shows at most 40 characters of a value; it is not part of the format (§7.3). `read_golden_vector(path)` reads the bytes and decodes them as UTF-8 (otherwise `MalformedFileError(str(path), None, "not UTF-8 text")`), then calls `parse_golden_vector(text, str(path))`. Neither removes a carriage return, so a file with CR LF line endings is rejected.
+- `export_golden_vectors(output_dir, *, data_root, database, records, loader)`, in this order:
+  1. `verify_database(database, data_root, records=records)` (§8.3; it never downloads). An invalid or empty `records` raises `InvalidInputError` here, before anything is computed or written. `records=None` raises `InvalidInputError` (`records is None: give the names of the records`) before the verification: for `verify_database` it would mean the whole database, and the export has no segment to write for that. A `DataVerificationError` does not stop the export: the record segments are skipped, and its message is the skip reason (SRS-015: the record segments are written only where the files of the records of the subset are available and verified against the checksum list of SRS-001). The verification covers the files of all the records at once, so the segments are written all or none: one missing or altered file of one record skips the six. A `MalformedFileError` propagates (a checksum list that matches its pinned digest is well formed, so this happens only with a fixture).
+  2. `software = software_identity()` (§8.14), once for all the files.
+  3. For each input of `synthetic_set()`, in that order: `golden_vector(ecg.input_id, "synthetic", ecg.parameters, ecg.signal_mv, ecg.fs_hz, ecg.mains_hz, ecg.r_peaks, software=software)`, rendered and written to `output_dir / (ecg.input_id + GOLDEN_FILE_SUFFIX)` with `write_atomically` (§8.2), which creates the folder if needed.
+  4. If the records are verified, for each name of `VerificationResult.records` (code-point order):
+     - `record = loader(data_root / database.slug / name, DEFAULT_SETTINGS.channel)` (§8.10: channel 0, the first stored signal);
+     - `n = round_samples(GOLDEN_SEGMENT_S, record.fs_hz)` (21600 at 360 Hz); a record with fewer samples raises `InvalidInputError` naming it;
+     - the input is `record.signal_mv[:n]`, and the reference beats are `record.beat_samples` below `n`;
+     - `golden_vector(f"{database.slug}-{name}-first60s", database.slug, f"database={database.slug};database_version={database.version};record={name};signal={DEFAULT_SETTINGS.channel};start_sample=0;duration_s={GOLDEN_SEGMENT_S}", <input>, record.fs_hz, DEFAULT_SETTINGS.mains_hz, <reference beats>, software=software)`, rendered and written as in step 3. For the real data the first file is `mitdb-100-first60s.golden.txt`, with `database=mitdb;database_version=1.0.0;record=100;signal=0;start_sample=0;duration_s=60`.
+
+     The settings are those of SRS-007 (`DEFAULT_SETTINGS`: channel 0, mains 60 Hz). The segment is processed on its own, from its first sample, like any input: its beats are not those of the whole record cut at 60 s.
+  5. It returns the `ExportSummary`: `written`, the file names in the order written; `skipped`, the identifiers of the record segments not written, in code-point order of the record names, each once (empty if none); `skip_reason`, the message of step 1, or `None`. When the verification fails there is no `VerificationResult`, so `skipped` is computed from the names given in `records` (`sorted(set(records))`), which step 1 has already checked.
+  - Each file is written as soon as it is computed. An error stops the export and leaves the files already written, each complete. Files of `output_dir` with the names written are replaced; other files are left untouched.
+  - Errors: `InvalidInputError` (step 1; a record that the loader rejects, §8.4, or that is too short), `MalformedFileError` (the checksum list of a fixture; an annotation file, §8.4), `NonFiniteOutputError` (rendering), `OSError` (files; propagates, §8.2).
+- `scripts/export_golden.py [--output DIR] [--data-dir PATH]`: defaults `data/golden/` and `data/`, at the repository root. It calls `export_golden_vectors(<output>, data_root=<data folder>)`.
+  - Standard output: `written: <path>` for each file, in the order written (the output folder as given, joined with the file name); then, if record segments were skipped, `skipped: <id>, <id>, …` and `reason: <skip_reason>`. These lines are printed from the `ExportSummary`, after the export has completed: after an error none is printed, although the files written before the error stay (each complete).
+  - Exit status: 0 when the export completes, whether the record segments were written or skipped; 1 on `InvalidInputError`, `MalformedFileError` or `NonFiniteOutputError`, with `export failed: <message>` on standard error (the files written before stay); 2 on a usage error (`argparse`). Any other error propagates with its traceback (exit status 1, §8.2).
+
+**Verification notes.**
+- QA (SRS-015), without network and without the real database. The script cannot export the record segments of a fixture, because its `Database` is the real one with its pinned checksum list, so QA calls `export_golden_vectors` with a fixture `Database` pinned to a fixture checksum list, as for SRS-016 (§8.11). The fixture records carry the names given in `records` and last at least 60 s at their sampling frequency (written with `wfdb`).
+  - The export run twice, into two temporary folders, gives byte-identical files.
+  - The file names are the 18 synthetic identifiers plus `<slug>-<record>-first60s` for each fixture record. With a data folder without the database, the 18 synthetic files are written, and `skipped` holds the record identifiers, with a reason that names the missing checksum list.
+  - Each file holds every item that SRS-015 lists. `software_version` and `source_sha256` are those of the software under test, the digest computed by the test itself as for SRS-012 (§8.10).
+  - The values read back from each file (with `read_golden_vector`, or with a reader of §7.3 written by the test) equal exactly the outputs of `run_pipeline` called directly on the input of the file, and that input equals the generator's or the fixture record's (exact equality: the same code on the same computer).
+  - The synthetic inputs follow §7.2: beat count and r_k exactly, the waveform within 10⁻⁹ mV.
+- Developer's unit tests: one rejected text per reader rule of §7.3, with its line number, including the rules of v0.2.11 (as `n_reference_beats`, `9223372036854775808` is rejected at the header line, while `9223372036854775807` passes the integer rule and the file fails at `[end]`, where the rows end; `1e-400` and `2.4703282292062327e-324` rejected, `0.0e-400`, `-0.0`, `5e-324` and `2.4703282292062328e-324` accepted) and a row count one more and one less than the header for each of `[signals]`, `[beats]` and `[reference_beats]`, named at the lines of §7.3; the round trip render → parse; exact read-back of the edge values of §7.4 (`5e-324`, `1.7976931348623157e+308`, `-0.0`, values with 17 significant digits); a NumPy scalar written as a plain number; `NonFiniteOutputError`; the integer beat rule of §7.2 against the real-number expressions on the 18 inputs; the checks of `synthetic_ecg` and `golden_vector`; the order, skip and short-record cases of the export; `write_atomically` (§8.2).
+- On the real data (developer, once): the export writes 24 files of about 16 MB in total (§7.5), and each parses.
 
 ### 8.13 Implementation order and module dependencies
 
@@ -1225,19 +1507,23 @@ flowchart BT
   qrs["qrs"] --> filters
   qrs --> units
   pipeline["pipeline"] --> qrs
-  synthetic["synthetic"] --> checks
+  synthetic["synthetic"] --> errors
   physionet["data.physionet"] --> errors
   records["data.records"] --> errors
   matching["evaluation.matching"] --> records
   matching --> units
   metrics["evaluation.metrics"] --> errors
+  version["version"]
   run["evaluation.run"] --> pipeline
+  run --> version
   run --> physionet
   run --> records
   run --> matching
   run --> metrics
   noise["evaluation.noise_stress"] --> run
   report["evaluation.report"] --> noise
+  run -.-> noise
+  run -.-> report
   subset["evaluation.subset"] --> report
   golden["golden"] --> pipeline
   golden --> synthetic
@@ -1246,7 +1532,10 @@ flowchart BT
   golden --> subset
 ```
 
-(An arrow points from a module to a module it imports. `evaluation.noise_stress` imports the types of `evaluation.run`; `evaluation.run` imports `NoiseStressResults` only for type checking, to avoid an import cycle.)
+An arrow points from a module to a module it imports.
+- A solid arrow is an import at the top of the module. An import that a path of solid arrows already implies is not drawn again: for example, `evaluation.report` also imports `evaluation.run`, `evaluation.metrics`, `evaluation.matching` and `data.physionet`. The private modules `_types` and `_files` (§8.2) are not drawn: `_types` is imported by most modules, `_files` by `data.physionet`, `evaluation.run`, `evaluation.subset` and `golden`; neither imports another module of the package. `version` imports only the package itself (`sinus_dsp.__version__`) and the standard library. `golden` also imports `evaluation.run` (`DEFAULT_SETTINGS`, `RecordLoader`) and `version`, imports that the path `golden` → `evaluation.subset` → … → `evaluation.run` → `version` implies.
+- A dotted arrow is an import inside a function. `evaluation.noise_stress` and `evaluation.report` import `evaluation.run` (its types and functions). `evaluation.run` imports `NoiseStressResults` only for type checking. It imports `evaluate_noise_stress` inside `run_validation`, and `render_full_report` inside `write_validation_report`, so that importing any of the three modules first works without a cycle at import time. A unit test imports each of them first, in a new interpreter.
+- No other import inside a function is allowed. `evaluation.subset` (group 8) imports `evaluation.run` and `evaluation.report` at the top; only `golden` imports it.
 
 Suggested order for the developer, one pull request into `develop` per group, each together with QA's tests of its requirements (§8.2, ADR 0004 §6):
 
@@ -1260,21 +1549,288 @@ Suggested order for the developer, one pull request into `develop` per group, ea
 | 6 | Matching and statistics | `evaluation.matching`, `evaluation.metrics` | SRS-008, SRS-011 | §8.8, §8.9 |
 | 7 | Evaluation and report | `evaluation.run`, `evaluation.noise_stress`, `evaluation.report`, `scripts/validate.py` | SRS-009, SRS-012, SRS-014; SRS-007 (test engineer) | §8.10 |
 | 8 | CI subset check | `evaluation.subset`, `scripts/subset_check.py`, CI step, `.gitattributes`, `needs_data` and `needs_nstdb` markers, first stored subset report | SRS-016 | §8.11 |
-| 9 | Golden vectors | `synthetic`, `golden`, `scripts/export_golden.py` | SRS-015 | §8.12, §7 |
+| 9 | Golden vectors | `_files` and its users (changes of v0.2.10 below), `synthetic`, `golden`, `scripts/export_golden.py` | SRS-015 | §8.12, §7, §8.2 |
 
 Groups 1 to 3 go into one pull request, because the verification of SRS-003 calls the functions of SRS-004 to SRS-006. Groups 4 to 6 do not depend on groups 1 to 3 and can proceed in parallel. Group 7 needs all earlier groups; group 8 needs group 7; group 9 needs groups 1 to 5 and the constant `SUBSET_RECORDS` of group 8.
+
+**Corrections of v0.2.2 to modules already implemented.** They are implemented, with their unit tests, before the group that relies on them:
+- `evaluation.matching` (§8.8.1: `vf_episodes`; §8.8.2 step 1 and §8.8.3: `reference_excluded`): before group 7, which reports these figures.
+- `data.physionet` (§8.3: validation of the record selection first, empty selection rejected, temporary file `<name>.part~`): before group 8, which is the first user of a record selection.
+
+**Corrections of v0.2.4 to modules already implemented** (group 7). They are implemented with their unit tests, and with the corresponding changes to QA's tests of SRS-012, before group 8 stores the first subset report, whose text they change:
+- `evaluation.run`: the public constant `DEFAULT_SETTINGS` as the default of `settings` (§8.2, §8.10); `flutter_waves_outside_vf` counts only the scored part (§8.10, "Figures on what is not scored").
+- `evaluation.report`: the first paragraph of section 6 (§8.10); `render_subset_report` also rejects results that hold a noise stress test.
+
+**Changes of v0.2.6** (software identity, §8.14). They are implemented with their unit tests, and with the corresponding changes to QA's tests of SRS-012, before group 8 stores the first subset report, whose section 2 they change:
+- new module `version`; the version set to `0.1.0.dev0` in `dsp/pyproject.toml` and `sinus_dsp/__init__.py`, then `uv lock`;
+- `evaluation.run`: `ValidationResults.software`, set by `run_validation`;
+- `evaluation.report`: the rows `Software` and `Runtime` of section 2, `software_rows` and `stale_software_rows`;
+- `scripts/software_check.py`, and its step in the release-gate workflow;
+- `scripts/traceability.py`: the version rule in `--check`, the development-version check in `--release-gate`.
+
+Group 8 sets `software` in `run_subset`; group 9 writes and reads `source_sha256`.
+
+**Changes of v0.2.10.** They are made in group 9, with their unit tests:
+- the private module `_files` (§8.2), used by `data.physionet`, `evaluation.run`, `evaluation.subset` and `golden`; the private helpers `_write_atomically` and `_PART_SUFFIX` of `data.physionet` and `evaluation.run` are removed, and `evaluation.subset` no longer imports a private name of `evaluation.run`. No behaviour changes;
+- `scripts/subset_check.py`: with `--update` and `--write-regenerated`, the bytes of the stored report are read, then written to the second path, which may be the stored report itself (§8.11).
+
+Every change under `dsp/sinus_dsp/` changes the source digest (§8.14), so group 9 ends by regenerating both reports, after the last change to the package: `validate.py --offline` and `subset_check.py --update --offline` (§8.11, "When the stored report changes"), then `software_check.py`. Only the row `Software` of each report changes.
+
+**Changes of v0.2.11** (after group 9, before the Milestone 1 release; one pull request together with QA's changes to the requirement tests: the licence rows for SRS-012, SRS-014 and SRS-016, the reader rules for SRS-015, and the licence of every `Database` that a test builds):
+- `data.physionet`: `DatabaseLicence`, `ODC_BY_1_0`, the field `Database.licence` (required, last), set on `MITDB` and `NSTDB` (§8.3, §8.15);
+- `evaluation.report`: the row `Database licence` in report section 2 and in the table of the noise stress section (§8.10);
+- `golden`: the two reader rules of §7.3 (an integer above 2⁶³ − 1; a float that converts to zero although a digit of its significand is not zero), each rejected at its line;
+- `README.md` §Data sources and `docs/validation/README.md`: the texts of §8.15;
+- the comment on the cache in `.github/workflows/ci.yml` (§8.11, scope of a cache entry).
+
+The field `Database.licence` has no default: every `Database` that a test builds names its licence, and a test that builds one without it fails at once. The package changes, so the work ends, after the last change to the package, by regenerating both reports (`validate.py --offline`, `subset_check.py --update --offline`), then `software_check.py`. In each report the row `Software` changes and the rows `Database licence` are added (one in the subset report, two in the full report); nothing else changes.
+
+**Changes of v0.2.12** (before the Milestone 1 release, in one pull request with their unit tests in `dsp/tests/unit/test_traceability.py`): `scripts/traceability.py` as in §8.16, items 1, 2, 3, 4, 6 and 7, then the matrix regenerated. Nothing under `dsp/sinus_dsp/` changes, so the source digest and both reports stay as they are. Item 5 of §8.16 is made with the first C++ tests (OP-066).
+
+### 8.14 Software identity and versioning (SRS-009, SRS-012, SRS-015, SRS-016)
+
+**Purpose.** The reports (SRS-009, SRS-012, SRS-016) and the golden vectors (SRS-015) state the software that produced them. The package version alone does not identify the code: it changes at releases, while the code changes with every pull request (OP-061). The identity therefore has two parts:
+- a **version**, which a person reads and which names the milestone;
+- a **source digest**, which identifies the exact code of the package without depending on git.
+
+The reports also state the versions of Python and of the runtime SOUP, because the versions of NumPy and SciPy that `dsp/uv.lock` installs depend on the Python version (the lock holds two versions of each), and the digest covers only the package.
+
+**Module.** `sinus_dsp.version`. Script: `scripts/software_check.py`. Checks in `scripts/traceability.py`. The rule is also stated in `sdp.md` §4.
+
+**Interface.**
+
+```python
+# version.py
+RUNTIME_DISTRIBUTIONS: Final = ("numpy", "scipy", "wfdb")   # runtime SOUP of dsp (soup.md)
+
+@dataclass(frozen=True)
+class SoftwareIdentity:
+    version: str                           # sinus_dsp.__version__, e.g. "0.1.0.dev0"
+    source_sha256: str                     # 64 lowercase hexadecimal digits
+    python: str                            # "<major>.<minor>", e.g. "3.11"
+    runtime: tuple[tuple[str, str], ...]   # (distribution, version), in RUNTIME_DISTRIBUTIONS order
+
+def package_dir() -> Path: ...                            # folder of the running package
+def source_files(package_dir: Path) -> tuple[str, ...]: ...   # names, sorted (step 2 below)
+def source_manifest(package_dir: Path) -> str: ...
+def source_digest(package_dir: Path) -> str: ...
+def runtime_versions() -> tuple[tuple[str, str], ...]: ...
+def software_identity() -> SoftwareIdentity: ...
+```
+
+The module cites SRS-009 and SRS-012 (the reports). `golden` and `evaluation.subset`, which use it, cite SRS-015 and SRS-016.
+
+**Version.** It is written in two places, always equal: `[project] version` in `dsp/pyproject.toml` and the string literal `__version__` in `sinus_dsp/__init__.py`. `dsp/uv.lock` records it too and is regenerated with `uv lock` after each change (CI's `uv sync --locked` fails otherwise; only the line of `sinus-dsp` changes). The version follows PEP 440 and the milestone register ([`milestones.md`](milestones.md)):
+
+| State of the register | Version | Example |
+|---|---|---|
+| At least one milestone `In progress` | `0.N.0.dev0`, where N is the lowest milestone `In progress` | M1 in progress: `0.1.0.dev0` |
+| No milestone `In progress` | `0.N.P`, where N is the highest milestone `Released`; P is 0 at the release of milestone N and is raised by 1 for each correction released into `main` before the next milestone starts | M1 released: `0.1.0`; its first correction: `0.1.1` |
+
+- The version names the milestone. It does not change between the development states of a milestone: the source digest tells them apart. No one has to judge whether a change "can alter a result" to decide a version change.
+- The version changes in the change that updates the register: the one that sets a milestone `In progress` (`0.N.0.dev0`) and the release pull request that sets it `Released` (`0.N.0`). A correction release raises P in the change that prepares it.
+- Milestone 0 was released as `0.0.1`, which fits the rule (`0.0.P`).
+- The major version stays 0 for the whole roadmap: `dsp` promises no compatibility of its Python interface. Under PEP 440, `0.N.0.dev0` sorts before `0.N.0`.
+
+**Source digest.** `source_digest(package_dir)`:
+1. List the files: walk `package_dir` with `os.walk(package_dir, followlinks=False)`, skipping folders whose name starts with `.` or is `__pycache__`. Keep each regular file that is not a symbolic link, whose name ends with `.py` and does not start with `.`. The walk is given an `onerror` that raises: a folder that cannot be listed, `package_dir` included, raises `OSError` (`FileNotFoundError` if `package_dir` does not exist). By default `os.walk` skips such a folder, and the digest would cover part of the package without notice.
+2. Name each file by its path relative to the parent of `package_dir`, with `/` as separator (e.g. `sinus_dsp/evaluation/run.py`), and sort the names in code-point order (`source_files`).
+3. Read each file as bytes and replace every CR LF by LF.
+4. For each file in that order, write the line `<SHA-256 of the bytes of step 3, 64 lowercase hexadecimal digits><two spaces><name><LF>`, the format of `sha256sum` in text mode.
+5. The manifest (`source_manifest`) is the concatenation of these lines, encoded in UTF-8.
+6. The digest is the SHA-256 of the manifest, written as 64 lowercase hexadecimal digits.
+
+Scope and properties:
+- Every module of the package is covered, including `__init__` (so the version) and `version` itself. Only `.py` files are covered, because the package holds no other files; a data file added to the package later is added to this rule in the same change.
+- Not covered: `dsp/scripts/` (thin wrappers, §8.1: the computations and the report text are in the package), the tests, the documents.
+- The digest does not depend on git, on the folder of the checkout or on its line endings. A ZIP download of a commit gives the same digest.
+- Anyone can recompute it from `dsp/` on a checkout with line feeds (the repository's `.gitattributes` gives them):
+
+  ```sh
+  find sinus_dsp -type f -name '*.py' -not -path '*/.*' -print0 | LC_ALL=C sort -z \
+    | xargs -0 sha256sum --text | sha256sum --text
+  ```
+
+  This was checked when the rule was written (same digest as a prototype of the six steps, on the 17 files of the package) and again on the implemented package (same digest as `source_digest`, on its 18 files, with `__pycache__` folders present). `--text` matters on Windows, where some builds of `sha256sum` default to binary mode and write `*` before each name. The command does not skip `__pycache__` folders by name: they hold only compiled files (`.pyc`), which `-name '*.py'` already leaves out. It would differ from the six steps only for a `.py` file put into a `__pycache__` folder by hand.
+- Cost: about 4 ms for the package (measured), once per report or export.
+- A digest is opaque. A released report is found through its version and the tag of the release; for a report of a development state, recomputing the digest on a candidate commit confirms or rejects it.
+
+**Runtime versions.** `runtime_versions()` returns `(name, importlib.metadata.version(name))` for each name of `RUNTIME_DISTRIBUTIONS`, in that order. `python` is `f"{sys.version_info.major}.{sys.version_info.minor}"`. The patch version of Python is left out: it is not pinned (`dsp/.python-version` gives 3.11), and it would make the stored subset report differ between machines. `RUNTIME_DISTRIBUTIONS` lists the names of the `[project] dependencies` of `dsp/pyproject.toml`, and a unit test checks that the two lists are the same, so adding a runtime dependency (`sdp.md` §7) also adds it here.
+
+**`software_identity()`** returns `SoftwareIdentity(version=sinus_dsp.__version__, source_sha256=source_digest(package_dir()), python=…, runtime=runtime_versions())`.
+- `package_dir()` is the folder of the module `version` itself (`Path(__file__).resolve().parent`): the code that is running. In the editable install made by `uv sync`, that is the checkout.
+- The version is the literal of `__init__.py`, not the installed metadata (`importlib.metadata.version("sinus-dsp")`), which reflects the last install and is stale after an edit until the next `uv sync`.
+- No error is raised on purpose. A package folder that cannot be listed (step 1) or a package file that cannot be read raises `OSError`; a runtime SOUP package that is not installed raises `importlib.metadata.PackageNotFoundError`. Both propagate (§8.2).
+
+**Report rows** (`evaluation.report`, §8.10).
+- `software_rows(software)` returns the two table lines of report section 2: `| Software | sinus-dsp <version>, source SHA-256 <digest> |` and `| Runtime | Python <python>, <name> <version>, … |`. The `Runtime` cell is `Python <python>`, then `, <name> <version>` for each pair of `software.runtime`; with no pair it is `Python <python>` alone. Both renderers use it, so the check below compares the very text they write.
+- `stale_software_rows(text, software)` splits `text` at line feeds only, removes a carriage return at the end of a line, and numbers the lines from 1. It returns one entry per problem, in the order of the lines of `text`: `line <n>: <line found>; current: <current line>` for each line that starts with `| Software | ` or `| Runtime | ` and differs from the matching line of `software_rows(software)`, then `no Software row` or `no Runtime row` when the text has one of the two rows but not the other. A text with neither row (for example `docs/validation/README.md`) gives an empty tuple.
+
+**Release check** (`scripts/software_check.py [--folder PATH]`, default `docs/validation/` at the repository root).
+- A `--folder` that is not an existing folder is a usage error (`not a folder: <path>`, exit status 2).
+- It checks the files directly in the folder whose name matches `*.md`, in code-point order of their names; subfolders are not searched, and an entry that is not a file is skipped. It reads each file as UTF-8 text with Python's universal newlines (CR LF and CR become LF), so the line numbers are those an editor shows, and calls `stale_software_rows(text, software_identity())`. A file that is not UTF-8 raises `UnicodeDecodeError`, which propagates (§8.2): exit status 1, with a traceback. The folder holds only the reports, which the scripts write in UTF-8, and its README.
+- If no file has a problem, it prints `software check: <k> reports state sinus-dsp <version>, source SHA-256 <digest>` and exits 0. k is the number of files holding the current `Software` line; when no file has a problem, that is every file with a row `Software`. Otherwise it prints `<file>: <entry>` on standard error for each problem, where `<file>` is the folder as given (absolute by default) joined with the file name, and exits 1.
+- It needs no data and runs no evaluation. It cites no requirement ID.
+- CI: a step of the release-gate workflow (pull requests into `main`), after the traceability step. A release therefore carries only reports produced by the released code. Between releases, the full report in `docs/validation/` may state an earlier identity: it then still names the code that produced it, and the next release regenerates it. The stored subset report is checked on every push instead (§8.11).
+
+**Checks in `scripts/traceability.py`.** The script does not import `sinus_dsp`; it reads the files.
+- `--check` (every push), new rule "Software version":
+  - the `[project] version` of `dsp/pyproject.toml` (read with `tomllib`) equals the string literal assigned to `__version__` in `dsp/sinus_dsp/__init__.py` (read with `ast`). That literal is the value of the only statement at the top level of the module that assigns `__version__` (`__version__ = "…"` or `__version__: str = "…"`); assignments nested in a block are not read. No such statement, more than one, or a value that is not a string literal is a failure;
+  - the version is the one the table above gives for `milestones.md`: exactly `0.N.0.dev0` with N the lowest milestone `In progress`; if none is in progress, it matches `0\.N\.(0|[1-9][0-9]*)` with N the highest milestone `Released`.
+
+  Each failure names the file, the version found and the expected form. The items of the rule, in this order, with paths relative to the repository root:
+  - for a file whose version cannot be read: `<file> not found`, `<file>: not valid TOML (<error>)`, `<file>: no [project] version given as a string`, `<file>: not valid Python (<message>, line <n>)`, `<file>: __version__ assigned <k> times, expected once` or `<file>: __version__ is not assigned a string literal`;
+  - for each file whose version does not fit the register, `<file>: version <found>, expected <form>`, where `<form>` is `0.N.0.dev0 (MN In progress)` or `0.N.P with P = 0, 1, 2, ... (MN Released, none In progress)`, e.g. `dsp/pyproject.toml: version 0.0.1, expected 0.1.0.dev0 (M1 In progress)`; if no milestone is `In progress` or `Released`, the single item `milestones.md: no milestone is In progress or Released, so no version fits`;
+  - if both versions are read and differ, `dsp/sinus_dsp/__init__.py: version <found>, expected <version of dsp/pyproject.toml> (as in dsp/pyproject.toml)`.
+- `--release-gate` also fails if the version contains `.dev`, with the item `<file>: version <found> is a development version, not a release`, once per distinct version (when the two files agree, only `dsp/pyproject.toml` is named). With the register rule this happens exactly while a milestone is `In progress`. This item is therefore what makes the gate reject a pull request into `main` while a milestone is in progress, even when all its requirements are verified and no open point targets it; the release pull request sets the milestone `Released` and the version `0.N.0` (`sdp.md` §4). The traceability matrix shows this outcome (§8.16). A version that cannot be read is also an item of the release gate, with the messages above, so that the gate fails when it runs alone; with `--check --release-gate`, as in the release-gate workflow, such an item is listed under both rules.
+- `Layout` gains `pyproject` (`dsp/pyproject.toml`) and `package_init` (`dsp/sinus_dsp/__init__.py`), so that unit tests on fixture trees cover the rule.
+- Not checked mechanically: that P is raised for a correction release, which needs the history of `main`. The release review checks it (`sdp.md` §3, activity 7).
+
+**C++ items.** This rule covers `dsp`. The versioning and identification of the C++ items is part of their detailed design, written at the start of their milestone (Conventions), starting with the library at Milestone 2.
+
+**Verification notes.**
+- Developer's unit tests:
+  - `source_digest` on a fixture package folder: equal to a digest computed independently in the test (`hashlib` on a manifest written out literally); the same whatever the order in which the files were created; a CR LF copy of a file gives the same digest; a `__pycache__` folder, a hidden file or folder, a file that is not `.py` and a symbolic link (where the platform allows one) leave it unchanged; one changed byte, a renamed file, an added or a removed `.py` file each change it; files in nested folders are named with `/`.
+  - `software_identity()` on the real package: the version equals `sinus_dsp.__version__` and the version of `dsp/pyproject.toml`; the digest has 64 lowercase hexadecimal digits; `python` matches `sys.version_info`; `RUNTIME_DISTRIBUTIONS` equals the dependency names of `dsp/pyproject.toml`.
+  - `software_rows` literally; `stale_software_rows` for a current report, a stale `Software` row, a stale `Runtime` row, one row missing, and a text with neither row.
+  - `software_check.py`: exit statuses and messages on fixture folders.
+  - The version rule of `traceability.py` on fixture trees: each state of the register, the two files disagreeing, a malformed version, the release gate. These tests are in `dsp/tests/unit/test_traceability_version.py`. The unit tests of every other rule of the script are in `dsp/tests/unit/test_traceability.py`, on fixture trees that pass every rule except the one under test (OP-052, closed on 2026-10-05); the rules of §8.16 are tested there too.
+- QA: SRS-012 as in the §8.10 verification notes; SRS-016 as in the §8.11 verification notes; SRS-015: the header keys `software_version` and `source_sha256` hold the identity of the running package.
+
+### 8.15 Licences of the reference databases and notices (SRS-012, SRS-014, SRS-016)
+
+**Purpose.** The public repository holds reports produced from the MIT-BIH Arrhythmia Database and the MIT-BIH Noise Stress Test Database. This section fixes what Sinus states about the licence of these databases, and where: a row in each report (the licence item of SRS-012 and SRS-014, which SRS-016 inherits), and a notice with the citations in two READMEs (OP-064, resolution (c), decided by the project owner on 2026-10-05).
+
+**Facts** (checked on 2026-10-05 on the PhysioNet pages of both versions, `https://physionet.org/content/mitdb/1.0.0/` and `https://physionet.org/content/nstdb/1.0.0/`, and on the licence pages they link):
+- Both versions are published under the "Open Data Commons Attribution License v1.0". Each page links PhysioNet's copy of the licence text (`https://physionet.org/content/<slug>/view-license/1.0.0/`) and names `https://opendatacommons.org/licenses/by/index.html` in its metadata: the page of the licence at Open Data Commons, which gives v1.0 as its current version. Open Data Commons publishes the text of version 1.0 at `https://opendatacommons.org/licenses/by/1-0/` (also reached from `https://opendatacommons.org/licenses/by/1.0/`).
+- The digital object identifiers of the two versions are `https://doi.org/10.13026/C2F305` (MIT-BIH Arrhythmia Database 1.0.0) and `https://doi.org/10.13026/C2HS3T` (MIT-BIH Noise Stress Test Database 1.0.0); both resolve to the pages above.
+- For a work produced from a database and used publicly, the licence asks for a notice that its content was obtained from the database and that the database is available under the licence (§4.3). Its example notice reads "Contains information from DATABASE NAME which is made available under the ODC Attribution License.", with the name and location of the database and the address of the licence text. For a database, or a derivative of it, conveyed publicly, it asks for the licence or its address to go with it (§4.2).
+- What Sinus publishes from the databases: the validation reports in `docs/validation/`, which are produced works (counts and statistics; no signal value, no annotation). No part of a database is published: the data are downloaded by script into `data/`, which git ignores, and the golden vectors of record segments are written to `data/golden/` and not stored (§7.5).
+- Each page asks to cite "the original publication" of the database and "the standard citation for PhysioNet". On 2026-10-05 these are: Moody and Mark 2001 for the MIT-BIH Arrhythmia Database; Moody, Muldrow and Mark 1984 for the MIT-BIH Noise Stress Test Database; Pollard et al. 2026 for PhysioNet (texts below). The earlier standard citation for PhysioNet, Goldberger et al. 2000, is no longer the one the pages ask for.
+
+**In the code.** The licence of a database version is a constant next to its pinned checksum list (§8.3): `DatabaseLicence(name, url)`, the constant `ODC_BY_1_0`, and the field `Database.licence`, set to `ODC_BY_1_0` on `MITDB` and `NSTDB`. The renderers of §8.10 take the row text from the `Database` of each verification result; `evaluation.report` holds no licence text.
+- Why on `Database`: the licence belongs to the published version, like its title and its checksum list; the renderers already receive the `Database` of each verification result; a fixture database states its own licence; and the field has no default, so any database added later must name its licence.
+- Why this address: it is the address of the text of the licence itself, which §4.2 and §4.3 ask for, and it stays the text of version 1.0 if a later version is published. The unversioned page named in PhysioNet's metadata would then present another version, and PhysioNet's copies give one address per database for the same text.
+- The comment of `ODC_BY_1_0` cites SRS-012 and SRS-014 and the date of the check. The constants are not validated at run time; they are reviewed like the pins of §8.3, and changed only after review if PhysioNet ever states another licence for these versions.
+
+**In the reports** (format in §8.10 and §8.11). One row per database used, right after its row `Database`:
+- full report, section 2, for the MIT-BIH Arrhythmia Database, and subset report, section 2:
+
+  ```text
+  | Database licence | Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/ |
+  ```
+- full report, noise stress section, for the MIT-BIH Noise Stress Test Database: the same row, between the rows `Database` and `Verification` of its table.
+
+The label is `Database licence`, not `Licence`, so that the row cannot be read as the licence of the report itself. With the row `Database` (name and version) it is the notice of §4.3: the report names the database it was produced from, and the licence under which that database is available, with its address. The address is plain text, which a Markdown viewer shows as a link and a text editor shows as it is. The location of the database is not repeated in the reports: its name and version identify it (the example notice of §4.3 is one way to give notice, not a required text), and both READMEs below link its page. The reports carry no citation: they are generated text with a fixed format, and the citations are in the READMEs below.
+
+**In the READMEs.** Written by hand, with the same citation texts in both, copied from the PhysioNet pages on 2026-10-05; each citation is preceded by the name of what it cites.
+
+`README.md`: the section "Data sources" becomes:
+
+````markdown
+## Data sources
+
+- [MIT-BIH Arrhythmia Database, version 1.0.0](https://physionet.org/content/mitdb/1.0.0/) (PhysioNet, https://doi.org/10.13026/C2F305)
+- [MIT-BIH Noise Stress Test Database, version 1.0.0](https://physionet.org/content/nstdb/1.0.0/) (PhysioNet, https://doi.org/10.13026/C2HS3T), for noise stress testing
+- A further database, not used during development, is planned for independent evidence (OP-029 in [open-points.md](docs/regulatory/open-points.md)).
+
+Datasets are downloaded by script and never committed to the repository.
+
+Both databases are made available by PhysioNet under the [Open Data Commons Attribution License v1.0](https://opendatacommons.org/licenses/by/1-0/). The validation reports in [`docs/validation/`](docs/validation/README.md) contain information from the MIT-BIH Arrhythmia Database and the MIT-BIH Noise Stress Test Database, which are made available under that licence; each report states the database, its version and its licence.
+
+PhysioNet asks users of these databases to cite the original publication of each database and the standard citation for PhysioNet:
+- MIT-BIH Arrhythmia Database: Moody GB, Mark RG. The impact of the MIT-BIH Arrhythmia Database. IEEE Eng in Med and Biol 20(3):45-50 (May-June 2001). (PMID: 11446209)
+- MIT-BIH Noise Stress Test Database: Moody GB, Muldrow WE, Mark RG. A noise stress test for arrhythmia detectors. Computers in Cardiology 1984; 11:381-384.
+- PhysioNet: Pollard, T., Moody, B. E., Lehman, L., Gow, B., Fernandes, C., Xie, C., Johnson, A., Mark, R. G., & Heldt, T. (2026). PhysioNet as a global platform for biomedical research. Nature Health. https://doi.org/10.1038/s44360-026-00096-z. Available from: https://rdcu.be/faatM
+````
+
+`docs/validation/README.md`: a new last section:
+
+````markdown
+## Data sources
+
+The reports contain information from the [MIT-BIH Arrhythmia Database, version 1.0.0](https://physionet.org/content/mitdb/1.0.0/) (both reports) and the [MIT-BIH Noise Stress Test Database, version 1.0.0](https://physionet.org/content/nstdb/1.0.0/) (`qrs-ec57-report.md`), which are made available by PhysioNet under the [Open Data Commons Attribution License v1.0](https://opendatacommons.org/licenses/by/1-0/). Each report states the licence of each database it uses, in the row `Database licence`.
+
+PhysioNet asks users of these databases to cite the original publication of each database and the standard citation for PhysioNet:
+- MIT-BIH Arrhythmia Database: Moody GB, Mark RG. The impact of the MIT-BIH Arrhythmia Database. IEEE Eng in Med and Biol 20(3):45-50 (May-June 2001). (PMID: 11446209)
+- MIT-BIH Noise Stress Test Database: Moody GB, Muldrow WE, Mark RG. A noise stress test for arrhythmia detectors. Computers in Cardiology 1984; 11:381-384.
+- PhysioNet: Pollard, T., Moody, B. E., Lehman, L., Gow, B., Fernandes, C., Xie, C., Johnson, A., Mark, R. G., & Heldt, T. (2026). PhysioNet as a global platform for biomedical research. Nature Health. https://doi.org/10.1038/s44360-026-00096-z. Available from: https://rdcu.be/faatM
+````
+
+The citations are kept as PhysioNet gives them, so that they can be compared with its pages; they are not reformatted to one style.
+
+**Golden vectors.** In Milestone 1 none is published, so none needs a notice (§7.5). If a golden vector of a record segment is made public from Milestone 2 (a CI artifact of the public repository is public), it holds samples of the database, so the design treats it as an extract of the database conveyed publicly, which carries the licence or its address (§4.2), for example in a notice file in the artifact; its header already names the database and its version (`input_parameters`, §7.3). The choice between no public artifact and an artifact with the notice is made with the CI design of Milestone 2 (OP-067).
+
+**Consequences of the change.**
+- The package changes (`data.physionet`, `evaluation.report`; with the reader rules of §7.3, `golden` too), so the source digest changes and both reports are regenerated in the same change (§8.11, §8.14). The stored subset report gains one row `Database licence`, the full report two; in both, the row `Software` changes; nothing else changes.
+- QA's tests of SRS-012, SRS-014 and SRS-016 check the new rows (§8.10, §8.11 verification notes). Every test that builds a `Database`, for SRS-001, SRS-009, SRS-013 and SRS-015 too, gives it a licence.
+- OP-064 was closed on 2026-10-06, once the reports, the READMEs and the tests had been merged into `develop` (pull request #12). Its Milestone 2 part, on golden vectors made public, is OP-067.
+
+**Verification notes.**
+- Developer's unit tests: `MITDB.licence` and `NSTDB.licence` equal `ODC_BY_1_0`, whose name and address equal the texts above; the rows `Database licence` of both renderers, literally, with a fixture licence (which shows that the text comes from the `Database`) and with a `|` in a fixture name (escaped as `\|`, §8.10); their position after the row `Database` in both tables.
+- QA: §8.10 and §8.11 verification notes.
+- The README texts are checked at review against this section and the PhysioNet pages; no test reads them.
+
+### 8.16 Traceability checks: corrections and clarifications (ADR 0004)
+
+**Purpose.** The unit tests of `scripts/traceability.py` (OP-052) found eight places where the script, [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md) and [`milestones.md`](milestones.md) disagree, or where the rules are silent. This section decides each one. The decision of ADR 0004 does not change: items 2, 3, 4 and 6 make the script do what ADR 0004 states; items 1 and 7 make the matrix state the facts; items 5 and 8 settle what ADR 0004 does not state. Every check stays static and deterministic (ADR 0004, constraints). The repository of 2026-10-05 passes every new rule, and its matrix changes only in the milestones table and the new section of item 1.
+
+**Verifying test.** A test verifies a requirement if it carries the requirement's tag and lies in the folder of the requirement's Verification level: a `tests/requirements/` folder for `Requirement`, a `tests/system/` folder for `System` (ADR 0004 §5, §6). If the requirement is not defined in `srs.md`, or its Verification level is neither of the two, every test tagged with it counts; both cases already fail `--check`.
+
+1. **The release gate in the matrix** (script change). `milestones.md` says that the matrix shows the outcome of the release gate, but the column `Release gate` counted only the requirements: Milestone 1 showed `pass` while `--release-gate` failed on three open points and on the development version.
+   - Milestones table, column `Release gate`, for each milestone of the register:
+     - `not applied` if its status is `Planned`;
+     - `pass` if its status is `Released`, every requirement of the milestone that is not deleted has a verifying test, and no open point of the Open section has the milestone as its Target;
+     - `**fail**` otherwise.
+
+     A milestone `In progress` therefore always shows `**fail**`: its version is then `0.N.0.dev0` (§8.14), which the gate rejects, until the release pull request sets it `Released`.
+   - A new section between the milestones table and `## Gaps` states the outcome of the gate as a whole, because the version items belong to no single milestone:
+
+     ```
+     ## Release gate
+
+     Outcome of `--release-gate` on milestones <milestones>: <outcome>
+
+     - <item>
+     ```
+
+     `<milestones>` is the result of `gated_milestones` joined with `, `, or `none`. `<outcome>` is `pass` if `release_gate_failures` returns no item, `**fail**` otherwise. When the gate fails, the outcome line is followed by an empty line and one line `- <item>` per item, in the order and with the text that `--release-gate` prints. When it passes, the section ends with the outcome line. The section changes with the register, with the open points that target a gated milestone and with the package version, so a change of any of them regenerates the matrix in the same change, as a change of an open point already does.
+   - On the repository of 2026-10-05: M0 `pass`, M1 `**fail**`; the outcome `**fail**`, with one item for each of OP-009, OP-045 and OP-064 (`OP-nnn: open point still targets M1; close or retarget it`) and the item `dsp/pyproject.toml: version 0.1.0.dev0 is a development version, not a release`.
+2. **Tests in the folder of the other level** (script change; ADR 0004 §6 counts only a correctly placed test). Only verifying tests count: in the column `Verified by`, in the column `With a verifying test`, in item 1, in the gap line "Requirements without tests", in the rule "Implemented requirements without a verifying test" and in the release gate. A test in the folder of the other level is reported only by the rule "Tests in the wrong folder for the requirement's verification level", which does not change. The rule on unknown IDs still sees every tagged test.
+3. **Test folders under the Python code roots** (script change; ADR 0004 §1). The scan for implementation citations skips a file under `dsp/sinus_dsp` or `dsp/scripts` when a folder of its path relative to the repository root is named `tests`, `test` or `test_apps`, as it already does under `libs/`, `firmware/` and `desktop/`. No such folder exists; the Python tests live under `dsp/tests`, which is not a code root.
+4. **Requirement marks outside test files** (script change; ADR 0004 §2: anywhere else, `--check` fails and the tag is not counted). Every `.py` file under `dsp/tests` is read. In a file that is not a test file by pytest's default discovery (a `conftest.py`, a helper module), each call whose function is an attribute named `requirement` (the calls that the independence rule looks for) is an item `<path>:<line>` of a new rule of `--check`, "Requirement marks outside test files", in whatever folder the file is, and never counts. pytest applies no such mark by itself (it ignores a module-level `pytestmark` in a `conftest.py`), and a mark added by a hook cannot be read statically: the rule makes both fail instead of being dropped silently. Test files keep the rules of ADR 0004 §2 and §3. A file that is not valid Python stops the script with the parser's error, as a test file already does. The fixture texts of the unit tests of the script are strings, not calls, and stay allowed.
+5. **Disabled and skipped tests** (rule now; check with the first C++ tests, OP-066). ADR 0004 §7 states only that the gate does not check that tests pass, nor that the tests needing the reference database ran.
+   - Rule, from now on: a test that carries a requirement tag runs whenever its stated preconditions hold. It is never disabled or skipped unconditionally: no `pytest.mark.skip` or `pytest.mark.xfail`, no call of `pytest.skip()` or `pytest.xfail()` that does not depend on a condition, no `DISABLED_` prefix in a GoogleTest suite or test name, no unconditional `GTEST_SKIP()`. A skip for a stated missing precondition is allowed (`needs_data`, `needs_nstdb`, and their C++ counterparts). QA and the process review check it; no test breaks it today.
+   - Check (OP-066, with the first GoogleTest tests at Milestone 2): a new rule of `--check`, "Disabled requirement tests", whose items are the tests that carry a requirement tag and, in Python, a decorator or a `pytestmark` of their module or class whose mark is an attribute named `skip` or `xfail`, or a call of one (not `skipif`), or, in C++, a suite or test name that starts with `DISABLED_`. Such a test does not count as verifying. Calls inside a test body are not read, so that the check stays static.
+6. **Targets of open points** (script change; ADR 0004 §7). The gate compares the Target of each open point with the gated milestones exactly, so a Target such as `M1 (rest M2)` escaped it. New rule of `--check`, "Open points with a Target that is not a milestone": the Target of each row of the Open section of `open-points.md` is exactly `Mn` or `After Mn`, with `Mn` a milestone of the register. Otherwise, including an empty or missing Target, the item is `OP-nnn: Target '<target>' is not a milestone of milestones.md (expected 'Mn' or 'After Mn')`. Rows of the Closed section are not checked. The gate keeps the exact comparison, and `After Mn` never matches a gated milestone. Every open point passes today (Targets `M1` to `M6` and `After M6`). The release-gate workflow runs `--check` together with `--release-gate`, so a malformed Target also fails the release.
+7. **Deleted requirements** (script change). The gap line "Requirements without tests" lists only requirements that are not deleted. The cell `Verified by` of a deleted requirement without a verifying test shows `deleted` instead of `**none**`. No requirement is deleted today.
+8. **Order of the items** (no change). Lists are sorted by their text in code-point order, so `file:10` comes before `file:9`. The order is deterministic, which is what the stale-matrix check needs; a numeric order would change the committed matrix and the items compared by the unit tests, and the matrix would state nothing more.
+
+**Order of the rules of `--check`.** "Requirement marks outside test files" comes right after the independence rule, and "Open points with a Target that is not a milestone" right after "Duplicate open point IDs". The other rules keep their order. The docstring of the script and the help of `--check` name the new rules.
+
+**Documents to align** (owned by others, same pull request): the Conventions of `milestones.md` (the release gate also rejects a development version, and the release-gate workflow also runs `software_check.py`), and the Conventions of `open-points.md` (the Target is `Mn` or `After Mn`).
+
+**Verification notes.** Developer's unit tests in `dsp/tests/unit/test_traceability.py`, each on a fixture tree that passes every other rule:
+- item 1: the cell for each status and each cause of failure, and the section literally, when the gate passes and when it fails;
+- item 2: a requirement whose only tagged test is in the folder of the other level (shown as `**none**`, listed by the level rule, and failing implemented ⇒ tested and the gate), and one with a test in each folder (only the correctly placed one shown);
+- item 3: an ID in `dsp/sinus_dsp/tests/x.py` and in `dsp/scripts/test/x.py` not counted as an implementation, and in `dsp/sinus_dsp/x.py` counted;
+- item 4: a mark call in a `conftest.py` and in a helper module, under `tests/unit` and under `tests/requirements`, each an item and not counted; the text of a mark inside a string not an item;
+- item 6: `M1 (rest M2)`, `M1, M2`, `m1`, a milestone not in the register, `After` with a milestone not in the register, an empty Target and a row without a Target column each an item; `Mn` and `After Mn` pass; closed rows not checked;
+- item 7: a deleted requirement without a test absent from the gap line and shown as `deleted`.
+
+The real repository passes `--check` with the regenerated matrix.
 
 ## 9. SOUP per software item
 
 | Item | Runtime SOUP | Recorded |
 |---|---|---|
-| dsp | NumPy, SciPy, wfdb | [`soup.md`](soup.md) |
+| dsp | Python 3.11 (interpreter and standard library), NumPy, SciPy, wfdb | [`soup.md`](soup.md) |
 | libs/sinus-dsp | None beyond the C++ standard library of each toolchain | With the toolchain, at Milestone 2 |
 | firmware | ESP-IDF (drivers, ADC calibration, NimBLE Bluetooth LE host, C and C++ runtime libraries), FreeRTOS as shipped with ESP-IDF | At Milestone 4 |
 | desktop | Qt 6 (LGPL-3.0 modules only, §6.2); WFDB implementation (OP-050) | At Milestone 3 |
 | backend | FastAPI and its runtime dependencies; database and FHIR libraries chosen at Milestone 5 | At Milestone 5 |
 
-Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, GoogleTest, pytest, linters, formatters, SBOM generators) are not SOUP (`sdp.md` §7). The SBOM of each item is described in [`cybersecurity.md`](cybersecurity.md) §6.
+Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, GoogleTest, pytest, linters, formatters, SBOM generators, vulnerability scanners) are not SOUP (`sdp.md` §7). The SBOM of each item is described in [`cybersecurity.md`](cybersecurity.md) §6.
 
 ## 10. Segregation for risk control
 
@@ -1303,4 +1859,4 @@ Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, Google
 
 ## 12. Open points referenced
 
-OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050. See [`open-points.md`](open-points.md).
+OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-052, OP-056, OP-057, OP-061, OP-063, OP-064, OP-066, OP-067. See [`open-points.md`](open-points.md).

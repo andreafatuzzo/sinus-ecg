@@ -1,0 +1,22 @@
+# Dependabot version updates (docs/regulatory/cybersecurity.md §7).
+#
+# Only the actions used by the workflows are updated by Dependabot: one grouped pull request
+# into develop per week, for releases at least 7 days old. The Python dependencies in
+# dsp/uv.lock are updated deliberately instead, because a new version of a runtime package
+# changes the software that the validation reports state and needs a review of its known
+# anomalies (docs/regulatory/soup.md). Dependabot alerts are a repository setting and cover
+# dsp/uv.lock on the default branch.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+    groups:
+      ci-actions:
+        patterns:
+          - "*"
