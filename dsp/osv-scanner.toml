@@ -1,0 +1,23 @@
+# Triage records of the vulnerability scan of the SBOM (docs/regulatory/cybersecurity.md §7).
+#
+# CI scans the SBOM of the runtime dependencies (artifact sbom-dsp) from this folder:
+#
+#   osv-scanner scan source --config=osv-scanner.toml -L <runner temporary folder>/sbom-dsp.cdx.json
+#
+# The scan fails on a known vulnerability, of any severity, that no entry below lists, and on an
+# entry whose ignoreUntil date has passed. An entry also covers the aliases of its ID.
+#
+# One entry per triaged finding, written as the triage procedure of cybersecurity.md §7.3 says:
+#   - id:          the ID that the scanner reports;
+#   - ignoreUntil: a date, written without quotes: 30 days after the first failing scan while
+#                  the triage is open; at most 180 days later for a mitigated or accepted finding;
+#   - reason:      "Triage open: #<issue>", "Mitigated: #<issue>, <rationale>" or
+#                  "Accepted: #<issue>, <rationale>".
+# An entry is removed when the component is updated. Never add one only to make CI pass.
+#
+# Form of an entry (an example, not an entry):
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2026-01-31
+# reason = "Triage open: #1"

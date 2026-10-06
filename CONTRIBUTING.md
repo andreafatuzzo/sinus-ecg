@@ -8,7 +8,7 @@ Thanks for your interest. Sinus follows a lightweight version of medical-device 
 
 1. Branch from `develop` as `feature/<short-name>`.
 2. Open a pull request into `develop`. `main` only receives pull requests from `develop` at the end of a milestone.
-3. CI must pass: ruff, mypy, pytest, the traceability checks and the subset report check (below). On pull requests into `main`, the release gate also requires a verifying test for every requirement of a milestone that is in progress or released ([`milestones.md`](docs/regulatory/milestones.md)).
+3. CI must pass: ruff, mypy, pytest, the traceability checks, the subset report check and the vulnerability scan of the SBOM (below). On pull requests into `main`, the release gate also requires a verifying test for every requirement of a milestone that is in progress or released ([`milestones.md`](docs/regulatory/milestones.md)).
 
 ## Development setup (Python, `dsp/`)
 
@@ -45,6 +45,11 @@ uv run pytest && uv run mypy && uv run ruff check . && uv run ruff format --chec
 
   and check in the diff which rows changed: only `Software` and `Runtime`, or the counts too. CI is the authority ([`architecture.md`](docs/regulatory/architecture.md) §8.11): if CI still reports a difference after the update, replace the stored report with the `subset-report` artifact of that CI run, so that the pull request shows the change for review.
 - **Validation.** QRS detection is scored with EC57 beat-by-beat matching. Beat classification must use an inter-patient split.
+
+## Security
+
+- **Reporting.** Report a vulnerability privately, as described in [`SECURITY.md`](SECURITY.md), never in a public issue.
+- **Vulnerability scan.** On every push, CI scans the SBOM of the Python reference with OSV-Scanner and fails on a known vulnerability that has not been triaged. A finding is triaged as described in [`cybersecurity.md`](docs/regulatory/cybersecurity.md) §7.3: a GitHub issue labelled `security`, and an entry in [`dsp/osv-scanner.toml`](dsp/osv-scanner.toml) with the ID, a reason and an expiry date. Never add an entry only to make CI pass.
 
 ## Reporting problems
 

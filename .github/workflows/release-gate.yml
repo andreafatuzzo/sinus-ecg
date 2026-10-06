@@ -11,6 +11,11 @@ on:
   pull_request:
     branches: [main]
 
+# The token of a run can read the repository and nothing else (docs/regulatory/cybersecurity.md
+# §7.4); no step needs more.
+permissions:
+  contents: read
+
 jobs:
   release-gate:
     runs-on: ubuntu-latest
@@ -19,6 +24,9 @@ jobs:
         working-directory: dsp
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          # The token is not stored in the Git configuration of the runner.
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true

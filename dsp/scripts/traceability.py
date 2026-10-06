@@ -1,6 +1,7 @@
 """Generate the traceability matrix and enforce the traceability gates (IEC 62304 §5.1.1).
 
-The rules and their rationale are in docs/adr/0004-test-tagging-and-traceability-gates.md.
+The rules and their rationale are in docs/adr/0004-test-tagging-and-traceability-gates.md, with
+the corrections and clarifications of docs/regulatory/architecture.md §8.16.
 IDs in this file are written as SRS-nnn, because this file is itself scanned for citations.
 
 Sources of truth (paths relative to the repository root):
@@ -11,14 +12,21 @@ Sources of truth (paths relative to the repository root):
   - Milestones:   rows ``| Mn | Title | Status |`` in docs/regulatory/milestones.md, where Status
                   is ``Planned``, ``In progress`` or ``Released``.
   - Code:         any SRS ID in the Python sources of dsp/sinus_dsp and dsp/scripts, and in the
-                  C and C++ sources of libs/, firmware/ and desktop/ outside their test folders.
+                  C and C++ sources of libs/, firmware/ and desktop/, outside test folders (a
+                  folder named tests, test or test_apps).
   - Python tests: ``@pytest.mark.requirement("SRS-nnn", ...)`` on test functions or classes,
-                  or in ``pytestmark``, in the test files under dsp/tests.
+                  or in ``pytestmark``, in the test files under dsp/tests. Test files, classes
+                  and functions are those of pytest's default discovery: files ``test_*.py``
+                  or ``*_test.py``, classes ``Test*``, functions ``test*``. A requirement mark
+                  in any other file under dsp/tests (a conftest.py, a helper module) fails
+                  --check and is never counted.
   - C++ tests:    one or more ``// Verifies: SRS-nnn, SRS-nnn`` lines directly above a
                   GoogleTest ``TEST``, ``TEST_F``, ``TEST_P``, ``TYPED_TEST`` or ``TYPED_TEST_P``,
                   in the sources under libs/, firmware/ and desktop/.
-  - Open points:  ``| OP-nnn | ... | refs | ...`` rows in docs/regulatory/open-points.md; refs
-                  may cite SRS, HAZ and RC IDs (HAZ and RC rows are in risk-analysis.md).
+  - Open points:  rows ``| OP-nnn | Open point | Refs | Opened | Target | Status |`` in
+                  docs/regulatory/open-points.md; Refs may cite SRS, HAZ and RC IDs (HAZ and RC
+                  rows are in risk-analysis.md). The Target of a row of the Open section is
+                  ``Mn`` or ``After Mn``, with Mn a milestone of the register.
   - Version:      ``[project] version`` in dsp/pyproject.toml and the string literal assigned
                   to ``__version__`` in dsp/sinus_dsp/__init__.py. Both are equal and follow
                   the milestone register: ``0.N.0.dev0`` with N the lowest milestone In
@@ -28,7 +36,13 @@ Sources of truth (paths relative to the repository root):
 
 Test folders: a requirement tag is only accepted in a ``tests/requirements/`` folder (tests for
 requirements with Verification level Requirement) or a ``tests/system/`` folder (level System),
-e.g. dsp/tests/requirements/, libs/<name>/tests/system/. Unit tests carry no tags.
+e.g. dsp/tests/requirements/, libs/<name>/tests/system/. Unit tests carry no tags. A test
+verifies a requirement only in the folder of the requirement's Verification level: a test in
+the folder of the other level fails --check and verifies nothing.
+
+The matrix shows each requirement with its citations and verifying tests, each milestone with
+the outcome of the release gate for it, the outcome of the release gate as a whole with the
+items that make it fail, and the gaps.
 
 Usage (from the repository root or anywhere):
   python dsp/scripts/traceability.py                 # rewrite docs/regulatory/traceability.md
@@ -62,9 +76,12 @@ SYSTEM_LEVEL = "System"
 LEVEL_DIRS = {"requirements": REQUIREMENT_LEVEL, "system": SYSTEM_LEVEL}
 LEVEL_FOLDER = {level: f"tests/{name}/" for name, level in LEVEL_DIRS.items()}
 
-MILESTONE_STATUSES = ("Planned", "In progress", "Released")
+PLANNED, IN_PROGRESS, RELEASED = "Planned", "In progress", "Released"
+MILESTONE_STATUSES = (PLANNED, IN_PROGRESS, RELEASED)
 # The release gate covers every milestone whose work has reached develop, and so main.
-GATED_STATUSES = ("In progress", "Released")
+GATED_STATUSES = (IN_PROGRESS, RELEASED)
+# An open point's Target is a milestone ``Mn`` of the register, or this prefix and one.
+AFTER_PREFIX = "After "
 
 CPP_SUFFIXES = (".c", ".cc", ".cpp", ".h", ".hpp")
 # Folders holding tests, never scanned as production code (``test``: ESP-IDF component tests).
@@ -194,6 +211,8 @@ class Matrix:
     open_points: list[OpenPoint]
     register_errors: list[str]  # duplicate requirements, milestones.md format errors
     misplaced_tags: list[str]  # requirement tags outside tests/requirements and tests/system
+    # requirement marks in files under dsp/tests that are not test files (conftest.py, helpers)
+    marks_outside_test_files: list[str]
     tag_errors: list[str]  # malformed or dangling C++ tags
     versions: dict[str, str]  # file -> package version found in it (pyproject first)
     version_errors: list[str]  # files whose package version cannot be read
@@ -318,14 +337,11 @@ def parse_open_points(layout: Layout) -> list[OpenPoint]:
 
 
 def scan_code(layout: Layout) -> dict[str, set[str]]:
-    """Requirement -> ``path:line`` of every citation in production code."""
+    """Requirement -> ``path:line`` of every citation in production code: the Python and C/C++
+    sources under the code roots, outside test folders."""
     files = [p for r in layout.python_code_roots for p in iter_sources(r, (".py",))]
-    files += [
-        p
-        for r in layout.cpp_roots
-        for p in iter_sources(r, CPP_SUFFIXES)
-        if not is_test_path(p, layout)
-    ]
+    files += [p for r in layout.cpp_roots for p in iter_sources(r, CPP_SUFFIXES)]
+    files = [p for p in files if not is_test_path(p, layout)]
     refs: dict[str, set[str]] = defaultdict(set)
     for path in files:
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -421,20 +437,40 @@ def _mark_ids(expr: ast.expr) -> list[str]:
 
 
 def _pytestmark_ids(body: list[ast.stmt]) -> list[str]:
-    """IDs from ``pytestmark = ...`` assignments at module or class level."""
+    """IDs from ``pytestmark = ...`` assignments, annotated or not, at module or class level."""
     ids: list[str] = []
     for stmt in body:
         if isinstance(stmt, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == "pytestmark" for t in stmt.targets
         ):
             ids.extend(_mark_ids(stmt.value))
+        elif (
+            isinstance(stmt, ast.AnnAssign)
+            and isinstance(stmt.target, ast.Name)
+            and stmt.target.id == "pytestmark"
+            and stmt.value is not None
+        ):
+            ids.extend(_mark_ids(stmt.value))
     return ids
 
 
-def scan_python_tests(layout: Layout) -> tuple[dict[str, list[TestRef]], list[str]]:
-    """Requirement -> verifying tests, and requirement marks outside the verification folders."""
+def is_python_test_file(path: Path) -> bool:
+    """Whether pytest's default discovery collects the file: ``test_*.py`` or ``*_test.py``."""
+    return path.name.startswith("test_") or path.name.endswith("_test.py")
+
+
+def scan_python_tests(layout: Layout) -> tuple[dict[str, list[TestRef]], list[str], list[str]]:
+    """Requirement -> tagged tests, requirement marks in test files outside the verification
+    folders, and requirement marks in files that are not test files.
+
+    Every ``.py`` file under the test roots is read; a file that is not valid Python stops the
+    script with the parser's error. A mark found in a file that is not a test file is never
+    counted, whatever its folder: pytest applies no such mark by itself, and a mark added by a
+    hook cannot be read statically.
+    """
     refs: dict[str, list[TestRef]] = defaultdict(list)
     misplaced: list[str] = []
+    outside: list[str] = []
 
     def visit(body: list[ast.stmt], prefix: str, inherited: list[str], level: str) -> None:
         inherited = inherited + _pytestmark_ids(body)
@@ -443,29 +479,33 @@ def scan_python_tests(layout: Layout) -> tuple[dict[str, list[TestRef]], list[st
                 ids = inherited + [i for d in node.decorator_list for i in _mark_ids(d)]
                 name = f"{prefix}::{node.name}"
                 if isinstance(node, ast.ClassDef):
-                    visit(node.body, name, ids, level)
+                    # pytest's default discovery: tests are only collected in classes Test*
+                    if node.name.startswith("Test"):
+                        visit(node.body, name, ids, level)
                 elif node.name.startswith("test"):
                     for req in dict.fromkeys(ids):
                         refs[req].append(TestRef(name, level))
 
     for root in layout.python_test_roots:
         for path in iter_sources(root, (".py",)):
-            # pytest's default discovery patterns
-            if not (path.name.startswith("test_") or path.name.endswith("_test.py")):
-                continue
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            # Every requirement mark call, however it is applied (decorator, pytestmark,
+            # pytest.param(marks=...)).
+            marks = [
+                f"{layout.rel(path)}:{n.lineno}"
+                for n in ast.walk(tree)
+                if isinstance(n, ast.Call) and _is_requirement_mark(n)
+            ]
+            if not is_python_test_file(path):
+                outside += marks
+                continue
             level = folder_level(path, layout)
-            # A requirement mark outside the verification folders is rejected, however it is
-            # applied (decorator, pytestmark, pytest.param(marks=...)), and is not counted.
+            # A requirement mark outside the verification folders is rejected and not counted.
             if level is None:
-                misplaced += [
-                    f"{layout.rel(path)}:{n.lineno}"
-                    for n in ast.walk(tree)
-                    if isinstance(n, ast.Call) and _is_requirement_mark(n)
-                ]
+                misplaced += marks
                 continue
             visit(tree.body, layout.rel(path), [], level)
-    return refs, misplaced
+    return refs, misplaced, outside
 
 
 # --- C++ tests (GoogleTest) ------------------------------------------------------------------
@@ -531,7 +571,7 @@ def scan_cpp_tests(layout: Layout) -> tuple[dict[str, list[TestRef]], list[str],
 def build(layout: Layout) -> Matrix:
     requirements, req_errors = parse_requirements(layout)
     milestones, ms_errors = parse_milestones(layout)
-    py_tests, py_misplaced = scan_python_tests(layout)
+    py_tests, py_misplaced, py_outside = scan_python_tests(layout)
     cpp_tests, cpp_misplaced, tag_errors = scan_cpp_tests(layout)
     versions, version_errors = read_versions(layout)
     tests: dict[str, list[TestRef]] = defaultdict(list)
@@ -547,6 +587,7 @@ def build(layout: Layout) -> Matrix:
         open_points=parse_open_points(layout),
         register_errors=req_errors + ms_errors,
         misplaced_tags=sorted(py_misplaced + cpp_misplaced),
+        marks_outside_test_files=sorted(py_outside),
         tag_errors=sorted(tag_errors),
         versions=versions,
         version_errors=version_errors,
@@ -555,6 +596,18 @@ def build(layout: Layout) -> Matrix:
 
 def _milestone_key(milestone_id: str) -> int:
     return int(milestone_id[1:])
+
+
+def verifying(m: Matrix, req_id: str) -> list[TestRef]:
+    """The tests that verify a requirement: those tagged with it in the folder of its
+    Verification level (ADR 0004 §5, §6). If the requirement is not defined, or its level is
+    neither Requirement nor System, every test tagged with it counts; both cases fail --check.
+    """
+    tests = m.tests.get(req_id, [])
+    req = m.requirements.get(req_id)
+    if req is None or req.level not in LEVEL_FOLDER:
+        return list(tests)
+    return [test for test in tests if test.level == req.level]
 
 
 def requirement_errors(m: Matrix) -> list[str]:
@@ -600,7 +653,7 @@ def implemented_untested(m: Matrix) -> list[str]:
     return [
         f"{req}: cited in {', '.join(sorted(m.code[req]))}"
         for req in sorted(m.code)
-        if req in m.requirements and not m.tests.get(req)
+        if req in m.requirements and not verifying(m, req)
     ]
 
 
@@ -613,6 +666,24 @@ def dangling_refs(m: Matrix) -> list[str]:
 def duplicate_open_points(m: Matrix) -> list[str]:
     counts = Counter(op.id for op in m.open_points)
     return sorted(op_id for op_id, n in counts.items() if n > 1)
+
+
+def target_errors(m: Matrix) -> list[str]:
+    """Open points of the Open section whose Target is not exactly ``Mn`` or ``After Mn``, with
+    Mn a milestone of the register; an empty or missing Target included. The release gate
+    compares Targets exactly, so any other form would escape it."""
+    out: list[str] = []
+    for op in m.open_points:
+        if not op.is_open:
+            continue
+        target = op.target
+        milestone = target.removeprefix(AFTER_PREFIX)
+        if milestone not in m.milestones:
+            out.append(
+                f"{op.id}: Target '{target}' is not a milestone of milestones.md "
+                "(expected 'Mn' or 'After Mn')"
+            )
+    return sorted(out)
 
 
 def gated_milestones(m: Matrix) -> list[str]:
@@ -690,7 +761,7 @@ def release_gate_failures(m: Matrix) -> list[str]:
             continue
         if req.milestone not in m.milestones:
             out.append(f"{req.id}: no valid milestone, so the gate cannot place it")
-        elif req.milestone in gated and not m.tests.get(req.id):
+        elif req.milestone in gated and not verifying(m, req.id):
             status = m.milestones[req.milestone].status
             out.append(f"{req.id} ({req.milestone}, {status}): no verifying test")
     for op in sorted(m.open_points, key=lambda o: o.id):
@@ -698,6 +769,27 @@ def release_gate_failures(m: Matrix) -> list[str]:
             out.append(f"{op.id}: open point still targets {op.target}; close or retarget it")
     out += development_versions(m)
     return out
+
+
+def gated_milestones_text(m: Matrix) -> str:
+    """The milestones the release gate covers, as the matrix and the command line name them."""
+    return ", ".join(gated_milestones(m)) or "none"
+
+
+def milestone_gate(m: Matrix, ms: Milestone) -> str:
+    """The cell ``Release gate`` of a milestone in the matrix.
+
+    ``not applied`` for a Planned milestone; ``pass`` for a Released milestone whose
+    requirements that are not deleted all have a verifying test and that no open point of the
+    Open section targets; ``**fail**`` otherwise, so always for a milestone In progress, whose
+    development version the gate rejects (architecture.md §8.14, §8.16).
+    """
+    if ms.status == PLANNED:
+        return "not applied"
+    reqs = [r for r in m.requirements.values() if r.milestone == ms.id and not r.deleted]
+    verified = all(verifying(m, r.id) for r in reqs)
+    targeted = any(op.is_open and op.target == ms.id for op in m.open_points)
+    return "pass" if ms.status == RELEASED and verified and not targeted else "**fail**"
 
 
 def render(m: Matrix) -> str:
@@ -722,7 +814,8 @@ def render(m: Matrix) -> str:
     for req_id in sorted(m.requirements):
         req = m.requirements[req_id]
         code = "<br>".join(sorted(m.code.get(req_id, ()))) or "—"
-        tests = "<br>".join(sorted(f"`{t.name}`" for t in m.tests.get(req_id, ()))) or "**none**"
+        tests = "<br>".join(sorted(f"`{t.name}`" for t in verifying(m, req_id)))
+        tests = tests or ("deleted" if req.deleted else "**none**")
         ops = ", ".join(sorted(open_by_req.get(req_id, ()))) or "—"
         lines.append(
             f"| {req_id} | {req.title} | {req.milestone or '—'} | {req.level or '—'} "
@@ -738,18 +831,28 @@ def render(m: Matrix) -> str:
         "| Milestone | Title | Status | Requirements | With a verifying test | Release gate |",
         "|---|---|---|---|---|---|",
     ]
-    gated = set(gated_milestones(m))
     for ms_id in sorted(m.milestones, key=_milestone_key):
         ms = m.milestones[ms_id]
         reqs = [r for r in m.requirements.values() if r.milestone == ms_id and not r.deleted]
-        tested = sum(1 for r in reqs if m.tests.get(r.id))
-        if ms_id not in gated:
-            gate = "not applied"
-        else:
-            gate = "pass" if tested == len(reqs) else "**fail**"
+        tested = sum(1 for r in reqs if verifying(m, r.id))
+        gate = milestone_gate(m, ms)
         lines.append(f"| {ms_id} | {ms.title} | {ms.status} | {len(reqs)} | {tested} | {gate} |")
 
-    untested = sorted(r for r in m.requirements if not m.tests.get(r))
+    # The outcome of the gate as a whole: the version items belong to no single milestone.
+    gate_items = release_gate_failures(m)
+    outcome = "**fail**" if gate_items else "pass"
+    lines += [
+        "",
+        "## Release gate",
+        "",
+        f"Outcome of `--release-gate` on milestones {gated_milestones_text(m)}: {outcome}",
+    ]
+    if gate_items:
+        lines += ["", *(f"- {item}" for item in gate_items)]
+
+    untested = sorted(
+        r for r, req in m.requirements.items() if not req.deleted and not verifying(m, r)
+    )
     implemented = [line.split(":", 1)[0] for line in implemented_untested(m)]
     open_count = sum(op.is_open for op in m.open_points)
     lines += ["", "## Gaps", ""]
@@ -773,11 +876,13 @@ def check_failures(m: Matrix, layout: Layout, content: str) -> list[tuple[str, l
             "Requirement tags outside tests/requirements/ or tests/system/ (independence rule)",
             m.misplaced_tags,
         ),
+        ("Requirement marks outside test files", m.marks_outside_test_files),
         ("Malformed or dangling C++ requirement tags", m.tag_errors),
         ("Tests in the wrong folder for the requirement's verification level", level_mismatches(m)),
         ("Implemented requirements without a verifying test", implemented_untested(m)),
         ("Open points citing undefined IDs", dangling_refs(m)),
         ("Duplicate open point IDs", duplicate_open_points(m)),
+        ("Open points with a Target that is not a milestone", target_errors(m)),
         ("Software version", version_failures(m)),
     ]
 
@@ -791,10 +896,12 @@ def main(argv: list[str] | None = None) -> int:
             "do not write; fail if the committed matrix is stale, a requirement lacks a valid "
             "milestone or verification level, code or tests cite unknown IDs, a requirement tag "
             "is outside tests/requirements/ and tests/system/ or in the folder of the other "
-            "verification level, a C++ tag is malformed, a requirement cited in production "
-            "code has no verifying test, open points cite undefined IDs or repeat an ID, or the "
-            "package version differs between dsp/pyproject.toml and sinus_dsp/__init__.py or "
-            "does not follow the milestone register"
+            "verification level, a requirement mark is in a file under dsp/tests that is not a "
+            "test file, a C++ tag is malformed, a requirement cited in production code has no "
+            "verifying test, open points cite undefined IDs, repeat an ID or have a Target that "
+            "is not 'Mn' or 'After Mn' with Mn in the milestone register, or the package "
+            "version differs between dsp/pyproject.toml and sinus_dsp/__init__.py or does not "
+            "follow the milestone register"
         ),
     )
     parser.add_argument(
@@ -802,9 +909,9 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "do not write; fail unless every requirement of a milestone that is In progress or "
-            "Released in docs/regulatory/milestones.md has a verifying test, no open point "
-            "still targets such a milestone, and the package version is not a development "
-            "version (run on pull requests into main)"
+            "Released in docs/regulatory/milestones.md has a verifying test in the folder of "
+            "its verification level, no open point still targets such a milestone, and the "
+            "package version is not a development version (run on pull requests into main)"
         ),
     )
     args = parser.parse_args(argv)
@@ -818,7 +925,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wrote {layout.rel(layout.output)}")
         return 0
 
-    gate = f"release gate on milestones {', '.join(gated_milestones(matrix)) or 'none'}"
+    gate = f"release gate on milestones {gated_milestones_text(matrix)}"
     failures: list[tuple[str, list[str]]] = []
     if args.check:
         failures += check_failures(matrix, layout, content)

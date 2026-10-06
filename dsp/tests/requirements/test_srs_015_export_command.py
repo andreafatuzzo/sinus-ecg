@@ -1,12 +1,12 @@
 """Requirement tests of SRS-015: the command that writes the golden vectors (RC-012).
 
-SRS-015 (v0.7.1): "A single command shall write one golden-vector file for each input" of
-the synthetic set and of the first 60 s of each record of the subset of SRS-016, where the
-files of these records are available and verified. Two runs on the same computer and inputs,
-with the same software version and source code and the same third-party versions, give
-byte-identical files; each file states the software version with an identifier of the source
-code that produced it. Verification: "The command is run twice on the synthetic set and on a
-fixture record".
+SRS-015 (v0.7.2): "A single command shall write one golden-vector file for each input" of
+the synthetic set and of the first 60 s of each record of the subset of SRS-016, if the files
+of all these records are available and verified (otherwise none of these record segments).
+Two runs on the same computer and inputs, with the same software version and source code and
+the same third-party versions, give byte-identical files; each file states the software
+version with an identifier of the source code that produced it. Verification: "The command
+is run twice on the synthetic set and on a fixture record".
 
 The command is `scripts/export_golden.py [--output DIR] [--data-dir PATH]` (architecture,
 sections 7.5 and 8.12): defaults `data/golden/` and `data/` at the repository root; it prints
@@ -34,7 +34,7 @@ from typing import Any
 
 import pytest
 
-from sinus_dsp.data.physionet import Database
+from sinus_dsp.data.physionet import Database, DatabaseLicence
 from sinus_dsp.golden import export_golden_vectors
 
 pytestmark = pytest.mark.usefixtures("forbid_network")
@@ -52,9 +52,20 @@ SYNTHETIC_IDS = tuple(
 SEGMENT_IDS = tuple(f"mitdb-{name}-first60s" for name in SUBSET)
 
 
+# A licence of the fixture database: the `Database` has no default for it (architecture,
+# section 8.3). A golden-vector file does not state it (section 7.3).
+FIXTURE_LICENCE = DatabaseLicence(
+    name="Fixture Data Licence 1.0", url="https://licences.example.org/fixture/1-0/"
+)
+
+
 def _database(pin: str) -> Database:
     return Database(
-        slug="mitdb", version="1.0.0", title="MIT-BIH Arrhythmia Database", checksum_list_sha256=pin
+        slug="mitdb",
+        version="1.0.0",
+        title="MIT-BIH Arrhythmia Database",
+        checksum_list_sha256=pin,
+        licence=FIXTURE_LICENCE,
     )
 
 

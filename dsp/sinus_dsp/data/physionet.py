@@ -43,6 +43,29 @@ _RECORD_NAME: Final = re.compile(r"[A-Za-z0-9_]+")
 
 
 @dataclass(frozen=True)
+class DatabaseLicence:
+    """The licence under which a database version is published (architecture §8.15).
+
+    Attributes:
+        name: Name of the licence, e.g. ``Open Data Commons Attribution License v1.0``.
+        url: Address of the text of the licence.
+    """
+
+    name: str
+    url: str
+
+
+#: SRS-012, SRS-014: the licence of version 1.0.0 of both the MIT-BIH Arrhythmia Database and
+#: the MIT-BIH Noise Stress Test Database, which the reports state, with the address of the text
+#: of version 1.0 of the licence (checked on their PhysioNet pages on 2026-10-05). Not validated
+#: at run time: reviewed like the pinned checksum lists if PhysioNet ever states another licence.
+ODC_BY_1_0: Final = DatabaseLicence(
+    name="Open Data Commons Attribution License v1.0",
+    url="https://opendatacommons.org/licenses/by/1-0/",
+)
+
+
+@dataclass(frozen=True)
 class Database:
     """A database version published by PhysioNet.
 
@@ -52,30 +75,35 @@ class Database:
         title: Title of the database, e.g. ``MIT-BIH Arrhythmia Database``.
         checksum_list_sha256: Pinned SHA-256 of its ``SHA256SUMS.txt``, 64 lowercase hexadecimal
             digits.
+        licence: The licence under which PhysioNet publishes this version, stated in the
+            reports. It has no default, so every database names its licence.
     """
 
     slug: str
     version: str
     title: str
     checksum_list_sha256: str
+    licence: DatabaseLicence
 
 
 #: SRS-001: version 1.0.0 of the MIT-BIH Arrhythmia Database, with the pinned digest of its
-#: checksum list (704 files).
+#: checksum list (704 files) and its licence.
 MITDB: Final[Database] = Database(
     slug="mitdb",
     version="1.0.0",
     title="MIT-BIH Arrhythmia Database",
     checksum_list_sha256="b61158a96d5f2ca80edfb354a9a66a6324836c390a84e1966dcee2b907d6be43",
+    licence=ODC_BY_1_0,
 )
 
 #: SRS-013: version 1.0.0 of the MIT-BIH Noise Stress Test Database, with the pinned digest of
-#: its checksum list (97 files).
+#: its checksum list (97 files) and its licence.
 NSTDB: Final[Database] = Database(
     slug="nstdb",
     version="1.0.0",
     title="MIT-BIH Noise Stress Test Database",
     checksum_list_sha256="b76bd98c5111439fcfff2f410afd70d64e79f072049c45b5a9916a3044fdb84f",
+    licence=ODC_BY_1_0,
 )
 
 #: URL -> content of the file. It raises ``OSError`` on failure.

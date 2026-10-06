@@ -260,6 +260,11 @@ def test_the_report_of_the_results(data: tuple[Path, Database], fake_detector: D
     assert verification.startswith("verified: 23 files match")
     assert verification.endswith("; records 100, 105, 108, 119, 203, 207")
     assert f"| Verification | {verification} |" in lines
+    database_row = lines.index("| Database | Fixture Arrhythmia Database, version 1.0.0 |")
+    assert lines[database_row + 1] == (
+        "| Database licence | Fixture Licence of mitdb 1.0, https://licences.example/mitdb/ |"
+    )
+    assert sum(line.startswith("| Database licence |") for line in lines) == 1
     assert "| Records | 6 |" in lines
     assert "| Gross |  | 12 | 4 | 3 | 75.00 | 80.00 |" in lines
     assert all(row in lines for row in software_rows(software_identity()))

@@ -8,7 +8,8 @@ versions of the third-party software used, produce byte-identical reports.
 Every run of these tests uses the same interpreter and installed packages, so the versions
 of the third-party software are the same. The reports are generated from the fixture
 databases of `conftest.py` (records written with wfdb, RECORDS files, checksum lists,
-`Database` values pinned to the fixture lists), without network:
+`Database` values pinned to the fixture lists, with the fixture licences that the reports
+state), without network:
 - in the test process, with the detector double of `conftest.py`;
 - in separate Python processes, from other folders, with other hash seeds and text
   encodings, to show that nothing in the report depends on the process or the machine;
@@ -51,18 +52,21 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 
 
 def _databases(fixture: Any) -> tuple[Database, Database]:
-    """The two `Database` values of a fixture, pinned to the digests of its checksum lists."""
+    """The two `Database` values of a fixture, pinned to the digests of its checksum lists,
+    with the fixture licences (the same values as the report driver of `conftest.py`)."""
     mitdb = Database(
         slug="mitdb",
         version="1.0.0",
         title=MITDB_TITLE,
         checksum_list_sha256=fixture.mitdb.checksum_list_sha256,
+        licence=fixture.mitdb.licence,
     )
     nstdb = Database(
         slug="nstdb",
         version="1.0.0",
         title=NSTDB_TITLE,
         checksum_list_sha256=fixture.nstdb.checksum_list_sha256,
+        licence=fixture.nstdb.licence,
     )
     return mitdb, nstdb
 

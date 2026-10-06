@@ -9,13 +9,20 @@ the detections, and therefore every count, are known (SRS-008 decides them; the 
 values are worked out in the docstring of each record builder of `conftest.py`). The command
 tests run the script of the software in a separate process, without network.
 
-What the tests check, from the statement of SRS-012 (v0.7):
+What the tests check, from the statement of SRS-012 (v0.7.2):
 - the per-record and aggregate statistics of SRS-011, with values matching the fixture;
 - the five records with the lowest Se and with the lowest +P, among the records whose value
   is defined (fewer if fewer are defined), ties ordered by record name;
 - the pass or fail of each SRS-007 threshold (99.50%), decided on the exact counts; a
   threshold whose value is not defined is reported as fail;
 - the database name and version and the outcome of its verification (SRS-001);
+- the licence under which the database is published, with the address of the licence text,
+  in the form of architecture sections 8.10 and 8.15: the row `| Database licence | <name>,
+  <url> |` right after the row `Database` of section 2. The fixture `Database` values carry
+  fixture licences that differ from the real one and from each other, so the row is seen to
+  come from the database verified; for version 1.0.0 of the MIT-BIH Arrhythmia Database the
+  row reads `Open Data Commons Attribution License v1.0,
+  https://opendatacommons.org/licenses/by/1-0/`;
 - the software version, with the identifier of the source code that produced the report,
   and the settings used (channel, mains frequency). The test computes the identifier itself
   from the source files of the package under test, with the six steps of architecture
@@ -46,6 +53,13 @@ The cases of the verification of SRS-012 and their tests:
   `test_command_report_states_the_software_and_the_runtime_versions`;
 - the versions of the third-party software are those of the environment that runs the test,
   in the documented form: `test_report_states_the_runtime_versions_of_the_environment`;
+- the licence of the database and the address of its text in the documented form, and the
+  Open Data Commons Attribution License v1.0 for version 1.0.0 of the MIT-BIH Arrhythmia
+  Database: `test_report_states_the_licence_of_the_database`,
+  `test_report_states_the_licence_of_the_database_used`,
+  `test_licence_row_is_that_of_the_database_of_the_results`,
+  `test_report_states_the_licence_of_version_1_0_0_of_the_mit_bih_arrhythmia_database`, and
+  through the command, `test_command_report_states_the_software_and_the_runtime_versions`;
 - two episodes, one that ends before 5:00 and one after it: record 207 of the standard
   fixture (`test_episode_before_5_minutes_counts_only_in_the_episodes_of_the_record`) and
   the case `one-before-and-one-after-5min` of the figures of one record;
@@ -89,7 +103,13 @@ from typing import Any
 import numpy as np
 import pytest
 
-from sinus_dsp.data.physionet import Database, VerificationResult
+from sinus_dsp.data.physionet import (
+    MITDB,
+    ODC_BY_1_0,
+    Database,
+    DatabaseLicence,
+    VerificationResult,
+)
 from sinus_dsp.data.records import Annotation, Record
 from sinus_dsp.errors import DataVerificationError
 from sinus_dsp.evaluation.metrics import RecordCounts, aggregate_statistics
@@ -131,19 +151,29 @@ VALIDATE_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "validate.py
 VF_RECORDS = ("207", "208", "209", "210", "211")
 
 
-def _databases(fixture: Any, *, mitdb_title: str = MITDB_TITLE, mitdb_version: str = "1.0.0"):
-    """The two `Database` values of a fixture, pinned to the digests of its checksum lists."""
+def _databases(
+    fixture: Any,
+    *,
+    mitdb_title: str = MITDB_TITLE,
+    mitdb_version: str = "1.0.0",
+    mitdb_licence: DatabaseLicence | None = None,
+):
+    """The two `Database` values of a fixture, pinned to the digests of its checksum lists,
+    with the fixture licences (`FIXTURE_LICENCES` of `conftest.py`) unless another licence is
+    given for the MIT-BIH database."""
     mitdb = Database(
         slug="mitdb",
         version=mitdb_version,
         title=mitdb_title,
         checksum_list_sha256=fixture.mitdb.checksum_list_sha256,
+        licence=fixture.mitdb.licence if mitdb_licence is None else mitdb_licence,
     )
     nstdb = Database(
         slug="nstdb",
         version="1.0.0",
         title=NSTDB_TITLE,
         checksum_list_sha256=fixture.nstdb.checksum_list_sha256,
+        licence=fixture.nstdb.licence,
     )
     return mitdb, nstdb
 
@@ -170,7 +200,7 @@ def _generate(
     output: Path,
     detector_class: Callable[[], Any],
     settings: EvaluationSettings | None = None,
-    **database_options: str,
+    **database_options: Any,
 ) -> Run:
     """Write the report of ``fixture`` to ``output`` and run the evaluation once more."""
     mitdb, nstdb = _databases(fixture, **database_options)
@@ -311,6 +341,205 @@ def test_report_states_the_database_that_was_verified(
 
 def _replaced(results: Any, **changes: Any) -> Any:
     return replace(results, **changes)
+
+
+# --------------------------------------------------------------------------------------------
+# The licence of the database (SRS-012 v0.7.2, OP-064)
+# --------------------------------------------------------------------------------------------
+
+# The fixture licences of `conftest.py` (`FIXTURE_LICENCES`), as the rows must state them.
+MITDB_LICENCE_TEXT = (
+    "Fixture Arrhythmia Data Licence 1.2, https://licences.example.org/fixture-arrhythmia/1-2/"
+)
+NSTDB_LICENCE_TEXT = (
+    "Fixture Noise Stress Data Licence 3.4, https://licences.example.org/fixture-noise-stress/3-4/"
+)
+# The licence of version 1.0.0 of the MIT-BIH Arrhythmia Database, with the address of its
+# text, in the form of architecture sections 8.10 and 8.15.
+ODC_BY_TEXT = (
+    "Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/"
+)
+# The rows of the table of section 2, in the documented order (architecture, section 8.10).
+SECTION_2_ROWS = [
+    "Software",
+    "Runtime",
+    "Database",
+    "Database licence",
+    "Verification",
+    "Records",
+    "Signal",
+    "Mains interference filter",
+    "Matching",
+]
+
+
+def _licence_row(text: str) -> str:
+    """The documented table line of the licence item."""
+    return f"| Database licence | {text} |"
+
+
+def _licence_rows(lines: Sequence[str]) -> list[str]:
+    return [line for line in lines if line.startswith("| Database licence |")]
+
+
+@pytest.mark.requirement("SRS-012")
+def test_report_states_the_licence_of_the_database(
+    standard_run: Run, parse_report: Callable[[str], Any]
+) -> None:
+    """The licence under which the database is published, with the address of its text.
+
+    SRS-012 (v0.7.2), in the form documented in architecture sections 8.10 and 8.15: the row
+    `| Database licence | <name>, <url> |`, right after the row `Database` of section 2.
+    Input: the report of the standard fixture, whose MIT-BIH `Database` carries the fixture
+    licence "Fixture Arrhythmia Data Licence 1.2", address
+    https://licences.example.org/fixture-arrhythmia/1-2/ (the noise stress `Database` carries
+    another fixture licence).
+    Expected: the table of the section "Software, data and settings" (columns Item, Value)
+    has the rows Software, Runtime, Database, Database licence, Verification, Records,
+    Signal, Mains interference filter and Matching, in this order; its only licence line is
+    `| Database licence | Fixture Arrhythmia Data Licence 1.2,
+    https://licences.example.org/fixture-arrhythmia/1-2/ |`; the section does not state the
+    licence of the noise stress database, and the report nowhere states the Open Data
+    Commons licence of the real databases (the text comes from the `Database` verified); the
+    results carry that licence.
+    """
+    section = parse_report(standard_run.text).section("software, data and settings")
+    table = section.table_with_row("Database licence")
+
+    assert table.header == ("Item", "Value")
+    assert table.first_cells() == SECTION_2_ROWS
+    assert table.row("Database licence") == ("Database licence", MITDB_LICENCE_TEXT)
+    assert _licence_rows(section.lines) == [_licence_row(MITDB_LICENCE_TEXT)]
+    assert NSTDB_LICENCE_TEXT not in section.text
+    assert "Open Data Commons" not in standard_run.text
+    assert "opendatacommons.org" not in standard_run.text
+    assert standard_run.results.mitdb.database.licence == DatabaseLicence(
+        name="Fixture Arrhythmia Data Licence 1.2",
+        url="https://licences.example.org/fixture-arrhythmia/1-2/",
+    )
+
+
+@pytest.mark.requirement("SRS-012")
+def test_report_states_the_licence_of_the_database_used(
+    tmp_path: Path,
+    evaluation_fixture: Any,
+    make_spike_detector: Callable[[], Any],
+    parse_report: Callable[[str], Any],
+) -> None:
+    """The licence stated is that of the database verified and evaluated, not a fixed text.
+
+    Input: the standard fixture, with the MIT-BIH `Database` given the licence "Licence de
+    données d’essai 2.0" (non-ASCII characters), address
+    https://licences.example.org/essai/2-0/ (same files and pinned list).
+    Expected: section 2 has the line `| Database licence | Licence de données d’essai 2.0,
+    https://licences.example.org/essai/2-0/ |` right after the row `Database`, its only
+    licence line, and the report does not state the fixture licence of the standard run.
+    """
+    licence = DatabaseLicence(
+        name="Licence de données d’essai 2.0", url="https://licences.example.org/essai/2-0/"
+    )
+    run = _generate(
+        evaluation_fixture, tmp_path / "report.md", make_spike_detector, mitdb_licence=licence
+    )
+    section = parse_report(run.text).section("software, data and settings")
+    lines = list(section.lines)
+    database = lines.index("| Database | MIT-BIH Arrhythmia Database, version 1.0.0 |")
+
+    assert lines[database + 1] == _licence_row(
+        "Licence de données d’essai 2.0, https://licences.example.org/essai/2-0/"
+    )
+    assert _licence_rows(lines) == [lines[database + 1]]
+    assert MITDB_LICENCE_TEXT not in run.text
+
+
+@pytest.mark.requirement("SRS-012")
+def test_report_states_the_licence_of_version_1_0_0_of_the_mit_bih_arrhythmia_database(
+    tmp_path: Path,
+    evaluation_fixture: Any,
+    make_spike_detector: Callable[[], Any],
+    parse_report: Callable[[str], Any],
+) -> None:
+    """For version 1.0.0 of the MIT-BIH Arrhythmia Database, the licence is the Open Data
+    Commons Attribution License v1.0 (the verification of SRS-012).
+
+    Input: the database description of the software for that version (`MITDB`), with only
+    its pinned digest replaced by that of the fixture list (`dataclasses.replace`, as
+    architecture section 8.10 suggests), and the fixture noise stress database; the report
+    of the standard fixture written with them.
+    Expected: `MITDB` carries the licence "Open Data Commons Attribution License v1.0" with
+    the address https://opendatacommons.org/licenses/by/1-0/ (the constant `ODC_BY_1_0`);
+    section 2 has the line `| Database | MIT-BIH Arrhythmia Database, version 1.0.0 |`
+    followed by `| Database licence | Open Data Commons Attribution License v1.0,
+    https://opendatacommons.org/licenses/by/1-0/ |` (architecture, section 8.15), its only
+    licence line.
+    """
+    mitdb = replace(MITDB, checksum_list_sha256=evaluation_fixture.mitdb.checksum_list_sha256)
+    _, nstdb = _databases(evaluation_fixture)
+    output = tmp_path / "qrs-ec57-report.md"
+
+    write_validation_report(
+        output,
+        evaluation_fixture.data_root,
+        mitdb=mitdb,
+        nstdb=nstdb,
+        detector=make_spike_detector(),
+        fetch=None,
+    )
+
+    report = parse_report(output.read_bytes().decode("utf-8"))
+    lines = list(report.section("software, data and settings").lines)
+    database = lines.index("| Database | MIT-BIH Arrhythmia Database, version 1.0.0 |")
+    assert MITDB.licence == DatabaseLicence(
+        name="Open Data Commons Attribution License v1.0",
+        url="https://opendatacommons.org/licenses/by/1-0/",
+    )
+    assert MITDB.licence == ODC_BY_1_0
+    assert lines[database + 1] == (
+        "| Database licence | Open Data Commons Attribution License v1.0, "
+        "https://opendatacommons.org/licenses/by/1-0/ |"
+    )
+    assert _licence_rows(lines) == [_licence_row(ODC_BY_TEXT)]
+
+
+@pytest.mark.requirement("SRS-012")
+def test_licence_row_is_that_of_the_database_of_the_results(
+    parse_report: Callable[[str], Any],
+) -> None:
+    """The row is rendered from the `Database` of the verification result of the results.
+
+    Input: results of one record rendered as the full report, with the MIT-BIH `Database`
+    carrying "Rendered Arrhythmia Data Licence 5.6"
+    (https://licences.example.org/rendered-arrhythmia/5-6/); then the same results with that
+    licence replaced by "Another Data Licence 9.9"
+    (https://licences.example.org/another/9-9/).
+    Expected: section 2 states the licence of each `Database`, in the row right after
+    `Database`, its only licence line; the two reports differ in that line only.
+    """
+    results = _results([_evaluation("100", 10, 0, 0)])
+    other_licence = DatabaseLicence(
+        name="Another Data Licence 9.9", url="https://licences.example.org/another/9-9/"
+    )
+    other = _replaced(
+        results,
+        mitdb=_replaced(results.mitdb, database=_replaced(RENDER_MITDB, licence=other_licence)),
+    )
+
+    first = render_full_report(results).split("\n")
+    second = render_full_report(other).split("\n")
+
+    database = first.index("| Database | MIT-BIH Arrhythmia Database, version 1.0.0 |")
+    assert first[database + 1] == _licence_row(
+        "Rendered Arrhythmia Data Licence 5.6, "
+        "https://licences.example.org/rendered-arrhythmia/5-6/"
+    )
+    assert second[database + 1] == _licence_row(
+        "Another Data Licence 9.9, https://licences.example.org/another/9-9/"
+    )
+    assert len(first) == len(second)
+    differing = [i for i, (a, b) in enumerate(zip(first, second, strict=True)) if a != b]
+    assert differing == [database + 1]
+    section = parse_report("\n".join(first)).section("software, data and settings")
+    assert _licence_rows(section.lines) == [first[database + 1]]
 
 
 # --------------------------------------------------------------------------------------------
@@ -589,6 +818,7 @@ def test_command_report_states_the_software_and_the_runtime_versions(
     ecg_evaluation_fixture: Any,
     write_command_driver: Callable[[Path], Path],
     running_software: Any,
+    parse_report: Callable[[str], Any],
 ) -> None:
     """The report written by the validation command states the same software identity.
 
@@ -598,7 +828,11 @@ def test_command_report_states_the_software_and_the_runtime_versions(
     Expected: exit status 0; the report has exactly one line starting with `| Software |`,
     equal to `| Software | sinus-dsp <version>, source SHA-256 <identifier computed by the
     test> |`, and one starting with `| Runtime |`, equal to the documented line with the
-    versions of the environment that runs the test.
+    versions of the environment that runs the test. The command uses the database
+    descriptions of the software (only their pinned digests are replaced), so section 2 states
+    the licence of version 1.0.0 of the MIT-BIH Arrhythmia Database: `| Database licence |
+    Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/ |`
+    right after the row `Database`, its only licence line.
     """
     fixture = ecg_evaluation_fixture
     output = tmp_path / "out" / "qrs-ec57-report.md"
@@ -617,6 +851,10 @@ def test_command_report_states_the_software_and_the_runtime_versions(
     text = output.read_bytes().decode("utf-8")
     assert _rows_starting_with(text, "| Software |") == [running_software.software_row]
     assert _rows_starting_with(text, "| Runtime |") == [running_software.runtime_row]
+    lines = list(parse_report(text).section("software, data and settings").lines)
+    database = lines.index("| Database | MIT-BIH Arrhythmia Database, version 1.0.0 |")
+    assert lines[database + 1] == _licence_row(ODC_BY_TEXT)
+    assert _licence_rows(lines) == [_licence_row(ODC_BY_TEXT)]
 
 
 @pytest.mark.requirement("SRS-012")
@@ -820,10 +1058,24 @@ def test_report_ranks_the_five_records_with_the_lowest_positive_predictivity(
 # --------------------------------------------------------------------------------------------
 
 RENDER_MITDB = Database(
-    slug="mitdb", version="1.0.0", title=MITDB_TITLE, checksum_list_sha256="0" * 64
+    slug="mitdb",
+    version="1.0.0",
+    title=MITDB_TITLE,
+    checksum_list_sha256="0" * 64,
+    licence=DatabaseLicence(
+        name="Rendered Arrhythmia Data Licence 5.6",
+        url="https://licences.example.org/rendered-arrhythmia/5-6/",
+    ),
 )
 RENDER_NSTDB = Database(
-    slug="nstdb", version="1.0.0", title=NSTDB_TITLE, checksum_list_sha256="1" * 64
+    slug="nstdb",
+    version="1.0.0",
+    title=NSTDB_TITLE,
+    checksum_list_sha256="1" * 64,
+    licence=DatabaseLicence(
+        name="Rendered Noise Stress Data Licence 7.8",
+        url="https://licences.example.org/rendered-noise-stress/7-8/",
+    ),
 )
 NOISE_STRESS_NAMES = (
     "118e24",

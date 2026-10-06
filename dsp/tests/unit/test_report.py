@@ -1,13 +1,23 @@
 """Unit tests of the rendering of the validation reports, on results built by hand."""
 
+import ast
 import dataclasses
 import random
 import re
+from pathlib import Path
 
 import pytest
 
-from sinus_dsp.data.physionet import Database, VerificationResult
+from sinus_dsp.data.physionet import (
+    MITDB,
+    NSTDB,
+    ODC_BY_1_0,
+    Database,
+    DatabaseLicence,
+    VerificationResult,
+)
 from sinus_dsp.errors import InvalidInputError
+from sinus_dsp.evaluation import report
 from sinus_dsp.evaluation.metrics import RecordCounts, aggregate_statistics
 from sinus_dsp.evaluation.noise_stress import (
     NOISE_STRESS_RECORDS,
@@ -29,13 +39,28 @@ from sinus_dsp.evaluation.run import (
 )
 from sinus_dsp.version import SoftwareIdentity
 
+# Fixture licences: one per database, neither that of the real databases, so that each row
+# "Database licence" is seen to come from the database of its table.
+MITDB_LICENCE = DatabaseLicence("Fixture Arrhythmia Licence 1.0", "https://licences.example/a/")
+NSTDB_LICENCE = DatabaseLicence("Fixture Noise Licence 2.0", "https://licences.example/n/")
 MITDB_VERIFICATION = VerificationResult(
-    Database("mitdb", "1.0.0", "Fixture Arrhythmia Database", "a" * 64),
+    Database("mitdb", "1.0.0", "Fixture Arrhythmia Database", "a" * 64, MITDB_LICENCE),
     None,
     ("100.dat", "100.hea", "RECORDS"),
 )
 NSTDB_VERIFICATION = VerificationResult(
-    Database("nstdb", "1.0.0", "Fixture Noise Database", "b" * 64), None, ("118e24.dat",)
+    Database("nstdb", "1.0.0", "Fixture Noise Database", "b" * 64, NSTDB_LICENCE),
+    None,
+    ("118e24.dat",),
+)
+MITDB_LICENCE_LINE = (
+    "| Database licence | Fixture Arrhythmia Licence 1.0, https://licences.example/a/ |"
+)
+NSTDB_LICENCE_LINE = "| Database licence | Fixture Noise Licence 2.0, https://licences.example/n/ |"
+# The row of the real databases (architecture §8.15).
+REAL_LICENCE_LINE = (
+    "| Database licence | Open Data Commons Attribution License v1.0, "
+    "https://opendatacommons.org/licenses/by/1-0/ |"
 )
 SOFTWARE = SoftwareIdentity(
     version="0.1.0.dev0",
@@ -148,6 +173,8 @@ EXPECTED_FULL_REPORT = (
                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef |",
                 "| Runtime | Python 3.11, numpy 2.4.6, scipy 1.17.1, wfdb 4.3.1 |",
                 "| Database | Fixture Arrhythmia Database, version 1.0.0 |",
+                "| Database licence | Fixture Arrhythmia Licence 1.0, "
+                "https://licences.example/a/ |",
                 "| Verification | verified: 3 files match the published SHA-256 checksum list "
                 "(SHA256SUMS.txt, SHA-256 {A}) |",
                 "| Records | 6 |",
@@ -226,6 +253,7 @@ EXPECTED_FULL_REPORT = (
                 "| Item | Value |",
                 "|---|---|",
                 "| Database | Fixture Noise Database, version 1.0.0 |",
+                "| Database licence | Fixture Noise Licence 2.0, https://licences.example/n/ |",
                 "| Verification | verified: 1 files match the published SHA-256 checksum list "
                 "(SHA256SUMS.txt, SHA-256 {B}) |",
                 "",
@@ -460,8 +488,11 @@ def test_settings_other_than_the_defaults_are_stated() -> None:
 
 
 def test_software_database_and_verification_of_a_subset_selection() -> None:
+    licence = DatabaseLicence("Other | Licence", "https://licences.example/x|y/")
     verification = VerificationResult(
-        Database("mitdb", "2.0.0", "Other | Database", "c" * 64), ("100", "118"), ("100.dat",)
+        Database("mitdb", "2.0.0", "Other | Database", "c" * 64, licence),
+        ("100", "118"),
+        ("100.dat",),
     )
     software = SoftwareIdentity("9.8.7", "f" * 64, "3.12", (("numpy", "1.26.0"),))
     results = dataclasses.replace(full_results(), mitdb=verification, software=software)
@@ -470,10 +501,115 @@ def test_software_database_and_verification_of_a_subset_selection() -> None:
     assert "| Runtime | Python 3.12, numpy 1.26.0 |" in text
     assert SOFTWARE_LINE not in text
     assert "| Database | Other \\| Database, version 2.0.0 |" in text
+    assert "| Database licence | Other \\| Licence, https://licences.example/x\\|y/ |" in text
     assert (
         "| Verification | verified: 1 files match the published SHA-256 checksum list "
         f"(SHA256SUMS.txt, SHA-256 {'c' * 64}); records 100, 118 |"
     ) in text
+
+
+# --- licence rows ---------------------------------------------------------------------------
+
+
+def section_2(text: str) -> list[str]:
+    return line_after(text, "## Software, data and settings")
+
+
+def noise_stress_items(text: str) -> list[str]:
+    return line_after(text, "## Noise stress test")
+
+
+@pytest.mark.parametrize("render", [render_full_report, render_subset_report])
+def test_licence_row_follows_the_database_row_in_section_2(render: object) -> None:
+    results = full_results() if render is render_full_report else subset_results()
+    assert callable(render)
+    table = section_2(render(results))
+    assert table[4:7] == [
+        "| Database | Fixture Arrhythmia Database, version 1.0.0 |",
+        MITDB_LICENCE_LINE,
+        "| Verification | verified: 3 files match the published SHA-256 checksum list "
+        f"(SHA256SUMS.txt, SHA-256 {'a' * 64}) |",
+    ]
+    assert [line.split(" | ")[0] for line in table[2:]] == [
+        "| Software",
+        "| Runtime",
+        "| Database",
+        "| Database licence",
+        "| Verification",
+        "| Records",
+        "| Signal",
+        "| Mains interference filter",
+        "| Matching",
+    ]
+
+
+def test_licence_row_of_the_noise_stress_database() -> None:
+    assert noise_stress_items(render_full_report(full_results())) == [
+        "| Item | Value |",
+        "|---|---|",
+        "| Database | Fixture Noise Database, version 1.0.0 |",
+        NSTDB_LICENCE_LINE,
+        "| Verification | verified: 1 files match the published SHA-256 checksum list "
+        f"(SHA256SUMS.txt, SHA-256 {'b' * 64}) |",
+    ]
+
+
+@pytest.mark.parametrize("render", [render_full_report, render_subset_report])
+def test_each_licence_row_comes_from_the_database_of_its_table(render: object) -> None:
+    results = full_results() if render is render_full_report else subset_results()
+    assert callable(render)
+    text = render(results)
+    lines = text.split("\n")
+    assert lines.count(MITDB_LICENCE_LINE) == 1
+    expected_nstdb = 1 if render is render_full_report else 0
+    assert lines.count(NSTDB_LICENCE_LINE) == expected_nstdb
+    assert sum(line.startswith("| Database licence |") for line in lines) == 1 + expected_nstdb
+    # Another licence on the arrhythmia database changes only its row.
+    other = DatabaseLicence("Another Licence", "https://licences.example/other/")
+    mitdb = dataclasses.replace(
+        results.mitdb, database=dataclasses.replace(results.mitdb.database, licence=other)
+    )
+    changed = render(dataclasses.replace(results, mitdb=mitdb))
+    assert changed == text.replace(
+        MITDB_LICENCE_LINE,
+        "| Database licence | Another Licence, https://licences.example/other/ |",
+    )
+
+
+def test_licence_rows_of_the_real_databases() -> None:
+    mitdb = VerificationResult(MITDB, None, ("100.dat",))
+    nstdb = VerificationResult(NSTDB, None, ("118e24.dat",))
+    results = dataclasses.replace(
+        full_results(),
+        mitdb=mitdb,
+        noise_stress=dataclasses.replace(noise_stress(), nstdb=nstdb),
+    )
+    full = render_full_report(results)
+    assert section_2(full)[4:6] == [
+        "| Database | MIT-BIH Arrhythmia Database, version 1.0.0 |",
+        REAL_LICENCE_LINE,
+    ]
+    assert noise_stress_items(full)[2:4] == [
+        "| Database | MIT-BIH Noise Stress Test Database, version 1.0.0 |",
+        REAL_LICENCE_LINE,
+    ]
+    subset = render_subset_report(dataclasses.replace(results, noise_stress=None, subset=True))
+    assert section_2(subset)[4:6] == [
+        "| Database | MIT-BIH Arrhythmia Database, version 1.0.0 |",
+        REAL_LICENCE_LINE,
+    ]
+
+
+def test_the_report_module_holds_no_licence_text() -> None:
+    """The licence rows take their text from the ``Database`` (architecture §8.10, §8.15)."""
+    source = Path(report.__file__).read_text(encoding="utf-8")
+    strings = [
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+    for text in (ODC_BY_1_0.name, ODC_BY_1_0.url, "Open Data Commons", "opendatacommons"):
+        assert not any(text in string for string in strings), text
 
 
 # --- software rows --------------------------------------------------------------------------

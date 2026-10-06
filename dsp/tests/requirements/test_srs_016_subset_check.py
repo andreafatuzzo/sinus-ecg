@@ -1,6 +1,6 @@
 """Requirement tests of SRS-016: the subset check of the continuous integration (RC-004).
 
-SRS-016 (v0.7.1): on every push, the build obtains records 100, 105, 108, 119, 203 and 207
+SRS-016 (v0.7.2): on every push, the build obtains records 100, 105, 108, 119, 203 and 207
 of version 1.0.0 of the MIT-BIH Arrhythmia Database (a cached copy is allowed), verifies each
 of their files against the checksum list of SRS-001, runs QRS detection with the settings of
 SRS-007 and the evaluation of SRS-008 and SRS-011 on them, and regenerates a subset report.
@@ -32,13 +32,18 @@ The cases of the verification of SRS-016 and their tests:
   (`test_failed_verification_stops_the_check_before_any_report_is_written` and the command).
 
 The difference entries are how the check names a difference, so they are compared with the
-formats documented in architecture section 8.11 (v0.2.10): `line <n>: stored <text>,
-regenerated <text>` with `(empty line)` and `(no line)`, lines compared by position, the
-entries for line endings, `no stored report: <path>`, and the limit of 20 entries followed by
-`… and <k> more` (`_documented_differences` works them out from the documented rules). Only
-the split of an empty stored file into lines is not documented, and is not compared. The
-messages and exit statuses of the command are compared only where the requirement needs them:
-the build fails (a status other than 0) and the difference is named.
+formats documented in architecture section 8.11 (v0.2.10, and v0.2.11 for an empty stored
+report, which has no line): `line <n>: stored <text>, regenerated <text>` with `(empty line)`
+and `(no line)`, lines compared by position, the entries for line endings, `no stored
+report: <path>`, and the limit of 20 entries followed by `… and <k> more`
+(`_documented_differences` works them out from the documented rules). The messages and exit
+statuses of the command are compared only where the requirement needs them: the build fails
+(a status other than 0) and the difference is named.
+
+The subset report contains the items of SRS-012 (v0.7.2), the licence of the database among
+them (row `Database licence`): a stored report whose licence row differs, or that has none,
+fails like any other (`test_one_differing_value_fails_and_is_named`,
+`test_stored_report_without_the_licence_row_fails`).
 
 Changes of v0.2.10 re-checked here: the shared helper that writes files (no behaviour
 change), and `--update` with `--write-regenerated` naming the stored report itself.
@@ -53,6 +58,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -82,12 +88,14 @@ SPIKE_RECORD_SAMPLES = 151200  # 7 min at 360 Hz
 
 
 def _database(fixture: Any) -> Database:
-    """The `Database` of a fixture: MIT-BIH Arrhythmia 1.0.0 pinned to the fixture list."""
+    """The `Database` of a fixture: MIT-BIH Arrhythmia 1.0.0 pinned to the fixture list,
+    with the fixture licence (`FIXTURE_LICENCES` of `conftest.py`)."""
     return Database(
         slug="mitdb",
         version="1.0.0",
         title=MITDB_TITLE,
         checksum_list_sha256=fixture.checksum_list_sha256,
+        licence=fixture.licence,
     )
 
 
@@ -96,11 +104,18 @@ def _entry(n: int, stored: str, regenerated: str) -> str:
     return f"line {n}: stored {stored}, regenerated {regenerated}"
 
 
-def _regenerate(fixture: Any, folder: Path, detector: Callable[..., Any] | None = None) -> bytes:
+def _regenerate(
+    fixture: Any,
+    folder: Path,
+    detector: Callable[..., Any] | None = None,
+    *,
+    database: Database | None = None,
+) -> bytes:
     """The subset report that the check regenerates from ``fixture``.
 
     The check is run against a stored report that does not exist, which is one difference;
-    the regenerated report is written to ``folder / regenerated.md`` and returned.
+    the regenerated report is written to ``folder / regenerated.md`` and returned. The
+    `Database` is that of the fixture (``_database``) unless another one is given.
     """
     options: dict[str, Any] = {} if detector is None else {"detector": detector}
     with pytest.raises(SubsetReportMismatchError) as excinfo:
@@ -108,7 +123,7 @@ def _regenerate(fixture: Any, folder: Path, detector: Callable[..., Any] | None 
             folder / "absent.md",
             fixture.data_root,
             regenerated_path=folder / "regenerated.md",
-            database=_database(fixture),
+            database=_database(fixture) if database is None else database,
             fetch=None,
             **options,
         )
@@ -135,11 +150,15 @@ def ecg_reference(
     network_forbidden: Callable[[], Any],
     tmp_path_factory: pytest.TempPathFactory,
 ) -> bytes:
-    """The subset report regenerated from the synthetic ECG subset fixture, with the default
-    detector (the one the command uses)."""
+    """The subset report regenerated from the synthetic ECG subset fixture as the command
+    regenerates it: with the default detector, and with the database description of the
+    software (`MITDB`) whose pinned digest is replaced by that of the fixture list, as the
+    command driver does. Its row `Database licence` is therefore that of version 1.0.0 of the
+    MIT-BIH Arrhythmia Database (Open Data Commons Attribution License v1.0)."""
     folder = tmp_path_factory.mktemp("srs016-ecg-reference")
+    database = replace(MITDB, checksum_list_sha256=subset_ecg_fixture.checksum_list_sha256)
     with network_forbidden():
-        return _regenerate(subset_ecg_fixture, folder)
+        return _regenerate(subset_ecg_fixture, folder, database=database)
 
 
 def _check(
@@ -400,6 +419,8 @@ ONE_VALUE_CASES: list[tuple[str, Callable[[str], bool], str, str | None]] = [
     ("software-version", lambda s: s.startswith("| Software |"), "sinus-dsp ", "sinus-dsp 9"),
     ("runtime", lambda s: s.startswith("| Runtime |"), "Python ", "Python 9"),
     ("database-version", lambda s: s.startswith("| Database |"), "1.0.0", "1.0.1"),
+    ("licence-name", lambda s: s.startswith("| Database licence |"), "Licence 1.2", "Licence 1.3"),
+    ("licence-address", lambda s: s.startswith("| Database licence |"), "/1-2/ |", "/1-3/ |"),
     ("verification-files", lambda s: s.startswith("| Verification |"), "28 files", "27 files"),
     ("verification-records", lambda s: s.startswith("| Verification |"), "100, 105", "100, 106"),
     ("records", lambda s: s.startswith("| Records |"), "| 6 |", "| 7 |"),
@@ -437,6 +458,7 @@ def test_one_differing_value_fails_and_is_named(
     change in one line: the title, the statement on what the results mean, the statement
     that the report covers a subset, the source identifier (last digit) or the version of
     the row `Software`, the Python version of the row `Runtime`, the database version, the
+    name or the address of the licence of the database (row `Database licence`), the
     number of files or a record named by the verification, the number of records, the
     channel, the mains setting, a count, signal or percentage of a record, the gross or
     average values, a ranking value, the duration or the detections not scored of record 207,
@@ -496,6 +518,37 @@ def test_stored_report_that_differs_only_in_the_software_row_fails(
     assert excinfo.value.differences == (_entry(n, old_row, running_software.software_row),)
 
 
+@pytest.mark.requirement("SRS-016")
+def test_stored_report_without_the_licence_row_fails(
+    tmp_path: Path,
+    subset_fixture: Any,
+    reference: bytes,
+    make_spike_detector: Callable[[], Any],
+) -> None:
+    """A stored report written before the licence item (SRS-012 v0.7.2) no longer passes.
+
+    Input: the spike subset fixture; the report regenerated from it, stored without its line
+    `| Database licence | … |`, as a subset report of the software before that item would be.
+    Expected: the check raises `SubsetReportMismatchError`; the first difference names the
+    line of the licence row, `line <n>: stored <the Verification row>, regenerated <the
+    licence row>`; the entries are exactly those documented in architecture section 8.11
+    (lines compared by position, 20 at most, then `… and <k> more`).
+    """
+    lines = _lines(reference)
+    n = next(i for i, line in enumerate(lines) if line.startswith("| Database licence |")) + 1
+    stored_lines = [*lines[: n - 1], *lines[n:]]
+    stored = tmp_path / STORED_NAME
+    stored.write_bytes(("\n".join(stored_lines) + "\n").encode("utf-8"))
+
+    with pytest.raises(SubsetReportMismatchError) as excinfo:
+        _check(subset_fixture, stored, make_spike_detector())
+
+    differences = excinfo.value.differences
+    assert lines[n].startswith("| Verification |")
+    assert differences[0] == _entry(n, lines[n], lines[n - 1])
+    assert differences == _documented_differences(stored.read_bytes(), reference)
+
+
 def _altered_bytes(data: bytes, case: str) -> tuple[bytes, int | None]:
     """The stored bytes for a case of differing bytes, and the line that must be named."""
     lines = _lines(data)
@@ -545,15 +598,15 @@ def test_stored_report_with_other_bytes_fails(
     or as an empty file.
     Expected: the check raises `SubsetReportMismatchError`; each difference names a line
     (`line <n>: …`), and the first one names the line where the bytes first differ: line 1,
-    the line `Software`, the last line, or the line after the last one. Except for the empty
-    file, the entries are exactly those documented in architecture section 8.11 (v0.2.10),
-    worked out by the test: `line <n>: same text, line ending stored CR LF, regenerated LF`
-    for each line (20 entries, then `… and <k> more`) or for the line `Software` only;
+    the line `Software`, the last line, or the line after the last one. The entries are
+    exactly those documented in architecture section 8.11, worked out by the test:
+    `line <n>: same text, line ending stored CR LF, regenerated LF` for each line (20
+    entries, then `… and <k> more`) or for the line `Software` only;
     `line <n>: same text, line ending stored none (no final line feed), regenerated LF` for
     the last line; `line <n>: stored (empty line), regenerated (no line)` for the extra line
-    feed; `line <n>: stored <CR>, regenerated (no line)` for the carriage return at the end.
-    (How an empty file splits into lines, none or one empty line without an ending, is not
-    documented; for it only the first named line is checked.)
+    feed; `line <n>: stored <CR>, regenerated (no line)` for the carriage return at the end;
+    for the empty file, which has no line (architecture v0.2.11), `line <n>: stored (no
+    line), regenerated <text>` for the first 20 lines, then `… and <k> more`.
     """
     stored_data, first_line = _altered_bytes(reference, case)
     stored = tmp_path / STORED_NAME
@@ -570,8 +623,9 @@ def test_stored_report_with_other_bytes_fails(
     assert differences[0].startswith(f"line {first_line}: "), differences
     if case in ("crlf-on-one-line", "no-final-line-feed"):
         assert len(differences) == 1, differences
-    if case != "empty-file":
-        assert differences == _documented_differences(stored_data, reference)
+    if case == "empty-file":
+        assert differences[0] == _entry(1, "(no line)", _lines(reference)[0])
+    assert differences == _documented_differences(stored_data, reference)
 
 
 @pytest.mark.requirement("SRS-016")
@@ -918,6 +972,7 @@ def test_record_without_any_listed_file_fails_verification(
         version="1.0.0",
         title=MITDB_TITLE,
         checksum_list_sha256=sha256_hex(b"".join(kept)),
+        licence=copy.licence,
     )
     detector = make_spike_detector()
     output = tmp_path / "out"

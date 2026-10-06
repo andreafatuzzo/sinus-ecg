@@ -25,6 +25,7 @@ import pytest
 from sinus_dsp.data.physionet import (
     MITDB,
     Database,
+    DatabaseLicence,
     describe_verification,
     download_database,
     parse_checksum_list,
@@ -38,6 +39,11 @@ pytestmark = pytest.mark.usefixtures("forbid_network")
 SLUG = "mitdb"
 VERSION = "1.0.0"
 TITLE = "MIT-BIH Arrhythmia Database"
+# A licence of the fixture database: the `Database` has no default for it (SRS-012, SRS-014;
+# architecture, section 8.3). It plays no part in the verification.
+FIXTURE_LICENCE = DatabaseLicence(
+    name="Fixture Data Licence 1.0", url="https://licences.example.org/fixture/1-0/"
+)
 BASE_URL = "https://physionet.org/files/mitdb/1.0.0/"
 LIST_NAME = "SHA256SUMS.txt"
 
@@ -64,7 +70,13 @@ ALL_FILES = tuple(sorted(FILES))
 
 def _database(pinned_sha256: str) -> Database:
     """A database description with the MIT-BIH identity and the given pinned list digest."""
-    return Database(slug=SLUG, version=VERSION, title=TITLE, checksum_list_sha256=pinned_sha256)
+    return Database(
+        slug=SLUG,
+        version=VERSION,
+        title=TITLE,
+        checksum_list_sha256=pinned_sha256,
+        licence=FIXTURE_LICENCE,
+    )
 
 
 def _file(folder: Path, relative: str) -> Path:

@@ -525,8 +525,74 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
     ("n_samples negative", replaced(11, "n_samples=-4"), 11, "n_samples: not an integer"),
     ("n_samples float", replaced(11, "n_samples=4.0"), 11, "n_samples: not an integer"),
     ("n_beats text", replaced(12, "n_beats=x"), 12, "n_beats: not an integer"),
-    ("n_beats huge", replaced(12, "n_beats=" + "1" * 5000), 12, "integer with too many digits"),
+    # 5000 digits: more than Python's int() converts by default, so the bound is checked first.
+    ("n_beats huge", replaced(12, "n_beats=" + "1" * 5000), 12, "n_beats: integer greater than"),
     ("n_reference plus", replaced(13, "n_reference_beats=+3"), 13, "n_reference_beats: not an"),
+    # Integers: at most 2**63 - 1 (v0.2.11). Above it, rejected at their own line.
+    (
+        "n_reference_beats 2**63",
+        replaced(13, "n_reference_beats=9223372036854775808"),
+        13,
+        "n_reference_beats: integer greater than 9223372036854775807: 9223372036854775808",
+    ),
+    (
+        "n_samples 19 nines",
+        replaced(11, "n_samples=9999999999999999999"),
+        11,
+        "n_samples: integer greater than",
+    ),
+    (
+        "n_samples 10**19",
+        replaced(11, "n_samples=10000000000000000000"),
+        11,
+        "n_samples: integer greater than",
+    ),
+    (
+        "n_beats 2**64",
+        replaced(12, "n_beats=18446744073709551616"),
+        12,
+        "n_beats: integer greater than",
+    ),
+    (
+        "section 2**63",
+        replaced(18, "mains,9223372036854775808,6.0,-7.5,8e-05,9e+20,-0.0"),
+        18,
+        "integer greater than",
+    ),
+    ("beat 2**63", replaced(28, "9223372036854775808"), 28, "integer greater than"),
+    ("reference 2**63", replaced(33, "9223372036854775808"), 33, "integer greater than"),
+    # At the bound or below it, an integer passes the integer rule, and the file fails later,
+    # where the rows and the count disagree, or at the next rule.
+    (
+        "n_reference_beats 2**63 - 1",
+        replaced(13, "n_reference_beats=9223372036854775807"),
+        34,
+        "[reference_beats] has 3 rows, n_reference_beats is 9223372036854775807",
+    ),
+    (
+        "n_samples 2**63 - 1",
+        replaced(11, "n_samples=9223372036854775807"),
+        25,
+        "[signals] has 4 rows, n_samples is 9223372036854775807",
+    ),
+    (
+        "n_samples 10**18",
+        replaced(11, "n_samples=1000000000000000000"),
+        25,
+        "[signals] has 4 rows, n_samples is 1000000000000000000",
+    ),
+    (
+        "section 2**63 - 1",
+        replaced(18, "mains,9223372036854775807,6.0,-7.5,8e-05,9e+20,-0.0"),
+        18,
+        "section 9223372036854775807 of the stage mains, expected section 1",
+    ),
+    (
+        "beat 2**63 - 1",
+        replaced(28, "9223372036854775807"),
+        28,
+        "sample 9223372036854775807 is outside 0 to 3",
+    ),
     # Sections and column lines.
     ("section name", replaced(14, "[coefficient]"), 14, "expected [coefficients]"),
     ("coefficient columns", replaced(15, "stage,section,b0,b1,b2,a0,a1,a2"), 15, "expected stage"),
@@ -570,6 +636,24 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
     ("signal float syntax", replaced(23, "1e16,-2.5,0.0"), 23, "not a float: 1e16"),
     ("signal float overflow", replaced(23, "1e+999,-2.5,0.0"), 23, "not a finite float"),
     ("signal NaN", replaced(23, "NaN,-2.5,0.0"), 23, "not a float: NaN"),
+    # Floats that convert to zero although a digit of their significand is not zero (v0.2.11).
+    ("signal 1e-400", replaced(23, "1e-400,-2.5,0.0"), 23, "converts to zero"),
+    ("signal -1e-400", replaced(23, "1e+16,-1e-400,0.0"), 23, "converts to zero"),
+    (
+        "signal below half the smallest subnormal",
+        replaced(23, "1e+16,-2.5,2.4703282292062327e-324"),
+        23,
+        "converts to zero although its significand is not zero: 2.4703282292062327e-324",
+    ),
+    ("signal 0.0001e-400", replaced(22, "-0.0,0.0001e-400,-1e-05"), 22, "converts to zero"),
+    ("signal 10e-400", replaced(22, "-0.0,1.0,10e-400"), 22, "converts to zero"),
+    ("fs 1e-400", replaced(6, "sampling_frequency_hz=1e-400"), 6, "converts to zero"),
+    (
+        "coefficient 1e-400",
+        replaced(16, "baseline,0,0.5,-1.0,0.5,-0.25,9e-400"),
+        16,
+        "converts to zero",
+    ),
     ("fewer signal rows", replaced(11, "n_samples=5"), 25, "[signals] has 4 rows, n_samples is 5"),
     ("more signal rows", replaced(11, "n_samples=3"), 24, "[signals] has more rows than n_samples"),
     ("fewer beats", replaced(12, "n_beats=3"), 29, "[beats] has 2 rows, n_beats is 3"),
@@ -631,6 +715,50 @@ def test_valid_variations_are_accepted() -> None:
     assert parse_golden_vector(text, "t").reference_beats.tolist() == [0, 0, 3]
     text = _text([*LINES[:11], "n_beats=0", *LINES[12:26], *LINES[28:]])
     assert parse_golden_vector(text, "t").beats.tolist() == []
+
+
+# Floats at the bounds of the underflow rule (v0.2.11): accepted, with the value they read as.
+ACCEPTED_FLOATS: list[tuple[str, float]] = [
+    ("0.0e-400", 0.0),
+    ("-0.0", -0.0),
+    ("0e+999", 0.0),
+    ("-0.000e-5", -0.0),
+    ("00.0", 0.0),
+    ("5e-324", 5e-324),
+    ("-5e-324", -5e-324),
+    ("2.4703282292062328e-324", 5e-324),
+    ("-2.4703282292062328e-324", -5e-324),
+    ("2.225073858507201e-308", 2.225073858507201e-308),
+    ("1.7976931348623157e+308", 1.7976931348623157e308),
+]
+
+
+@pytest.mark.parametrize(("text", "value"), ACCEPTED_FLOATS, ids=[t for t, _ in ACCEPTED_FLOATS])
+def test_floats_at_the_bounds_of_the_rules_are_accepted(text: str, value: float) -> None:
+    # In a signal row, in a coefficient row, and as a stage output.
+    parsed = parse_golden_vector(replaced(23, f"{text},-2.5,0.0"), "t")
+    assert parsed.input_mv[2].tobytes() == np.float64(value).tobytes()
+    parsed = parse_golden_vector(replaced(16, f"baseline,0,0.5,-1.0,0.5,-0.25,{text}"), "t")
+    assert parsed.coefficients[0][0, 5].tobytes() == np.float64(value).tobytes()
+    parsed = parse_golden_vector(replaced(22, f"-0.0,1.0,{text}"), "t")
+    assert parsed.stage_outputs_mv[1][1].tobytes() == np.float64(value).tobytes()
+
+
+@pytest.mark.parametrize("text", ["5e-324", "2.4703282292062328e-324"])
+def test_a_subnormal_sampling_frequency_is_positive(text: str) -> None:
+    assert parse_golden_vector(replaced(6, f"sampling_frequency_hz={text}"), "t").fs_hz == 5e-324
+
+
+def test_the_integer_bound_is_checked_before_any_conversion() -> None:
+    """A text above the bound is rejected even where ``int()`` could not convert it."""
+    digits = "1" * 10000
+    with pytest.raises(ValueError, match="digits"):
+        int(digits)  # Python's default limit on the digits that int() converts
+    text = replaced(27, digits)
+    with pytest.raises(MalformedFileError) as caught:
+        parse_golden_vector(text, "t")
+    assert caught.value.line == 27
+    assert "integer greater than 9223372036854775807" in caught.value.reason
 
 
 def test_first_offending_line_is_named() -> None:

@@ -3,7 +3,9 @@
 - A small synthetic ECG with known R-wave centres.
 - Fixture WFDB records and databases for the evaluation: a record whose signal is 1 mV at
   the samples that the fake detector must report and 0 elsewhere, its annotation file, and a
-  ``SHA256SUMS.txt`` with a ``Database`` pinned to it.
+  ``SHA256SUMS.txt`` with a ``Database`` pinned to it. A fixture database has a fixture
+  licence of its own (name ``Fixture Licence of <slug> 1.0``, address
+  ``https://licences.example/<slug>/``), so that a report shows where the licence comes from.
 """
 
 import hashlib
@@ -16,7 +18,7 @@ import numpy.typing as npt
 import pytest
 import wfdb
 
-from sinus_dsp.data.physionet import CHECKSUM_LIST_NAME, Database
+from sinus_dsp.data.physionet import CHECKSUM_LIST_NAME, Database, DatabaseLicence
 
 EcgFactory = Callable[..., tuple[npt.NDArray[np.float64], npt.NDArray[np.int64]]]
 
@@ -126,13 +128,23 @@ def _write_fixture_record(
     )
 
 
+def _fixture_licence(slug: str) -> DatabaseLicence:
+    """The licence of a fixture database: one per slug, never that of the real databases."""
+    return DatabaseLicence(f"Fixture Licence of {slug} 1.0", f"https://licences.example/{slug}/")
+
+
 def _pin_database(
-    folder: Path, title: str, *, records_file: Sequence[str] | None = None
+    folder: Path,
+    title: str,
+    *,
+    records_file: Sequence[str] | None = None,
+    licence: DatabaseLicence | None = None,
 ) -> Database:
     """Write ``SHA256SUMS.txt`` for every file of ``folder`` and return a Database pinned to it.
 
     With ``records_file`` given, a ``RECORDS`` file listing those names is written first. The
-    slug of the database is the name of ``folder``; its version is ``1.0.0``.
+    slug of the database is the name of ``folder``; its version is ``1.0.0``; its licence is
+    ``licence``, by default ``_fixture_licence(<slug>)``.
     """
     if records_file is not None:
         (folder / "RECORDS").write_bytes("".join(f"{name}\n" for name in records_file).encode())
@@ -151,6 +163,7 @@ def _pin_database(
         version="1.0.0",
         title=title,
         checksum_list_sha256=hashlib.sha256(content).hexdigest(),
+        licence=_fixture_licence(folder.name) if licence is None else licence,
     )
 
 

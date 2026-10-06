@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+# The token of a run can read the repository and nothing else (docs/regulatory/cybersecurity.md
+# §7.4); no step needs more.
+permissions:
+  contents: read
+
 jobs:
   dsp:
     runs-on: ubuntu-latest
@@ -12,6 +17,9 @@ jobs:
         working-directory: dsp
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          # The token is not stored in the Git configuration of the runner.
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
@@ -29,7 +37,9 @@ jobs:
       # Subset report check (SRS-016, architecture §8.11): records 100, 105, 108, 119, 203 and
       # 207 of the MIT-BIH Arrhythmia Database 1.0.0. The cache is only a copy: every run
       # verifies it against the pinned checksum list, and a missing or altered file is
-      # downloaded again. With a complete cache the check uses no network.
+      # downloaded again. A run restores only an entry saved by its own branch, by main or, for
+      # a pull request, by its base branch: the first push on a new branch finds none and
+      # downloads the records. When a complete copy is restored, the check uses no network.
       - name: Cache of the subset records
         uses: actions/cache@v6.1.0
         with:
@@ -64,3 +74,21 @@ jobs:
           name: sbom-dsp
           path: ${{ runner.temp }}/sbom-dsp.cdx.json
           if-no-files-found: error
+      # Known vulnerabilities in the SBOM (docs/regulatory/cybersecurity.md §7.2), after the
+      # upload, so that the SBOM is available when the scan fails. The scanner release is pinned
+      # by version and by the SHA-256 that the release lists for the binary
+      # (osv-scanner_SHA256SUMS), verified before the binary runs; update both together (§7.4).
+      # The step fails on a finding that dsp/osv-scanner.toml does not list in an entry that has
+      # not expired, and on any error of the scanner (no component found, configuration missing
+      # or invalid, OSV service unreachable: re-run the job).
+      - name: Vulnerability scan of the SBOM (OSV-Scanner)
+        env:
+          OSV_SCANNER_VERSION: v2.6.0
+          OSV_SCANNER_SHA256: ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108
+        run: |
+          scanner="${RUNNER_TEMP}/osv-scanner"
+          curl --fail --silent --show-error --location --proto '=https' --output "${scanner}" \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  ${scanner}" | sha256sum --check --strict
+          chmod +x "${scanner}"
+          "${scanner}" scan source --config=osv-scanner.toml -L "${RUNNER_TEMP}/sbom-dsp.cdx.json"

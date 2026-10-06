@@ -1050,6 +1050,23 @@ def _ecg_record(name: str, ecg: SyntheticEcg) -> FixtureRecord:
     )
 
 
+# The licences of the fixture databases (SRS-012, SRS-014, SRS-016): name and address of the
+# licence text, by database slug. They differ from the licence of the real databases (Open
+# Data Commons Attribution License v1.0) and from each other, so that each row `Database
+# licence` of a report is seen to come from the `Database` of its own verification result
+# (architecture, section 8.10, verification notes).
+FIXTURE_LICENCES: dict[str, tuple[str, str]] = {
+    "mitdb": (
+        "Fixture Arrhythmia Data Licence 1.2",
+        "https://licences.example.org/fixture-arrhythmia/1-2/",
+    ),
+    "nstdb": (
+        "Fixture Noise Stress Data Licence 3.4",
+        "https://licences.example.org/fixture-noise-stress/3-4/",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class FixtureDatabase:
     """A fixture database written in a data folder, with the records it holds."""
@@ -1063,6 +1080,15 @@ class FixtureDatabase:
     def checksum_list_sha256(self) -> str:
         """SHA-256 of its checksum list, to pin in the ``Database`` under test."""
         return self.folder.checksum_list_sha256
+
+    @property
+    def licence(self) -> Any:
+        """Its fixture licence (``FIXTURE_LICENCES``), a ``DatabaseLicence`` to give the
+        ``Database`` under test."""
+        from sinus_dsp.data.physionet import DatabaseLicence
+
+        name, url = FIXTURE_LICENCES[self.slug]
+        return DatabaseLicence(name=name, url=url)
 
     @property
     def n_listed_files(self) -> int:
@@ -1657,7 +1683,8 @@ def copy_package() -> Callable[..., Path]:
 _REPORT_DRIVER = '''\
 """Write the validation report of fixture databases with a detector double, without network.
 
-Usage: python <this file> OUTPUT DATA_ROOT MITDB_PIN NSTDB_PIN
+Usage: python <this file> OUTPUT DATA_ROOT MITDB_PIN NSTDB_PIN MITDB_LICENCE_NAME
+MITDB_LICENCE_URL NSTDB_LICENCE_NAME NSTDB_LICENCE_URL
 
 Prints "package: <folder of the imported package sinus_dsp>" on standard output.
 """
@@ -1680,7 +1707,7 @@ socket.getaddrinfo = _refuse
 urllib.request.urlopen = _refuse
 
 import sinus_dsp  # noqa: E402
-from sinus_dsp.data.physionet import Database  # noqa: E402
+from sinus_dsp.data.physionet import Database, DatabaseLicence  # noqa: E402
 from sinus_dsp.evaluation.run import write_validation_report  # noqa: E402
 
 
@@ -1689,6 +1716,8 @@ def spike_detector(signal_mv, fs_hz, mains_hz):
 
 
 output, data_root, mitdb_pin, nstdb_pin = sys.argv[1:5]
+mitdb_licence = DatabaseLicence(name=sys.argv[5], url=sys.argv[6])
+nstdb_licence = DatabaseLicence(name=sys.argv[7], url=sys.argv[8])
 print("package:", Path(sinus_dsp.__file__).resolve().parent)
 write_validation_report(
     Path(output),
@@ -1698,12 +1727,14 @@ write_validation_report(
         version="1.0.0",
         title="MIT-BIH Arrhythmia Database",
         checksum_list_sha256=mitdb_pin,
+        licence=mitdb_licence,
     ),
     nstdb=Database(
         slug="nstdb",
         version="1.0.0",
         title="MIT-BIH Noise Stress Test Database",
         checksum_list_sha256=nstdb_pin,
+        licence=nstdb_licence,
     ),
     detector=spike_detector,
     fetch=None,
@@ -1730,6 +1761,9 @@ def _run_report_driver(
 ) -> DriverRun:
     """Write the report of ``fixture`` to ``output`` in a separate Python process.
 
+    The ``Database`` values of the process are those that the tests build in their own
+    process: the titles of the reference databases, version 1.0.0, the digests of the fixture
+    checksum lists and the fixture licences (``FIXTURE_LICENCES``).
     With ``package_root``, that folder comes first on ``PYTHONPATH``, so the process imports
     the package ``sinus_dsp`` found there. ``env`` adds environment variables.
     """
@@ -1749,6 +1783,8 @@ def _run_report_driver(
             str(fixture.data_root),
             fixture.mitdb.checksum_list_sha256,
             fixture.nstdb.checksum_list_sha256,
+            *FIXTURE_LICENCES[fixture.mitdb.slug],
+            *FIXTURE_LICENCES[fixture.nstdb.slug],
         ],
         cwd=cwd,
         env=environment,
@@ -1820,6 +1856,11 @@ class SubsetFixture:
     @property
     def checksum_list_sha256(self) -> str:
         return self.database.checksum_list_sha256
+
+    @property
+    def licence(self) -> Any:
+        """The fixture licence of the database (``FIXTURE_LICENCES["mitdb"]``)."""
+        return self.database.licence
 
     @property
     def records(self) -> dict[str, FixtureRecord]:
@@ -1994,6 +2035,8 @@ _GOLDEN_INTEGER = re.compile(r"0|[1-9][0-9]*")
 _GOLDEN_INPUT_ID = re.compile(r"[A-Za-z0-9_-]+")
 _GOLDEN_STAGE = re.compile(r"[a-z][a-z0-9_]*")
 _GOLDEN_SHA256 = re.compile(r"[0-9a-f]{64}")
+# The largest integer a reader accepts, 2**63 - 1 (architecture, section 7.3, since v0.2.11).
+GOLDEN_INTEGER_LIMIT = 9223372036854775807
 
 
 class GoldenFormatError(AssertionError):
@@ -2050,9 +2093,19 @@ def _read_golden_file(data: bytes) -> GoldenFile:
     sections missing or out of order; column lines other than those of ``stages``;
     coefficient rows that do not follow ``stages`` and the numbering of their sections from 0
     or do not have seven fields; rows with the wrong number of fields; a float that does not
-    match ``-?[0-9]+(\\.[0-9]+)?(e[+-][0-9]+)?`` or is not finite; an integer that does not
-    match ``0|[1-9][0-9]*``; a detected beat not greater than the one before, a reference beat
-    smaller than the one before, or a beat outside ``[0, n_samples)``.
+    match ``-?[0-9]+(\\.[0-9]+)?(e[+-][0-9]+)?``, is not finite, or converts to zero although a
+    digit of its significand (the text before ``e``, or the whole text) is not zero (rule C4
+    of v0.2.11: ``1e-400`` is refused, ``0.0e-400`` is zero and accepted); an integer that does
+    not match ``0|[1-9][0-9]*`` or is greater than 2**63 - 1 (rule C3 of v0.2.11, at the line of
+    the integer, header counts included); a detected beat not greater than the one before, a
+    reference beat smaller than the one before, or a beat outside ``[0, n_samples)``.
+
+    The line named (section 7.3, "The line named"): the first line at which the text breaks a
+    rule, the last line for a text that ends too early. A row count that differs from the
+    header is named where the rows and the count disagree: with fewer rows than the count, at
+    the line found where the next row is expected (the line of the next section); with more
+    rows, at the first row after the count. Nothing is sized from a header count before its
+    rows are read, so a count of 2**63 - 1 is refused where the rows end.
     """
     try:
         text = data.decode("utf-8")
@@ -2090,6 +2143,9 @@ def _read_golden_file(data: bytes) -> GoldenFile:
         value = float(token)
         if not math.isfinite(value):
             raise GoldenFormatError(n, f"not finite: {token!r}")
+        significand = token.partition("e")[0]
+        if value == 0.0 and any(digit in significand for digit in "123456789"):
+            raise GoldenFormatError(n, f"converts to zero, significand not zero: {token!r}")
         if repr(value) != token and len(not_shortest) < 10:
             not_shortest.append((n, token))
         return value
@@ -2097,6 +2153,8 @@ def _read_golden_file(data: bytes) -> GoldenFile:
     def as_integer(n: int, token: str) -> int:
         if not _GOLDEN_INTEGER.fullmatch(token):
             raise GoldenFormatError(n, f"not an integer of the documented syntax: {token!r}")
+        if len(token) > len(str(GOLDEN_INTEGER_LIMIT)) or int(token) > GOLDEN_INTEGER_LIMIT:
+            raise GoldenFormatError(n, f"integer greater than 2**63 - 1: {token!r}")
         return int(token)
 
     header: dict[str, str] = {}
@@ -2160,13 +2218,14 @@ def _read_golden_file(data: bytes) -> GoldenFile:
 
     expect("[signals]")
     expect(",".join(["input_mv", *(f"{stage}_mv" for stage in stages)]))
-    signals = np.empty((n_samples, 1 + len(stages)), dtype=np.float64)
-    for row in range(n_samples):
+    signal_rows: list[list[float]] = []
+    for _ in range(n_samples):
         n, line = next_line()
         fields = line.split(",")
         if len(fields) != 1 + len(stages):
             raise GoldenFormatError(n, f"a signal row with {len(fields)} fields")
-        signals[row] = [as_float(n, token) for token in fields]
+        signal_rows.append([as_float(n, token) for token in fields])
+    signals = np.asarray(signal_rows, dtype=np.float64).reshape(n_samples, 1 + len(stages))
 
     def read_beats(name: str, count: int, strictly: bool) -> IndexArray:
         expect(f"[{name}]")
