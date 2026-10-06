@@ -18,6 +18,8 @@ uv sync
 uv run pytest && uv run mypy && uv run ruff check . && uv run ruff format --check .
 ```
 
+Data download, validation run, subset report and golden vectors: [`dsp/README.md`](dsp/README.md).
+
 ## Rules for changes that affect behavior
 
 - **Requirements first.** Behavior is specified in [`docs/regulatory/srs.md`](docs/regulatory/srs.md) as `SRS-xxx`. Add or change the requirement in the same pull request as the code. IDs are never reused.
@@ -35,7 +37,7 @@ uv run pytest && uv run mypy && uv run ruff check . && uv run ruff format --chec
 - **Risk.** Check the change against [`docs/regulatory/risk-analysis.md`](docs/regulatory/risk-analysis.md) and update it when needed.
 - **Dependencies.** Add them with `uv add`, and list every new runtime dependency in [`docs/regulatory/soup.md`](docs/regulatory/soup.md).
 - **Open points.** Anything you defer or leave undecided goes in [`docs/regulatory/open-points.md`](docs/regulatory/open-points.md) as a new `OP-xxx` row, tagged with the `SRS`/`HAZ`/`RC` IDs it concerns.
-- **Data.** Never commit datasets. Validation reports in `docs/validation/` are generated, never hand-edited.
+- **Data.** Never commit datasets. The validation reports in `docs/validation/` are generated, never hand-edited; the milestone verification reports there are written once, at each milestone release (`docs/regulatory/sdp.md` §6).
 - **Stored subset report.** On every push, CI regenerates the subset report on records 100, 105, 108, 119, 203 and 207 of the MIT-BIH Arrhythmia Database and fails if it differs in any byte from [`docs/validation/qrs-ec57-subset-report.md`](docs/validation/qrs-ec57-subset-report.md). The report states the software that produced it, so it changes with any change to a file under `dsp/sinus_dsp/` (even a comment), to the package version, or to the Python minor version or a runtime dependency version in `dsp/uv.lock`, as well as with any change of the detection results. Update it in the same pull request:
 
   ```sh
