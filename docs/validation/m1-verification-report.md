@@ -123,6 +123,7 @@ These tests are skipped in CI, where only the six records of the subset are avai
 | OP-063 | SRS-003, SRS-004, SRS-005 | M2 | Inputs of extreme amplitude, far outside any physical ECG, give non-finite filter outputs or an error that no requirement describes; whether SRS-003 bounds the amplitude |
 | OP-065 | SRS-012, SRS-015 | M2 | Moving the reference environment to a Python version later than 3.11 |
 | OP-067 | SRS-015 | M2 | Notices for golden vectors of record segments, if they are made public |
+| OP-068 | SRS-006 | M2 | Behaviour of the detection at the start of a signal or stream: the reference reports detections in the first 50 ms of records 104, 107 and 116, before the first annotated beat and outside the scored part; no test covers the start of a real recording |
 
 OP-066 (M2) concerns the release gate itself: `traceability.py` does not yet detect a requirement test that is disabled. For this release the rule of `architecture.md` §8.16, item 5, was checked by hand: no test in `dsp/tests/requirements/` or `dsp/tests/system/` is marked `skip`, `skipif` or `xfail`, or calls `pytest.skip()` or `pytest.xfail()`; the only skip that can apply to them is the one that `dsp/tests/conftest.py` adds when a database is missing (`needs_data`, `needs_nstdb`). No requirement test or system test was skipped in this verification (section 3).
 
