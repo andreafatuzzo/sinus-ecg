@@ -28,7 +28,7 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 | Milestone | Title | Status | Requirements | With a verifying test | Release gate |
 |---|---|---|---|---|---|
 | M0 | Foundations | Released | 0 | 0 | pass |
-| M1 | Python reference | In progress | 16 | 16 | **fail** |
+| M1 | Python reference | Released | 16 | 16 | pass |
 | M2 | Portable C++ DSP library | Planned | 0 | 0 | not applied |
 | M3 | Qt desktop application with replay | Planned | 0 | 0 | not applied |
 | M4 | Hardware, firmware and integration | Planned | 0 | 0 | not applied |
@@ -37,9 +37,7 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 
 ## Release gate
 
-Outcome of `--release-gate` on milestones M0, M1: **fail**
-
-- dsp/pyproject.toml: version 0.1.0.dev0 is a development version, not a release
+Outcome of `--release-gate` on milestones M0, M1: pass
 
 ## Gaps
 

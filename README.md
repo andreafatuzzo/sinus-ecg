@@ -142,13 +142,13 @@ sinus-ecg/
 - [x] Architecture decision records, cybersecurity and development-process documents
 
 **Milestone 1: Python reference**
-- [ ] MIT-BIH download script and data loader
-- [ ] Filtering (baseline wander, powerline noise)
-- [ ] Pan–Tompkins QRS detector
-- [ ] EC57-style evaluation with Se / +P report
-- [ ] Noise stress test (MIT-BIH Noise Stress Test Database): performance versus SNR
-- [ ] Golden-vector export for the C++ library
-- [ ] EC57 subset report regenerated in CI
+- [x] MIT-BIH download script and data loader
+- [x] Filtering (baseline wander, powerline noise)
+- [x] Pan–Tompkins QRS detector
+- [x] EC57-style evaluation with Se / +P report
+- [x] Noise stress test (MIT-BIH Noise Stress Test Database): performance versus SNR
+- [x] Golden-vector export for the C++ library
+- [x] EC57 subset report regenerated in CI
 
 **Milestone 2: Portable C++ DSP library**
 - [ ] `libs/sinus-dsp`: C++17, no dynamic allocation in the real-time path, builds for host and ESP32
@@ -213,4 +213,4 @@ Code (firmware, DSP library and reference, desktop application, backend) is lice
 
 ## Status
 
-🚧 Early development: Milestone 0 (foundations) released; Milestone 1 (Python reference) in progress.
+🚧 Early development: Milestone 0 (foundations) and Milestone 1 (Python reference) released.
