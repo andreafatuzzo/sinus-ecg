@@ -32,12 +32,12 @@ uv run python scripts/traceability.py --check   # traceability checks, as in CI
 ```
 
 - `tests/unit/` holds the implementer's unit tests; `tests/requirements/` and `tests/system/` hold the tests that verify the requirements, written by someone else ([`CONTRIBUTING.md`](../CONTRIBUTING.md)).
-- Tests marked `needs_data` need the complete MIT-BIH Arrhythmia Database in `data/mitdb/`, and tests marked `needs_nstdb` need the MIT-BIH Noise Stress Test Database in `data/nstdb/`. Without them these tests are skipped, as in CI. Download the databases (below) to run them.
+- Tests marked `needs_data` need the complete MIT-BIH Arrhythmia Database in `data/mitdb/` at the repository root, and tests marked `needs_nstdb` need the MIT-BIH Noise Stress Test Database in `data/nstdb/`. Without them these tests are skipped, as in CI. Download the databases (below) to run them.
 - After changing a requirement, requirement-tagged code or a tagged test, regenerate the traceability matrix with `uv run python scripts/traceability.py` and commit [`docs/regulatory/traceability.md`](../docs/regulatory/traceability.md).
 
 ## Run
 
-The scripts write to `data/` (not in the repository) and to `docs/validation/` at the repository root. Each one prints its options with `--help`.
+The scripts keep the data in `data/` at the repository root (ignored by git, not in `dsp/`) and write the reports to `docs/validation/`. Each one prints its options with `--help`.
 
 ```sh
 uv run python scripts/download_data.py              # download and verify both databases into data/
