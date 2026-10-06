@@ -25,8 +25,18 @@ Pass criteria (SRS-014): the command of SRS-009 runs detection on the 12 records
 channel and mains setting of SRS-007, and the report has a noise stress section with, for
 each record, its SNR and statistics; for each SNR, the gross Se and +P from the summed
 counts of its two records; the gross Se and +P of records 118 and 119 without added noise;
-the database name and version and the outcome of its SRS-013 verification; ordered by record
-and by decreasing SNR. No report is written when the SRS-013 verification fails.
+the database name and version and the outcome of its SRS-013 verification; the licence
+under which the database is published, with the address of the licence text (SRS-014
+v0.7.2); ordered by record and by decreasing SNR. No report is written when the SRS-013
+verification fails.
+
+The licence is checked as for SRS-012, in the form of architecture sections 8.10 and 8.15:
+the row `| Database licence | <name>, <url> |` between the rows `Database` and `Verification`
+of the first table of the noise stress section. The fixture noise stress `Database` carries a
+fixture licence that differs from the real one and from that of the fixture MIT-BIH database,
+so the row is seen to come from the database of the noise stress verification; for version
+1.0.0 of the MIT-BIH Noise Stress Test Database it reads `Open Data Commons Attribution
+License v1.0, https://opendatacommons.org/licenses/by/1-0/`.
 """
 
 from __future__ import annotations
@@ -34,13 +44,13 @@ from __future__ import annotations
 import re
 import shutil
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from sinus_dsp.data.physionet import Database
+from sinus_dsp.data.physionet import MITDB, NSTDB, ODC_BY_1_0, Database, DatabaseLicence
 from sinus_dsp.errors import DataVerificationError
 from sinus_dsp.evaluation.noise_stress import (
     CLEAN_RECORDS,
@@ -90,12 +100,14 @@ def _databases(fixture: Any) -> tuple[Database, Database]:
         version="1.0.0",
         title=MITDB_TITLE,
         checksum_list_sha256=fixture.mitdb.checksum_list_sha256,
+        licence=fixture.mitdb.licence,
     )
     nstdb = Database(
         slug="nstdb",
         version="1.0.0",
         title=NSTDB_TITLE,
         checksum_list_sha256=fixture.nstdb.checksum_list_sha256,
+        licence=fixture.nstdb.licence,
     )
     return mitdb, nstdb
 
@@ -241,6 +253,139 @@ def test_noise_stress_section_states_the_database_and_its_verification(
     assert NSTDB_TITLE in section.text
     assert "1.0.0" in section.text
     assert verified in section.text
+
+
+# The fixture licences of `conftest.py` (`FIXTURE_LICENCES`) and the licence of version 1.0.0
+# of the MIT-BIH Noise Stress Test Database, as the rows must state them (architecture,
+# sections 8.10 and 8.15).
+NSTDB_LICENCE_TEXT = (
+    "Fixture Noise Stress Data Licence 3.4, https://licences.example.org/fixture-noise-stress/3-4/"
+)
+MITDB_LICENCE_TEXT = (
+    "Fixture Arrhythmia Data Licence 1.2, https://licences.example.org/fixture-arrhythmia/1-2/"
+)
+ODC_BY_TEXT = (
+    "Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/"
+)
+
+
+def _database_table(section: Any) -> Any:
+    """The first table of the noise stress section, with the columns Item and Value."""
+    tables = section.tables()
+    assert tables, "no table in the noise stress section"
+    assert tables[0].header == ("Item", "Value")
+    return tables[0]
+
+
+@pytest.mark.requirement("SRS-014")
+def test_noise_stress_section_states_the_licence_of_the_database(
+    standard_run: Run, evaluation_fixture: Any, parse_report: Callable[[str], Any]
+) -> None:
+    """The licence under which the noise stress database is published, with the address of
+    its text (SRS-014 v0.7.2), in the form documented in architecture sections 8.10 and 8.15.
+
+    Input: the report of the standard fixture, whose noise stress `Database` carries the
+    fixture licence "Fixture Noise Stress Data Licence 3.4", address
+    https://licences.example.org/fixture-noise-stress/3-4/, and whose MIT-BIH `Database`
+    carries another fixture licence.
+    Expected: the first table of the section "Noise stress test" (columns Item, Value) has
+    exactly the rows Database, Database licence and Verification, in this order, with the
+    values "MIT-BIH Noise Stress Test Database, version 1.0.0", "Fixture Noise Stress Data
+    Licence 3.4, https://licences.example.org/fixture-noise-stress/3-4/" and the outcome of
+    the verification; the line `| Database licence | Fixture Noise Stress Data Licence 3.4,
+    https://licences.example.org/fixture-noise-stress/3-4/ |` is the only licence line of the
+    section; the section does not state the licence of the MIT-BIH database, and the report
+    nowhere states the Open Data Commons licence (the text comes from the `Database` of the
+    noise stress verification); the results carry that licence.
+    """
+    section = parse_report(standard_run.text).section("noise stress")
+    table = _database_table(section)
+    nstdb = evaluation_fixture.nstdb
+    verified = (
+        f"verified: {nstdb.n_listed_files} files match the published SHA-256 checksum list "
+        f"(SHA256SUMS.txt, SHA-256 {nstdb.checksum_list_sha256})"
+    )
+
+    assert [tuple(row) for row in table.rows] == [
+        ("Database", "MIT-BIH Noise Stress Test Database, version 1.0.0"),
+        ("Database licence", NSTDB_LICENCE_TEXT),
+        ("Verification", verified),
+    ]
+    assert [line for line in section.lines if line.startswith("| Database licence |")] == [
+        f"| Database licence | {NSTDB_LICENCE_TEXT} |"
+    ]
+    assert MITDB_LICENCE_TEXT not in section.text
+    assert "Open Data Commons" not in standard_run.text
+    assert standard_run.results.noise_stress.nstdb.database.licence == nstdb.licence
+
+
+@pytest.mark.requirement("SRS-014")
+@pytest.mark.parametrize("real", ["noise-stress-database", "both-databases"])
+def test_noise_stress_section_states_the_licence_of_version_1_0_0_of_the_database(
+    real: str,
+    tmp_path: Path,
+    evaluation_fixture: Any,
+    make_spike_detector: Callable[[], Any],
+    parse_report: Callable[[str], Any],
+) -> None:
+    """For version 1.0.0 of the MIT-BIH Noise Stress Test Database, the licence is the Open
+    Data Commons Attribution License v1.0 (the verification of SRS-014).
+
+    Input: the database description of the software for that version (`NSTDB`), with only
+    its pinned digest replaced by that of the fixture list (`dataclasses.replace`), and either
+    the fixture MIT-BIH database or the description `MITDB` of the software, its digest
+    replaced likewise; the report of the standard fixture written with them.
+    Expected: `NSTDB` carries the licence "Open Data Commons Attribution License v1.0" with the
+    address https://opendatacommons.org/licenses/by/1-0/ (the constant `ODC_BY_1_0`); the
+    first table of the section "Noise stress test" has the rows `| Database | MIT-BIH Noise
+    Stress Test Database, version 1.0.0 |`, `| Database licence | Open Data Commons
+    Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/ |` and
+    `Verification`, in this order; section 2 states the licence of the MIT-BIH database used
+    (the fixture licence, or the same Open Data Commons licence).
+    """
+    fixture_mitdb, _ = _databases(evaluation_fixture)
+    nstdb = replace(NSTDB, checksum_list_sha256=evaluation_fixture.nstdb.checksum_list_sha256)
+    mitdb = (
+        fixture_mitdb
+        if real == "noise-stress-database"
+        else replace(MITDB, checksum_list_sha256=evaluation_fixture.mitdb.checksum_list_sha256)
+    )
+    output = tmp_path / "qrs-ec57-report.md"
+
+    write_validation_report(
+        output,
+        evaluation_fixture.data_root,
+        mitdb=mitdb,
+        nstdb=nstdb,
+        detector=make_spike_detector(),
+        fetch=None,
+    )
+
+    report = parse_report(output.read_bytes().decode("utf-8"))
+    section = report.section("noise stress")
+    lines = list(section.lines)
+    database = lines.index("| Database | MIT-BIH Noise Stress Test Database, version 1.0.0 |")
+    assert NSTDB.licence == DatabaseLicence(
+        name="Open Data Commons Attribution License v1.0",
+        url="https://opendatacommons.org/licenses/by/1-0/",
+    )
+    assert NSTDB.licence == ODC_BY_1_0
+    assert lines[database + 1] == (
+        "| Database licence | Open Data Commons Attribution License v1.0, "
+        "https://opendatacommons.org/licenses/by/1-0/ |"
+    )
+    assert lines[database + 2].startswith("| Verification | verified: ")
+    assert _database_table(section).first_cells() == [
+        "Database",
+        "Database licence",
+        "Verification",
+    ]
+    settings = report.section("software, data and settings")
+    expected = MITDB_LICENCE_TEXT if real == "noise-stress-database" else ODC_BY_TEXT
+    assert settings.table_with_row("Database licence").row("Database licence") == (
+        "Database licence",
+        expected,
+    )
 
 
 @pytest.mark.requirement("SRS-014")

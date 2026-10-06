@@ -1,6 +1,6 @@
 """Requirement tests of SRS-015: the synthetic inputs of the golden-vector export (RC-012).
 
-SRS-015 (v0.7.1): the export writes one file for each synthetic ECG "generated
+SRS-015 (v0.7.2): the export writes one file for each synthetic ECG "generated
 deterministically by the software from documented parameters: sampling frequencies of 250 Hz
 and 360 Hz; heart rates of 40, 75 and 180 bpm; each without interference, and with the
 baseline wander and mains interference of SRS-010 at 50 Hz and at 60 Hz".

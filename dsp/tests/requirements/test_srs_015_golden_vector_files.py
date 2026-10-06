@@ -1,15 +1,15 @@
 """Requirement tests of SRS-015: the golden-vector files of the export (RC-012).
 
-SRS-015 (v0.7.1): one golden-vector file for each synthetic input (2 sampling frequencies x
+SRS-015 (v0.7.2): one golden-vector file for each synthetic input (2 sampling frequencies x
 3 heart rates x 3 variants) and for the first 60 s of each record of the subset of SRS-016
-(first stored signal), where the files of these records are available and verified against
-the checksum list of SRS-001. Each file contains an identifier of the input, its sampling
-frequency in Hz, the settings used (mains frequency), the software version with an
-identifier of the source code, the input samples in mV, the output of each conditioning stage
-of SRS-004 and SRS-005 in the order applied, and the detected QRS sample indices of SRS-006,
-in the format documented in `architecture.md`. Numbers read back give exactly the values
-computed. Two runs on the same computer and inputs, with the same software and third-party
-versions, give byte-identical files.
+(first stored signal), "if the files of all these records are available and verified against
+the checksum list of SRS-001; otherwise, none of these record segments". Each file contains
+an identifier of the input, its sampling frequency in Hz, the settings used (mains
+frequency), the software version with an identifier of the source code, the input samples in
+mV, the output of each conditioning stage of SRS-004 and SRS-005 in the order applied, and
+the detected QRS sample indices of SRS-006, in the format documented in `architecture.md`.
+Numbers read back give exactly the values computed. Two runs on the same computer and
+inputs, with the same software and third-party versions, give byte-identical files.
 
 The cases of the verification of SRS-015 and their tests (the command itself is run in
 `test_srs_015_export_command.py`):
@@ -23,8 +23,12 @@ The cases of the verification of SRS-015 and their tests (the command itself is 
   checked as for SRS-012: `test_file_states_the_software_under_test` (identifier computed by
   the test with the method of architecture section 8.14);
 - the set of files matches the list: `test_export_writes_one_file_per_listed_input` (18
-  synthetic files and 6 record segments) and
-  `test_record_segments_are_skipped_when_the_records_are_not_verified` (18 files only);
+  synthetic files and 6 record segments), "also when a file of one of the records fails
+  verification": `test_record_segments_are_skipped_when_the_records_are_not_verified` (one
+  file of one record altered or missing, or one record without any file, while the files of
+  the five others are verified: 18 files only, none of the six segments, as the clause "all
+  or none" of v0.7.2 requires), and
+  `test_record_segments_need_only_the_files_of_the_six_records`;
 - the values read back equal the outputs of the conditioning and detection functions called
   directly on the same input: `test_values_read_back_equal_the_functions_called_directly`,
   `test_input_is_that_of_the_generator_or_of_the_record`, and the reader of the software in
@@ -46,7 +50,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from sinus_dsp.data.physionet import Database
+from sinus_dsp.data.physionet import Database, DatabaseLicence
 from sinus_dsp.data.records import load_record
 from sinus_dsp.errors import InvalidInputError
 from sinus_dsp.filters import (
@@ -77,10 +81,21 @@ QUANTIZATION_MV = 1 / 200  # one step of the fixture records (gain 200 per mV)
 WAVEFORM_TOLERANCE_MV = 1e-9
 
 
+# A licence of the fixture database: the `Database` has no default for it (architecture,
+# section 8.3). A golden-vector file does not state it (section 7.3).
+FIXTURE_LICENCE = DatabaseLicence(
+    name="Fixture Data Licence 1.0", url="https://licences.example.org/fixture/1-0/"
+)
+
+
 def _database(pin: str) -> Database:
     """MIT-BIH Arrhythmia Database 1.0.0 pinned to a fixture checksum list."""
     return Database(
-        slug="mitdb", version="1.0.0", title="MIT-BIH Arrhythmia Database", checksum_list_sha256=pin
+        slug="mitdb",
+        version="1.0.0",
+        title="MIT-BIH Arrhythmia Database",
+        checksum_list_sha256=pin,
+        licence=FIXTURE_LICENCE,
     )
 
 
@@ -517,6 +532,7 @@ SKIP_CASES = {
     "calibration-file-missing": "207.xws",
     "further-annotation-file-altered": "108.at_",
     "header-file-missing": "100.hea",
+    "record-absent": "119.dat",
 }
 
 
@@ -529,16 +545,19 @@ def test_record_segments_are_skipped_when_the_records_are_not_verified(
     copy_subset_fixture: Callable[..., Any],
     two_exports: tuple[Export, Export],
 ) -> None:
-    """Without the verified files of the six records, only the synthetic files are written.
+    """Without the verified files of all six records, none of the record segments is
+    written (SRS-015 v0.7.2: all six or none), only the synthetic files.
 
     Input: the export with the fixture `Database` on a data folder without the database; or
     on a copy of the synthetic ECG subset fixture whose checksum list is missing or altered
-    (one bit), or with one file of the six records altered (105.dat, 108.at_) or missing
-    (203.atr, 207.xws, 100.hea).
+    (one bit), or with one file of one record altered (105.dat, 108.at_) or missing (203.atr,
+    207.xws, 100.hea), or with every file of record 119 missing; in each case but the first
+    two, the files of the other records are intact and verify.
     Expected: the export completes; the folder holds exactly the 18 synthetic files, with the
-    bytes of the reference run; `written` lists them in order; `skipped` lists the six
-    record-segment identifiers in code-point order of the record names; `skip_reason` says
-    that the database is not verified and names the file concerned.
+    bytes of the reference run, and no file of any record segment; `written` lists them in
+    order; `skipped` lists the six record-segment identifiers in code-point order of the
+    record names; `skip_reason` says that the database is not verified and names the file
+    concerned.
     """
     data_root = tmp_path / "data"
     if case == "no-database":
@@ -548,6 +567,10 @@ def test_record_segments_are_skipped_when_the_records_are_not_verified(
         target = copy.folder / SKIP_CASES[case]
         if case.endswith("altered"):
             _flip_one_bit(target)
+        elif case == "record-absent":
+            for path in copy.folder.glob("119.*"):
+                path.unlink()
+            assert not list(copy.folder.glob("119.*"))
         else:
             target.unlink()
     output = tmp_path / "golden"

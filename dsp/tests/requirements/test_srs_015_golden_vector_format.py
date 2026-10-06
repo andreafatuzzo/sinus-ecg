@@ -1,13 +1,19 @@
 """Requirement tests of SRS-015: exact read-back and the documented file format (RC-012).
 
-SRS-015 (v0.7.1): "The file format shall be documented in `architecture.md`. Numeric values
+SRS-015 (v0.7.2): "The file format shall be documented in `architecture.md`. Numeric values
 shall be written so that reading them back gives exactly the values computed."
 
 The format is architecture section 7.3: a float64 is written as Python's `repr()` of it (the
 shortest decimal string that converts back to the same value), with the syntax
 `-?[0-9]+(\\.[0-9]+)?(e[+-][0-9]+)?`; non-finite values are never written, and the export
 fails with an error naming the input instead; readers reject a file that breaks a rule of the
-format, naming the first offending line. The interfaces are those of section 8.12:
+format, naming the first offending line. Since architecture v0.2.11 the readers also reject an
+integer greater than 2**63 - 1 at its own line, header counts included (rule C3), and a float
+that converts to zero although a digit of its significand is not zero, such as `1e-400`
+(rule C4; `0.0e-400` and `-0.0` are zero and accepted), so that the Python and C++ readers
+accept the same texts; and "The line named" fixes where a row count that differs from the
+header is named (the line of the next section when rows are missing, the first row after the
+count when there are more). The interfaces are those of section 8.12:
 `golden_vector`, `render_golden_vector`, `parse_golden_vector`, `read_golden_vector`, and the
 errors `NonFiniteOutputError(input_id)` and `MalformedFileError(path, line, reason)`.
 
@@ -217,6 +223,30 @@ def _set_header(lines: list[str], key: str, value: str) -> int:
     return n
 
 
+# The header counts, by the prefix of their case names, and the section that follows the
+# rows of each count.
+COUNT_KEYS = {
+    "n-samples": "n_samples",
+    "n-beats": "n_beats",
+    "n-reference-beats": "n_reference_beats",
+}
+NEXT_SECTION = {
+    "n_samples": "[beats]",
+    "n_beats": "[reference_beats]",
+    "n_reference_beats": "[end]",
+}
+# Integers at the bound of architecture section 7.3: 2**63 - 1 is the largest one accepted.
+LIMIT_TOKENS = {
+    "at": "9223372036854775807",
+    "above": "9223372036854775808",
+    "far-above": "100000000000000000000000000000",
+}
+
+
+def _count(lines: list[str], key: str) -> int:
+    return int(next(x for x in lines if x.startswith(f"{key}=")).split("=")[1])
+
+
 def _mutate(text: str, case: str) -> tuple[str, int | None]:
     """The text of a case and the line that must be named (None: not asserted)."""
     lines = text.split("\n")[:-1]
@@ -283,6 +313,13 @@ def _mutate(text: str, case: str) -> tuple[str, int | None]:
             "float-with-trailing-point": "1.",
             "float-with-underscore": "1_0",
             "float-hexadecimal": "0x1p-3",
+            # Rule C4: the value converts to zero, a digit of the significand is not zero.
+            "float-1e-400": "1e-400",
+            "float-minus-1e-400": "-1e-400",
+            "float-0.5e-400": "0.5e-400",
+            "float-0.00001e-320": "0.00001e-320",
+            "float-just-below-half-of-the-smallest-subnormal": "2.4703282292062327e-324",
+            "float-minus-just-below-half-of-the-smallest-subnormal": "-2.4703282292062327e-324",
         }[case]
         lines[20], n = _replace_field(lines[20], 0, token), 21
     elif case == "coefficient-1e999":
@@ -313,13 +350,37 @@ def _mutate(text: str, case: str) -> tuple[str, int | None]:
         lines[reference], n = str(int(lines[reference - 1]) - 1), reference + 1
     elif case == "reference-beat-negative":
         lines[reference - 1], n = "-1", reference
-    elif case == "more-samples-in-the-header":
-        _set_header(lines, "n_samples", str(n_samples + 1))
-        n = None
-    elif case == "more-beats-in-the-header":
-        value = next(x for x in lines if x.startswith("n_beats=")).split("=")[1]
-        _set_header(lines, "n_beats", str(int(value) + 1))
-        n = None
+    elif case.endswith("-in-the-header"):
+        # e.g. "more-beats-in-the-header": the header count one more or one less than the rows.
+        change, key = case.removesuffix("-in-the-header").split("-", 1)
+        key = COUNT_KEYS["n-" + key]
+        _set_header(lines, key, str(_count(lines, key) + (1 if change == "more" else -1)))
+        following = _line_of(lines, NEXT_SECTION[key])
+        # Fewer rows than the count: the line of the next section, found where the next row is
+        # expected. More rows: the first row after the count, where that line is expected.
+        n = following if change == "more" else following - 1
+    elif case.endswith("-integer-limit") and case.startswith(tuple(COUNT_KEYS)):
+        # e.g. "n-beats-above-the-integer-limit": the header count at 2**63 or 2**63 - 1.
+        prefix = next(p for p in sorted(COUNT_KEYS, key=len, reverse=True) if case.startswith(p))
+        bound = case.removeprefix(prefix + "-").removesuffix("-the-integer-limit")
+        key = COUNT_KEYS[prefix]
+        line = _set_header(lines, key, LIMIT_TOKENS[bound])
+        # Above the limit: refused at its own header line (rule C3). At the limit: the integer
+        # rule holds, and the file is refused where its rows end, as with any larger count.
+        n = line if bound in ("above", "far-above") else _line_of(lines, NEXT_SECTION[key])
+    elif case == "beat-above-the-integer-limit":
+        lines[beats - 1], n = LIMIT_TOKENS["above"], beats
+    elif case == "reference-beat-above-the-integer-limit":
+        last = _line_of(lines, "[end]") - 1
+        lines[last - 1], n = LIMIT_TOKENS["above"], last
+    elif case == "coefficient-section-above-the-integer-limit":
+        lines[16], n = _replace_field(lines[16], 1, LIMIT_TOKENS["above"]), 17
+    elif case == "coefficient-1e-400":
+        lines[15], n = _replace_field(lines[15], 3, "1e-400"), 16
+    elif case == "sampling-frequency-1e-400":
+        n = _set_header(lines, "sampling_frequency_hz", "1e-400")
+    elif case == "mains-output-1e-400":
+        lines[20], n = _replace_field(lines[20], 2, "1e-400"), 21
     else:
         raise AssertionError(case)
     return "\n".join(lines) + "\n", n
@@ -371,7 +432,32 @@ MALFORMED_CASES = [
     "reference-beat-smaller",
     "reference-beat-negative",
     "more-samples-in-the-header",
+    "fewer-samples-in-the-header",
     "more-beats-in-the-header",
+    "fewer-beats-in-the-header",
+    "more-reference-beats-in-the-header",
+    "fewer-reference-beats-in-the-header",
+    # Rule C3 (architecture v0.2.11): integers above 2**63 - 1, and the bound itself.
+    "n-samples-above-the-integer-limit",
+    "n-beats-above-the-integer-limit",
+    "n-reference-beats-above-the-integer-limit",
+    "n-reference-beats-far-above-the-integer-limit",
+    "n-samples-at-the-integer-limit",
+    "n-beats-at-the-integer-limit",
+    "n-reference-beats-at-the-integer-limit",
+    "beat-above-the-integer-limit",
+    "reference-beat-above-the-integer-limit",
+    "coefficient-section-above-the-integer-limit",
+    # Rule C4 (architecture v0.2.11): a float that converts to zero, its significand not zero.
+    "float-1e-400",
+    "float-minus-1e-400",
+    "float-0.5e-400",
+    "float-0.00001e-320",
+    "float-just-below-half-of-the-smallest-subnormal",
+    "float-minus-just-below-half-of-the-smallest-subnormal",
+    "mains-output-1e-400",
+    "coefficient-1e-400",
+    "sampling-frequency-1e-400",
 ]
 
 
@@ -415,12 +501,23 @@ def test_file_that_breaks_the_format_is_refused(
     with a field missing or added; coefficient rows of the wrong stage, numbered from 1, or
     with six fields; signal columns in another order; the `[beats]` line missing; a detected
     beat equal to the previous one, equal to `n_samples`, or with a leading zero; a reference
-    beat smaller than the previous one or negative; header counts larger than the rows.
+    beat smaller than the previous one or negative; each header count (`n_samples`, `n_beats`,
+    `n_reference_beats`) one more or one less than its rows; rule C3: a header count of
+    9223372036854775808 (2**63) or of 10**29, a detected beat, a reference beat or a
+    coefficient section number of 9223372036854775808, and the bound itself, a header count
+    of 9223372036854775807; rule C4: a float written `1e-400`, `-1e-400`, `0.5e-400`,
+    `0.00001e-320`, `2.4703282292062327e-324` or `-2.4703282292062327e-324` (each converts to
+    zero) in the input, the mains output, a coefficient or the sampling frequency.
     Expected: `parse_golden_vector(text, "case.golden.txt")` raises `MalformedFileError` with
-    `path` "case.golden.txt" and, where the documented rules fix it, the 1-based number of the
-    first offending line (the last line for a text that ends too early); `read_golden_vector`
-    on the same bytes in a file raises it with the path of the file and the same line; the
-    test's own reader of section 7.3 also refuses it, at the same line.
+    `path` "case.golden.txt" and the 1-based number of the first offending line (the last line
+    for a text that ends too early); for a row count that differs from the header, the line
+    where the rows and the count disagree: the line of the next section with fewer rows than
+    the count, the first row after the count with more rows; for an integer above 2**63 - 1,
+    its own line, also in the header; for a header count of exactly 2**63 - 1, which the
+    integer rule accepts, the line of the next section, where the rows end (no reader sizes
+    anything from that count first); for a float of rule C4, its own line.
+    `read_golden_vector` on the same bytes in a file raises it with the path of the file and
+    the same line; the test's own reader of section 7.3 also refuses it, at the same line.
     """
     text, line = _mutate(render_golden_vector(base_vector), case)
     path = tmp_path / "case.golden.txt"
@@ -441,6 +538,76 @@ def test_file_that_breaks_the_format_is_refused(
         assert (parsed.value.line, read.value.line, own_line) == (line, line, line)
     else:
         assert read.value.line == parsed.value.line
+
+
+# Floats that the rules of architecture section 7.3 accept although they are written in no file
+# by the writer (it writes `repr()`): zero with an exponent beyond the range of float64 (every
+# digit of the significand is zero, rule C4), signed zeros, the smallest subnormal and the
+# texts just above half of it, which round to it rather than to zero.
+ACCEPTED_TOKENS = [
+    "0.0e-400",
+    "-0.0e-400",
+    "0e-400",
+    "0.000e+999",
+    "-0.0",
+    "0.0",
+    "5e-324",
+    "2.4703282292062328e-324",
+    "-2.4703282292062328e-324",
+]
+
+
+@pytest.mark.requirement("SRS-015")
+@pytest.mark.parametrize("place", ["input", "mains-output", "coefficient"])
+@pytest.mark.parametrize("token", ACCEPTED_TOKENS)
+def test_float_that_is_zero_or_does_not_convert_to_zero_is_accepted(
+    token: str,
+    place: str,
+    base_vector: Any,
+    tmp_path: Path,
+    read_golden_file: Callable[[bytes], Any],
+) -> None:
+    """Rule C4 accepts a float that is zero, whatever its exponent, and a float that converts
+    to a non-zero value, however small (architecture section 7.3, v0.2.11).
+
+    Input: the text of the base vector with one float replaced by `0.0e-400`, `-0.0e-400`,
+    `0e-400`, `0.000e+999`, `-0.0`, `0.0`, `5e-324`, `2.4703282292062327e-324` plus one unit
+    in the last digit (`…28e-324`) or its negative: the input of the second sample, the mains
+    output of the second sample, or the coefficient b1 of the baseline stage.
+    Expected: `parse_golden_vector`, `read_golden_vector` and the test's own reader accept the
+    text; the value read at that place is `float(token)`, bitwise (negative zero keeps its
+    sign; `…28e-324` reads as 5e-324); every other value equals that of the base vector,
+    bitwise.
+    """
+    lines = render_golden_vector(base_vector).split("\n")
+    if place == "coefficient":
+        lines[15] = _replace_field(lines[15], 3, token)
+    else:
+        lines[20] = _replace_field(lines[20], 0 if place == "input" else 2, token)
+    text = "\n".join(lines)
+    path = tmp_path / "case.golden.txt"
+    path.write_bytes(text.encode("utf-8"))
+    expected = np.float64(float(token))
+    baseline, mains = base_vector.stage_outputs_mv
+    want_input, want_mains = np.array(base_vector.input_mv), np.array(mains)
+    want_coefficients = np.array(base_vector.coefficients[0])
+    if place == "input":
+        want_input[1] = expected
+    elif place == "mains-output":
+        want_mains[1] = expected
+    else:
+        want_coefficients[0, 1] = expected
+
+    for vector in (parse_golden_vector(text, "case.golden.txt"), read_golden_vector(path)):
+        assert _same_float64(vector.input_mv, want_input)
+        assert _same_float64(vector.stage_outputs_mv[0], baseline)
+        assert _same_float64(vector.stage_outputs_mv[1], want_mains)
+        assert _same_float64(vector.coefficients[0], want_coefficients)
+        assert _same_float64(vector.coefficients[1], base_vector.coefficients[1])
+    own = read_golden_file(text.encode("utf-8"))
+    assert _same_float64(own.input_mv, want_input)
+    assert _same_float64(own.stage_mv("mains"), want_mains)
+    assert _same_float64(own.coefficients["baseline"], want_coefficients[:, [0, 1, 2, 4, 5]])
 
 
 @pytest.mark.requirement("SRS-015")

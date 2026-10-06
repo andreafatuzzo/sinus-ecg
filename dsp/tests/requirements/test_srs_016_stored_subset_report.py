@@ -1,6 +1,6 @@
 """Requirement tests of SRS-016: the subset report stored in the repository (RC-004).
 
-SRS-016 (v0.7.1): the build compares the regenerated subset report with "the subset report
+SRS-016 (v0.7.2): the build compares the regenerated subset report with "the subset report
 stored in the repository", `docs/validation/qrs-ec57-subset-report.md` (architecture, section
 8.11). That stored report shall contain the items of SRS-012 for records 100, 105, 108, 119,
 203 and 207, with the outcome of the verification of their files in place of the outcome of
@@ -145,6 +145,39 @@ def test_stored_report_contains_the_items_of_the_subset_report(
     assert _item(report, "Mains interference filter") == "60 Hz"
     assert list(_per_record(report)) == [*SUBSET, "Gross", "Average"]
     assert b"\r" not in data and data.endswith(b"\n") and not data.endswith(b"\n\n")
+
+
+@pytest.mark.requirement("SRS-016")
+def test_stored_report_states_the_licence_of_the_database(
+    stored_text: str, parse_report: Callable[[str], Any]
+) -> None:
+    """The stored report states the licence under which the database is published, with the
+    address of the licence text (an item of SRS-012 v0.7.2, which SRS-016 includes).
+
+    Input: `docs/validation/qrs-ec57-subset-report.md`.
+    Expected: in the table of the section "Software, data and settings", the row "Database
+    licence" is "Open Data Commons Attribution License v1.0,
+    https://opendatacommons.org/licenses/by/1-0/" (the licence of version 1.0.0 of the MIT-BIH
+    Arrhythmia Database, in the form of architecture sections 8.11 and 8.15), right after the
+    row "Database" and before the row "Verification"; the report has exactly one line
+    starting with `| Database licence |`, `| Database licence | Open Data Commons Attribution
+    License v1.0, https://opendatacommons.org/licenses/by/1-0/ |`.
+    """
+    report = parse_report(stored_text)
+    table = report.section("software, data and settings").table_with_row("Database licence")
+    rows = table.first_cells()
+    position = rows.index("Database licence")
+
+    assert _item(report, "Database licence") == (
+        "Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/"
+    )
+    assert rows[position - 1 : position + 2] == ["Database", "Database licence", "Verification"]
+    assert [
+        line for line in stored_text.split("\n") if line.startswith("| Database licence |")
+    ] == [
+        "| Database licence | Open Data Commons Attribution License v1.0, "
+        "https://opendatacommons.org/licenses/by/1-0/ |"
+    ]
 
 
 def _value(text: str) -> Fraction | None:

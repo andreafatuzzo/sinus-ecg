@@ -1,6 +1,6 @@
 """Requirement tests of SRS-016: content of the subset report (RC-004).
 
-SRS-016 (v0.7.1): the subset report shall contain the items of SRS-012 for records 100, 105,
+SRS-016 (v0.7.2): the subset report shall contain the items of SRS-012 for records 100, 105,
 108, 119, 203 and 207, with the outcome of the verification of their files in place of the
 outcome of the SRS-001 verification and without the pass or fail of the SRS-007 thresholds,
 and shall state that it covers a subset of records for regression checking and is not the
@@ -26,6 +26,13 @@ The items of SRS-012 and their tests:
 - the database name and version and the outcome of its verification:
   - `test_report_states_the_database_and_the_verification_of_the_six_records`,
   - `test_report_states_the_database_that_was_verified`;
+- the licence under which the database is published, with the address of the licence text
+  (SRS-012 v0.7.2), in the row `Database licence` right after the row `Database` (the form of
+  architecture sections 8.10, 8.11 and 8.15), from the `Database` verified, and the Open Data
+  Commons Attribution License v1.0 for version 1.0.0:
+  - `test_report_states_the_licence_of_the_database`,
+  - `test_report_states_the_database_that_was_verified`,
+  - `test_report_states_the_licence_of_version_1_0_0_of_the_database`;
 - the software version with the identifier of the source code, checked as for SRS-012 (the
   test computes the identifier itself, architecture 8.14), and the settings used:
   - `test_report_states_the_software_identity`,
@@ -56,7 +63,7 @@ from typing import Any
 
 import pytest
 
-from sinus_dsp.data.physionet import Database
+from sinus_dsp.data.physionet import MITDB, ODC_BY_1_0, Database, DatabaseLicence
 from sinus_dsp.errors import SubsetReportMismatchError
 from sinus_dsp.evaluation.metrics import RecordCounts
 from sinus_dsp.evaluation.report import render_subset_report
@@ -104,12 +111,21 @@ SECTIONS = (
 SUBSET = ("100", "105", "108", "119", "203", "207")
 
 
-def _database(fixture: Any, *, title: str = MITDB_TITLE, version: str = "1.0.0") -> Database:
+def _database(
+    fixture: Any,
+    *,
+    title: str = MITDB_TITLE,
+    version: str = "1.0.0",
+    licence: DatabaseLicence | None = None,
+) -> Database:
+    """The `Database` of a fixture, pinned to its checksum list, with the fixture licence
+    (`FIXTURE_LICENCES` of `conftest.py`) unless another licence is given."""
     return Database(
         slug="mitdb",
         version=version,
         title=title,
         checksum_list_sha256=fixture.checksum_list_sha256,
+        licence=fixture.licence if licence is None else licence,
     )
 
 
@@ -524,17 +540,120 @@ def test_report_states_the_database_that_was_verified(
     """The database stated is the one verified and evaluated, not a fixed text.
 
     Input: the spike subset fixture, with the database described as "Fixture Arrhythmia
-    Database", version "2.3.4" (same files and pinned list).
-    Expected: the row "Database" is "Fixture Arrhythmia Database, version 2.3.4"; the subset
-    paragraph names "the Fixture Arrhythmia Database"; "MIT-BIH" appears nowhere.
+    Database", version "2.3.4", licence "Licence de données d’essai 2.0" with the address
+    https://licences.example.org/essai/2-0/ (same files and pinned list).
+    Expected: the row "Database" is "Fixture Arrhythmia Database, version 2.3.4"; the row
+    "Database licence" is "Licence de données d’essai 2.0,
+    https://licences.example.org/essai/2-0/"; the subset paragraph names "the Fixture
+    Arrhythmia Database"; neither "MIT-BIH" nor the fixture licence of the other runs appears.
     """
-    database = _database(subset_fixture, title="Fixture Arrhythmia Database", version="2.3.4")
+    database = _database(
+        subset_fixture,
+        title="Fixture Arrhythmia Database",
+        version="2.3.4",
+        licence=DatabaseLicence(
+            name="Licence de données d’essai 2.0", url="https://licences.example.org/essai/2-0/"
+        ),
+    )
     run = _regenerate(subset_fixture, tmp_path, make_spike_detector, database=database)
     report = parse_report(run.text)
 
     assert _item(report, "Database") == "Fixture Arrhythmia Database, version 2.3.4"
+    assert _item(report, "Database licence") == (
+        "Licence de données d’essai 2.0, https://licences.example.org/essai/2-0/"
+    )
     assert SUBSET_PARAGRAPH.format(title="Fixture Arrhythmia Database") in report.lines
     assert "MIT-BIH" not in run.text
+    assert MITDB_LICENCE_TEXT not in run.text
+
+
+# The fixture licence of `conftest.py` (`FIXTURE_LICENCES["mitdb"]`) and the licence of
+# version 1.0.0 of the MIT-BIH Arrhythmia Database, as the row must state them (architecture,
+# sections 8.10, 8.11 and 8.15).
+MITDB_LICENCE_TEXT = (
+    "Fixture Arrhythmia Data Licence 1.2, https://licences.example.org/fixture-arrhythmia/1-2/"
+)
+ODC_BY_TEXT = (
+    "Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/"
+)
+SECTION_2_ROWS = [
+    "Software",
+    "Runtime",
+    "Database",
+    "Database licence",
+    "Verification",
+    "Records",
+    "Signal",
+    "Mains interference filter",
+    "Matching",
+]
+
+
+@pytest.mark.requirement("SRS-016")
+def test_report_states_the_licence_of_the_database(
+    regenerated: Regenerated, parse_report: Callable[[str], Any]
+) -> None:
+    """The licence under which the database is published, with the address of its text: an
+    item of SRS-012 (v0.7.2) that the subset report contains.
+
+    Input: the subset report regenerated from the spike subset fixture, whose `Database`
+    carries the fixture licence "Fixture Arrhythmia Data Licence 1.2", address
+    https://licences.example.org/fixture-arrhythmia/1-2/.
+    Expected: the table of the section "Software, data and settings" has the rows Software,
+    Runtime, Database, Database licence, Verification, Records, Signal, Mains interference
+    filter and Matching, in this order (section 2 of the full report, architecture 8.10 and
+    8.11); the report has one licence line, `| Database licence | Fixture Arrhythmia Data
+    Licence 1.2, https://licences.example.org/fixture-arrhythmia/1-2/ |`, and does not state
+    the Open Data Commons licence of the real database (the row comes from the `Database`
+    verified); the results carry that licence.
+    """
+    report = parse_report(regenerated.text)
+    table = report.section("software, data and settings").table_with_row("Database licence")
+
+    assert table.header == ("Item", "Value")
+    assert table.first_cells() == SECTION_2_ROWS
+    assert _item(report, "Database licence") == MITDB_LICENCE_TEXT
+    assert _lines_starting_with(regenerated.text, "| Database licence |") == [
+        f"| Database licence | {MITDB_LICENCE_TEXT} |"
+    ]
+    assert "Open Data Commons" not in regenerated.text
+    assert regenerated.results.mitdb.database.licence == DatabaseLicence(
+        name="Fixture Arrhythmia Data Licence 1.2",
+        url="https://licences.example.org/fixture-arrhythmia/1-2/",
+    )
+
+
+@pytest.mark.requirement("SRS-016")
+def test_report_states_the_licence_of_version_1_0_0_of_the_database(
+    tmp_path: Path,
+    subset_fixture: Any,
+    make_spike_detector: Callable[[], Any],
+    parse_report: Callable[[str], Any],
+) -> None:
+    """For version 1.0.0 of the MIT-BIH Arrhythmia Database, the subset report states the Open
+    Data Commons Attribution License v1.0, as SRS-012 requires of the full report.
+
+    Input: the database description of the software (`MITDB`, the default of the check), with
+    only its pinned digest replaced by that of the fixture list (`dataclasses.replace`); the
+    subset report regenerated from the spike subset fixture with it.
+    Expected: `MITDB` carries `ODC_BY_1_0`; the report has the line `| Database | MIT-BIH
+    Arrhythmia Database, version 1.0.0 |` followed by `| Database licence | Open Data Commons
+    Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/ |` (architecture,
+    section 8.11), its only licence line.
+    """
+    database = replace(MITDB, checksum_list_sha256=subset_fixture.checksum_list_sha256)
+    run = _regenerate(subset_fixture, tmp_path, make_spike_detector, database=database)
+    lines = list(parse_report(run.text).section("software, data and settings").lines)
+    index = lines.index("| Database | MIT-BIH Arrhythmia Database, version 1.0.0 |")
+
+    assert MITDB.licence == ODC_BY_1_0
+    assert lines[index + 1] == (
+        "| Database licence | Open Data Commons Attribution License v1.0, "
+        "https://opendatacommons.org/licenses/by/1-0/ |"
+    )
+    assert _lines_starting_with(run.text, "| Database licence |") == [
+        f"| Database licence | {ODC_BY_TEXT} |"
+    ]
 
 
 @pytest.mark.requirement("SRS-016")

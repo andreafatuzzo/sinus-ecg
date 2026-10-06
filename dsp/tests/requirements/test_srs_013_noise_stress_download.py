@@ -24,6 +24,7 @@ import pytest
 from sinus_dsp.data.physionet import (
     NSTDB,
     Database,
+    DatabaseLicence,
     describe_verification,
     download_database,
     verify_database,
@@ -35,6 +36,11 @@ pytestmark = pytest.mark.usefixtures("forbid_network")
 SLUG = "nstdb"
 VERSION = "1.0.0"
 TITLE = "MIT-BIH Noise Stress Test Database"
+# A licence of the fixture database: the `Database` has no default for it (SRS-012, SRS-014;
+# architecture, section 8.3). It plays no part in the verification.
+FIXTURE_LICENCE = DatabaseLicence(
+    name="Fixture Data Licence 1.0", url="https://licences.example.org/fixture/1-0/"
+)
 BASE_URL = "https://physionet.org/files/nstdb/1.0.0/"
 LIST_NAME = "SHA256SUMS.txt"
 
@@ -74,7 +80,13 @@ MITDB_FILES: dict[str, bytes] = {
 
 def _database(pinned_sha256: str) -> Database:
     """A database description with the noise stress identity and the given pinned digest."""
-    return Database(slug=SLUG, version=VERSION, title=TITLE, checksum_list_sha256=pinned_sha256)
+    return Database(
+        slug=SLUG,
+        version=VERSION,
+        title=TITLE,
+        checksum_list_sha256=pinned_sha256,
+        licence=FIXTURE_LICENCE,
+    )
 
 
 def _file(folder: Path, relative: str) -> Path:
@@ -331,6 +343,7 @@ def test_both_databases_are_verified_independently_in_the_same_data_directory(
         version="1.0.0",
         title="MIT-BIH Arrhythmia Database",
         checksum_list_sha256=arrhythmia.checksum_list_sha256,
+        licence=FIXTURE_LICENCE,
     )
 
     assert tuple(verify_database(noise_database, data_root).files) == ALL_FILES

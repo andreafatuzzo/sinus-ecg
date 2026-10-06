@@ -1,6 +1,6 @@
 """Requirement tests of SRS-016: inspection of the build configuration (RC-004).
 
-SRS-016 (v0.7.1): "On every push, the automated build shall obtain records 100, 105, 108, 119,
+SRS-016 (v0.7.2): "On every push, the automated build shall obtain records 100, 105, 108, 119,
 203 and 207 [...] (a cached copy is allowed), verify [...], and regenerate a subset report.
 [...] The build shall fail, and no subset report shall be written, if the verification
 fails; it shall also fail if the regenerated subset report differs from the subset report
