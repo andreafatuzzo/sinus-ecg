@@ -99,11 +99,13 @@ Rules followed throughout the project:
 - Every requirement has an ID and a milestone. It is verified by at least one test that cites it, in `tests/requirements/` or `tests/system/` according to its verification level. Whoever implements a requirement does not write its verifying tests.
 - Every change that affects behavior updates the risk analysis if needed.
 - Every new dependency is added to the SOUP list.
-- On every push, CI runs the tests and the traceability checks, and publishes an SBOM of the Python reference. The checks fail when:
+- On every push, CI runs the tests and the traceability checks, and publishes an SBOM of the Python reference and scans it for known vulnerabilities. The checks fail when:
   - the traceability matrix is out of date;
   - a requirement cited in the code has no verifying test;
   - a test cites a requirement from the wrong folder;
-  - the subset validation report, regenerated from six records of the MIT-BIH Arrhythmia Database, differs from the stored one ([`docs/validation/qrs-ec57-subset-report.md`](docs/validation/qrs-ec57-subset-report.md)).
+  - the subset validation report, regenerated from six records of the MIT-BIH Arrhythmia Database, differs from the stored one ([`docs/validation/qrs-ec57-subset-report.md`](docs/validation/qrs-ec57-subset-report.md));
+  - a component listed in the SBOM has a known vulnerability that has not been triaged ([`docs/regulatory/cybersecurity.md`](docs/regulatory/cybersecurity.md) §7).
+- Vulnerabilities are reported privately, as described in [`SECURITY.md`](SECURITY.md).
 - A milestone is merged into `main` only when every one of its requirements has a verifying test: CI enforces this on pull requests into `main` ([ADR 0004](docs/adr/0004-test-tagging-and-traceability-gates.md)).
 
 ## Repository structure

@@ -1,18 +1,19 @@
 """Unit tests of scripts/traceability.py on fixture trees: the rules of ``--check``, the release
 gate, the matrix and the command line.
 
-The rules and their rationale are in docs/adr/0004-test-tagging-and-traceability-gates.md.
-Each test starts from a small repository tree under ``tmp_path`` that passes every rule
-(fixture ``tree``), changes it in one way and compares what the script reports with the
-expected items, so that each failure is shown to come from that change alone. The script is
-loaded as a module and run on the tree through its ``Layout``; the command line runs in-process
-with the tree as the repository root, and once as a command from a copy of the script placed in
-a tree. The software version rule has its own tests in test_traceability_version.py; here every
-tree carries a version that fits its register.
+The rules and their rationale are in docs/adr/0004-test-tagging-and-traceability-gates.md, with
+the corrections of docs/regulatory/architecture.md §8.16. Each test starts from a small
+repository tree under ``tmp_path`` that passes every rule (fixture ``tree``), changes it in one
+way and compares what the script reports with the expected items, so that each failure is
+shown to come from that change alone. The script is loaded as a module and run on the tree
+through its ``Layout``; the command line runs in-process with the tree as the repository root,
+and once as a command from a copy of the script placed in a tree. The software version rule
+has its own tests in test_traceability_version.py; here every tree carries a version that fits
+its register.
 
 The requirement IDs and tags of the fixture trees are text in this file. The real check reads
-IDs only from production code, and counts a requirement tag in this folder only if it is code,
-so it sees none of them (``test_the_real_check_reads_nothing_from_this_file``).
+IDs only from production code, and sees a requirement mark under dsp/tests only if it is a
+call in code, so it sees none of them (``test_the_real_check_reads_nothing_from_this_file``).
 """
 
 import importlib.util
@@ -38,13 +39,27 @@ STALE = f"{OUTPUT} is stale"
 FIELDS = "Requirement or milestone register errors"
 UNKNOWN = "Unknown requirement IDs referenced in code or tests"
 INDEPENDENCE = "Requirement tags outside tests/requirements/ or tests/system/ (independence rule)"
+OUTSIDE = "Requirement marks outside test files"
 CPP_TAGS = "Malformed or dangling C++ requirement tags"
 LEVEL = "Tests in the wrong folder for the requirement's verification level"
 UNTESTED = "Implemented requirements without a verifying test"
 DANGLING = "Open points citing undefined IDs"
 DUPLICATE = "Duplicate open point IDs"
+TARGET = "Open points with a Target that is not a milestone"
 VERSION = "Software version"
-RULES = [STALE, FIELDS, UNKNOWN, INDEPENDENCE, CPP_TAGS, LEVEL, UNTESTED, DANGLING, DUPLICATE]
+RULES = [
+    STALE,
+    FIELDS,
+    UNKNOWN,
+    INDEPENDENCE,
+    OUTSIDE,
+    CPP_TAGS,
+    LEVEL,
+    UNTESTED,
+    DANGLING,
+    DUPLICATE,
+    TARGET,
+]
 
 STALE_ITEM = "run: python dsp/scripts/traceability.py"
 DEV_ITEM = "dsp/pyproject.toml: version 0.1.0.dev0 is a development version, not a release"
@@ -107,6 +122,14 @@ def cpp_test(*tags: str, test: str = CPP_TEST) -> str:
     return "".join(f"{tag}\n" for tag in tags) + test
 
 
+def target_item(op_id: str, target: str) -> str:
+    """The item of the rule on open-point Targets."""
+    return (
+        f"{op_id}: Target '{target}' is not a milestone of milestones.md "
+        "(expected 'Mn' or 'After Mn')"
+    )
+
+
 BASE_STATUSES = {"M0": "Released", "M1": "In progress", "M2": "Planned"}
 BASE_REQUIREMENTS = (
     requirement("SRS-001", "Remove baseline wander"),
@@ -155,8 +178,14 @@ Milestone status: [`milestones.md`](milestones.md).
 | Milestone | Title | Status | Requirements | With a verifying test | Release gate |
 |---|---|---|---|---|---|
 | M0 | Title of M0 | Released | 0 | 0 | pass |
-| M1 | Title of M1 | In progress | 2 | 2 | pass |
+| M1 | Title of M1 | In progress | 2 | 2 | **fail** |
 | M2 | Title of M2 | Planned | 1 | 0 | not applied |
+
+## Release gate
+
+Outcome of `--release-gate` on milestones M0, M1: **fail**
+
+- dsp/pyproject.toml: version 0.1.0.dev0 is a development version, not a release
 
 ## Gaps
 
@@ -369,6 +398,11 @@ def test_build_and_third_party_folders_are_not_read(tree: Tree, folder: str) -> 
         f"dsp/tests/requirements/{folder}/test_generated.py",
         python_test_file(marked("test_g", "SRS-099")),
     )
+    tree.write(
+        f"dsp/tests/requirements/{folder}/conftest.py",
+        python_test_file(marked("test_g", "SRS-099")),
+    )
+    tree.write(f"dsp/sinus_dsp/tests/{folder}/generated.py", "# SRS-099\n")
     assert tree.check() == {}
 
 
@@ -612,6 +646,7 @@ def test_absent_register(tree: Tree) -> None:
             "SRS-002: milestone 'M1' is not in milestones.md",
             "SRS-003: milestone 'M2' is not in milestones.md",
         ],
+        TARGET: [target_item("OP-001", "M2")],
         VERSION: ["milestones.md: no milestone is In progress or Released, so no version fits"],
     }
 
@@ -717,6 +752,43 @@ def test_ids_outside_production_code_are_not_citations(tree: Tree, rel: str) -> 
     assert tree.check() == {}
 
 
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "dsp/sinus_dsp/tests/x.py",
+        "dsp/sinus_dsp/test/x.py",
+        "dsp/sinus_dsp/test_apps/x.py",
+        "dsp/sinus_dsp/sub/tests/deep/x.py",
+        "dsp/scripts/test/x.py",
+        "dsp/scripts/tests/x.py",
+    ],
+)
+def test_test_folders_under_the_python_code_roots_are_not_code(
+    tree: Tree, tool: ModuleType, rel: str
+) -> None:
+    """Architecture §8.16 item 3: skipped as under libs/, firmware/ and desktop/."""
+    tree.write(rel, "# SRS-003 and SRS-099\n")
+    assert tree.check() == {}
+    assert "SRS-003" not in tool.scan_code(tree.layout)
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "dsp/sinus_dsp/x.py",
+        "dsp/sinus_dsp/testing/x.py",
+        "dsp/sinus_dsp/unit_tests/x.py",
+        "dsp/scripts/test_data/x.py",
+        "dsp/sinus_dsp/tests.py",
+        "dsp/scripts/test.py",
+        "dsp/scripts/test_x.py",
+    ],
+)
+def test_other_files_under_the_python_code_roots_are_code(tree: Tree, rel: str) -> None:
+    tree.write(rel, "# SRS-003\n")
+    assert tree.check() == {UNTESTED: [f"SRS-003: cited in `{rel}:1`"]}
+
+
 # --- independence: requirement tags only in tests/requirements/ and tests/system/ -----------
 
 
@@ -809,11 +881,121 @@ def test_misplaced_python_tags_are_listed_in_order(tree: Tree) -> None:
     }
 
 
-@pytest.mark.parametrize("name", ["conftest.py", "helpers.py", "tagged_tests.py", "testtagged.py"])
-def test_only_pytest_test_files_are_read(tree: Tree, name: str) -> None:
-    tree.write(f"dsp/tests/unit/{name}", python_test_file(marked("test_a", "SRS-099")))
-    tree.write(f"dsp/tests/requirements/{name}", python_test_file(marked("test_a", "SRS-099")))
+NOT_TEST_FILES = ["conftest.py", "helpers.py", "tagged_tests.py", "testtagged.py", "test.py"]
+
+
+@pytest.mark.parametrize("name", NOT_TEST_FILES)
+def test_marks_outside_test_files_fail_and_never_count(tree: Tree, name: str) -> None:
+    """A mark in a file that pytest does not collect as a test file (architecture §8.16 item 4)
+    is an item of its own rule, in every folder, and verifies nothing."""
+    folders = ["dsp/tests/unit", "dsp/tests/requirements", "dsp/tests/system", "dsp/tests"]
+    for folder in folders:
+        tree.write(f"{folder}/{name}", python_test_file(marked("test_a", "SRS-003")))
+    # Items sorted as text (architecture §8.16 item 8).
+    assert tree.check() == {OUTSIDE: sorted(f"{folder}/{name}:4" for folder in folders)}
+    assert tree.test_names("SRS-003") == []
+    # Not counted for implemented => tested either.
+    tree.write("dsp/sinus_dsp/later.py", "# SRS-003\n")
+    failures = tree.check()
+    assert failures[UNTESTED] == ["SRS-003: cited in `dsp/sinus_dsp/later.py:1`"]
+    assert set(failures) == {OUTSIDE, UNTESTED}
+
+
+def test_marks_outside_test_files_are_not_unknown_ids(tree: Tree) -> None:
+    """A mark outside a test file is not a tagged test, so its ID is not read either."""
+    tree.write("dsp/tests/requirements/conftest.py", python_test_file(marked("test_a", "SRS-099")))
+    assert tree.check() == {OUTSIDE: ["dsp/tests/requirements/conftest.py:4"]}
+
+
+@pytest.mark.parametrize(
+    ("text", "lines"),
+    [
+        ('import pytest\n\npytestmark = pytest.mark.requirement("SRS-001")\n', [3]),
+        (
+            "from typing import Any\n\nimport pytest\n\n"
+            'pytestmark: Any = [pytest.mark.slow, pytest.mark.requirement("SRS-001")]\n',
+            [5],
+        ),
+        (
+            "import pytest\n\n\n"
+            "def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:\n"
+            "    for item in items:\n"
+            '        item.add_marker(pytest.mark.requirement("SRS-001"))\n',
+            [6],
+        ),
+        (
+            'from pytest import mark\n\nREQ = mark.requirement("SRS-001")\n\n\n'
+            '@mark.requirement("SRS-001", "SRS-002")\ndef check_a() -> None:\n    pass\n',
+            [3, 6],
+        ),
+        (
+            "import pytest\n\n\nclass Helpers:\n"
+            '    @pytest.mark.requirement("SRS-001")\n'
+            "    def test_a(self) -> None:\n        pass\n",
+            [5],
+        ),
+        ("import pytest\n\nMARK = pytest.mark.requirement()\n", [3]),
+    ],
+)
+@pytest.mark.parametrize("rel", ["dsp/tests/conftest.py", "dsp/tests/unit/helpers.py"])
+def test_every_form_of_a_mark_outside_test_files(
+    tree: Tree, rel: str, text: str, lines: list[int]
+) -> None:
+    tree.write(rel, text)
+    assert tree.check() == {OUTSIDE: [f"{rel}:{n}" for n in lines]}
+    assert tree.test_names("SRS-001") == [BASE_PY_TEST]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '"""Tags are written pytest.mark.requirement("SRS-001")."""\n',
+        '# @pytest.mark.requirement("SRS-001")\nimport pytest\n',
+        'TEXT = "@pytest.mark.requirement(\\"SRS-001\\")"\n',
+        "def pytest_configure(config: object) -> None:\n"
+        '    config.addinivalue_line("markers", "requirement(*ids): SRS-001")  # type: ignore\n',
+        "import pytest\n\nMARK = pytest.mark.requirements\nOTHER = pytest.mark.slow()\n",
+        'def requirement(*ids: str) -> None:\n    pass\n\n\nrequirement("SRS-001")\n',
+    ],
+)
+def test_text_of_a_mark_is_not_a_mark(tree: Tree, text: str) -> None:
+    """Only a call whose function is an attribute named ``requirement`` is a mark; a string, a
+    comment or another call is not."""
+    tree.write("dsp/tests/requirements/conftest.py", text)
+    tree.write("dsp/tests/unit/helpers.py", text)
     assert tree.check() == {}
+
+
+def test_marks_outside_test_files_are_listed_in_order(tree: Tree) -> None:
+    tree.write("dsp/tests/unit/b_helpers.py", python_test_file(marked("test_b", "SRS-001")))
+    tree.write(
+        "dsp/tests/unit/a_helpers.py",
+        python_test_file(marked("test_a", "SRS-001"), marked("test_c", "SRS-002")),
+    )
+    tree.write("dsp/tests/conftest.py", python_test_file(marked("test_r", "SRS-001")))
+    tree.write("dsp/tests/unit/test_c.py", python_test_file(marked("test_c", "SRS-001")))
+    assert tree.check() == {
+        INDEPENDENCE: ["dsp/tests/unit/test_c.py:4"],
+        OUTSIDE: [
+            "dsp/tests/conftest.py:4",
+            "dsp/tests/unit/a_helpers.py:4",
+            "dsp/tests/unit/a_helpers.py:9",
+            "dsp/tests/unit/b_helpers.py:4",
+        ],
+    }
+
+
+@pytest.mark.parametrize("name", ["notes.txt", "conftest.pyi", "helpers.py.txt", "README.md"])
+def test_files_that_are_not_python_are_not_read(tree: Tree, name: str) -> None:
+    tree.write(f"dsp/tests/requirements/{name}", python_test_file(marked("test_a", "SRS-001")))
+    assert tree.check() == {}
+
+
+@pytest.mark.parametrize("rel", ["dsp/tests/unit/helpers.py", "dsp/tests/conftest.py"])
+def test_file_that_is_not_python_stops_the_script(tree: Tree, rel: str) -> None:
+    tree.write(rel, "def broken(:\n")
+    with pytest.raises(SyntaxError):
+        tree.matrix()
 
 
 @pytest.mark.parametrize(
@@ -900,8 +1082,8 @@ def testing_prefix() -> None:
 def test_python_tests_are_named_by_path_class_and_function(tree: Tree, tool: ModuleType) -> None:
     tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004"), requirement("SRS-005"))
     tree.write("dsp/tests/requirements/test_detector.py", DETECTOR_TESTS)
-    refs, misplaced = tool.scan_python_tests(tree.layout)
-    assert misplaced == []
+    refs, misplaced, outside = tool.scan_python_tests(tree.layout)
+    assert (misplaced, outside) == ([], [])
     path = "dsp/tests/requirements/test_detector.py"
     method, inner = (
         f"{path}::TestDetector::test_method",
@@ -1294,7 +1476,9 @@ def test_only_test_in_the_wrong_folder_fails_the_check(tree: Tree) -> None:
         "SRS-001 has Verification level Requirement (tests in tests/requirements/), but is "
         "tagged in dsp/tests/system/test_srs_001.py::test_removes_wander"
     ]
-    assert set(failures) <= {LEVEL, UNTESTED}
+    # The misplaced test does not verify (architecture §8.16 item 2).
+    assert failures[UNTESTED] == ["SRS-001: cited in `dsp/sinus_dsp/filters.py:4`"]
+    assert set(failures) == {LEVEL, UNTESTED}
 
 
 # --- implemented => tested ------------------------------------------------------------------
@@ -1451,7 +1635,7 @@ def test_absent_open_points(tree: Tree, tool: ModuleType) -> None:
         ([("OP-003", "RC-099, SRS-001, HAZ-001", "M2")], [], ["OP-003→RC-099"]),
         ([("OP-003", "SRS-099, SRS-099", "M2")], [], ["OP-003→SRS-099", "OP-003→SRS-099"]),
         (
-            [("OP-004", "SRS-098", "M2"), ("OP-003", "SRS-099, SRS-097", "M3")],
+            [("OP-004", "SRS-098", "M2"), ("OP-003", "SRS-099, SRS-097", "After M2")],
             [("OP-005", "§2, HAZ-002")],
             ["OP-003→SRS-097", "OP-003→SRS-099", "OP-004→SRS-098", "OP-005→HAZ-002"],
         ),
@@ -1484,13 +1668,13 @@ def test_open_point_citing_an_undefined_id(
     ],
 )
 def test_open_point_citing_defined_ids_or_documents(tree: Tree, refs: str) -> None:
-    tree.open_points([*BASE_OPEN, ("OP-003", refs, "M3")], [*BASE_CLOSED, ("OP-004", refs)])
+    tree.open_points([*BASE_OPEN, ("OP-003", refs, "M2")], [*BASE_CLOSED, ("OP-004", refs)])
     assert tree.check() == {}
 
 
 def test_deleted_requirement_is_defined(tree: Tree) -> None:
     tree.srs(*BASE_REQUIREMENTS, "### SRS-004: _Deleted_\n")
-    tree.open_points([*BASE_OPEN, ("OP-003", "SRS-004", "M3")], BASE_CLOSED)
+    tree.open_points([*BASE_OPEN, ("OP-003", "SRS-004", "M2")], BASE_CLOSED)
     assert tree.check() == {}
 
 
@@ -1516,7 +1700,7 @@ def test_risk_ids_are_read_from_table_rows(tree: Tree, tool: ModuleType) -> None
         ([], [("OP-001", "SRS-003")], ["OP-001"]),
         ([], [("OP-002", "SRS-001"), ("OP-002", "SRS-001")], ["OP-002"]),
         (
-            [("OP-003", "", "M2"), ("OP-003", "", "M3"), ("OP-001", "", "M2")],
+            [("OP-003", "", "M2"), ("OP-003", "", "After M2"), ("OP-001", "", "M2")],
             [],
             ["OP-001", "OP-003"],
         ),
@@ -1530,6 +1714,103 @@ def test_duplicate_open_point_ids(
 ) -> None:
     tree.open_points([*BASE_OPEN, *open_rows], [*BASE_CLOSED, *closed_rows])
     assert tree.check() == {DUPLICATE: items}
+
+
+# --- open points: Target -------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "M1 (rest M2)",
+        "M1, M2",
+        "M1 M2",
+        "M1/M2",
+        "m1",
+        "M9",
+        "M3",
+        "After M9",
+        "After",
+        "after M1",
+        "After  M1",
+        "AfterM1",
+        "After After M1",
+        "Before M2",
+        "Milestone 1",
+        "M 1",
+        "M01",
+        "TBD",
+        "—",
+        "",
+    ],
+)
+def test_open_point_target_that_is_not_a_milestone(tree: Tree, target: str) -> None:
+    """Architecture §8.16 item 6: exactly ``Mn`` or ``After Mn``, Mn in the register."""
+    tree.open_points([*BASE_OPEN, ("OP-003", "", target)], BASE_CLOSED)
+    assert tree.check() == {TARGET: [target_item("OP-003", target)]}
+
+
+@pytest.mark.parametrize(
+    "target", ["M0", "M1", "M2", "After M0", "After M1", "After M2", " M1 ", " After M2 "]
+)
+def test_open_point_target_that_is_a_milestone(tree: Tree, target: str) -> None:
+    tree.open_points([*BASE_OPEN, ("OP-003", "", target)], BASE_CLOSED)
+    assert tree.check() == {}
+
+
+def test_target_milestone_must_be_valid_in_the_register(tree: Tree) -> None:
+    """A row of the register with an invalid status gives no milestone to target."""
+    tree.register(BASE_STATUSES, ["| M3 | Title | Done |"])
+    tree.open_points([*BASE_OPEN, ("OP-003", "", "M3"), ("OP-004", "", "After M3")], BASE_CLOSED)
+    failures = tree.check()
+    assert failures[TARGET] == [target_item("OP-003", "M3"), target_item("OP-004", "After M3")]
+    assert set(failures) == {FIELDS, TARGET}
+
+
+def test_target_follows_the_register(tree: Tree) -> None:
+    tree.open_points([*BASE_OPEN, ("OP-003", "", "M3"), ("OP-004", "", "After M3")], BASE_CLOSED)
+    assert tree.check() == {
+        TARGET: [target_item("OP-003", "M3"), target_item("OP-004", "After M3")]
+    }
+    tree.register({**BASE_STATUSES, "M3": "Planned"})
+    assert tree.check() == {}
+
+
+def test_row_without_a_target_column(tree: Tree) -> None:
+    tree.write("docs/regulatory/open-points.md", OPEN_POINTS_SECTIONS)
+    # Open section: OP-001 M2 and OP-003 M1 pass; OP-004 and OP-008 target M3, which is not in
+    # the register; OP-005 and OP-006 have no Target column. Rows outside the Open section
+    # (before any section, Closed, Withdrawn) are not checked.
+    assert tree.check() == {
+        TARGET: [
+            target_item("OP-004", "M3"),
+            target_item("OP-005", ""),
+            target_item("OP-006", ""),
+            target_item("OP-008", "M3"),
+        ]
+    }
+
+
+def test_closed_rows_are_not_checked(tree: Tree) -> None:
+    text = tree.layout.open_points.read_text(encoding="utf-8")
+    text += "| OP-005 | Closed point. | — | 2026-01-01 | M1 (rest M2) | Done. |\n"
+    text += "| OP-006 | Short closed row. |\n"
+    tree.write("docs/regulatory/open-points.md", text)
+    assert tree.check() == {}
+
+
+def test_target_items_in_order(tree: Tree) -> None:
+    tree.open_points(
+        [("OP-010", "", "M9"), *BASE_OPEN, ("OP-004", "", ""), ("OP-003", "", "M1, M2")],
+        BASE_CLOSED,
+    )
+    assert tree.check() == {
+        TARGET: [
+            target_item("OP-003", "M1, M2"),
+            target_item("OP-004", ""),
+            target_item("OP-010", "M9"),
+        ]
+    }
 
 
 # --- the stale-matrix check -----------------------------------------------------------------
@@ -1579,11 +1860,28 @@ def test_change_shown_by_the_matrix_makes_it_stale(tree: Tree, rel: str, text: s
 
 def test_changes_to_the_register_and_open_points_make_it_stale(tree: Tree) -> None:
     tree.update()
-    tree.open_points([*BASE_OPEN, ("OP-003", "SRS-001", "M3")], BASE_CLOSED)
+    tree.open_points([*BASE_OPEN, ("OP-003", "SRS-001", "M2")], BASE_CLOSED)
     assert tree.check(update=False) == {STALE: [STALE_ITEM]}
     tree.update()
     tree.register({"M0": "Released", "M1": "In progress", "M2": "Planned", "M3": "Planned"})
     assert tree.check(update=False) == {STALE: [STALE_ITEM]}
+
+
+def test_changes_shown_by_the_release_gate_make_it_stale(tree: Tree) -> None:
+    """Architecture §8.16 item 1: the gate cells and section change with the open points that
+    target a gated milestone, and the section with a development version."""
+    tree.update()
+    tree.open_points([*BASE_OPEN, ("OP-003", "", "M0")], BASE_CLOSED)
+    assert tree.check(update=False) == {STALE: [STALE_ITEM]}
+    tree.update()
+    tree.release()
+    tree.update()
+    tree.version("0.1.1")
+    assert tree.check(update=False) == {}
+    tree.version("0.1.1.dev0")
+    failures = tree.check(update=False)
+    assert failures[STALE] == [STALE_ITEM]
+    assert set(failures) == {STALE, VERSION}
 
 
 @pytest.mark.parametrize(
@@ -1659,6 +1957,10 @@ def test_a_verifying_test_opens_the_gate(tree: Tree, rel: str, text: str) -> Non
             '    @pytest.mark.requirement("SRS-004")\n'
             "    def test_later(self) -> None:\n        pass\n",
         ),
+        ("dsp/tests/system/test_later.py", python_test_file(marked("test_later", "SRS-004"))),
+        ("libs/sinus-dsp/tests/system/later_test.cpp", cpp_test("// Verifies: SRS-004")),
+        ("dsp/tests/requirements/conftest.py", python_test_file(marked("test_later", "SRS-004"))),
+        ("dsp/tests/requirements/helpers.py", python_test_file(marked("test_later", "SRS-004"))),
     ],
 )
 def test_a_test_that_is_not_counted_does_not_open_the_gate(tree: Tree, rel: str, text: str) -> None:
@@ -1702,6 +2004,9 @@ def test_deleted_requirement_is_not_gated(tree: Tree) -> None:
         ("M9", False),
         ("", False),
         ("After M6", False),
+        ("After M1", False),
+        ("After M0", False),
+        ("M1 (rest M2)", False),
         ("M1 ", True),
     ],
 )
@@ -1837,7 +2142,7 @@ def test_requirement_rows(tree: Tree) -> None:
         "—",
     ]
     assert rows["SRS-004"] == ["Without fields", "—", "—", "—", "**none**", "—"]
-    assert rows["SRS-005"] == ["_Deleted_", "—", "—", "—", "**none**", "—"]
+    assert rows["SRS-005"] == ["_Deleted_", "—", "—", "—", "deleted", "—"]
 
 
 def test_milestone_table(tree: Tree) -> None:
@@ -1890,15 +2195,331 @@ def test_matrix_without_requirements(tree: Tree) -> None:
     assert (
         "| — | _No requirements defined yet in `srs.md`_ | — | — | — | — | — |" in text.splitlines()
     )
-    assert "| M1 | Title of M1 | In progress | 0 | 0 | pass |" in text.splitlines()
+    assert "| M0 | Title of M0 | Released | 0 | 0 | pass |" in text.splitlines()
+    assert "| M1 | Title of M1 | In progress | 0 | 0 | **fail** |" in text.splitlines()
 
 
 def test_matrix_shows_every_requirement_whatever_the_check(tree: Tree) -> None:
     tree.write("dsp/tests/unit/test_more.py", python_test_file(marked("test_more", "SRS-003")))
+    tree.write("dsp/tests/unit/helpers.py", python_test_file(marked("test_more", "SRS-003")))
     tree.write(SYS_CPP, cpp_test("// Verifies: SRS-001"))
     rows = table_rows(tree.render(), r"SRS-\d+")
+    assert list(rows) == ["SRS-001", "SRS-002", "SRS-003"]
     assert rows["SRS-003"][4] == "**none**"
-    assert rows["SRS-001"][4] == f"`{BASE_PY_TEST}`<br>`{SYS_CPP}::Qrs.Detects`"
+    assert rows["SRS-001"][4] == f"`{BASE_PY_TEST}`"
+
+
+# --- the matrix: the release gate (architecture §8.16 item 1) -------------------------------
+
+
+def gate_cells(tree: Tree) -> dict[str, str]:
+    """The cell ``Release gate`` of each milestone row of the matrix."""
+    return {ms: cells[-1] for ms, cells in table_rows(tree.render(), r"M\d+").items()}
+
+
+def gate_section(tree: Tree) -> str:
+    """The text of the matrix from the heading ``## Release gate`` to the heading ``## Gaps``."""
+    text = tree.render()
+    start = text.index("## Release gate\n")
+    return text[start : text.index("## Gaps\n", start)]
+
+
+def released(tree: Tree, *extra: str) -> None:
+    """M1 Released with its version, and SRS-004 of M1 (verified) plus ``extra`` entries."""
+    tree.release()
+    tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004"), *extra)
+    tree.write(
+        "dsp/tests/requirements/test_srs_004.py", python_test_file(marked("test_4", "SRS-004"))
+    )
+
+
+def test_gate_cell_of_a_released_milestone_that_passes(tree: Tree) -> None:
+    released(tree, requirement("SRS-005", extra="_Deleted_"))
+    # A closed point naming M1, an open point after M1: neither targets M1.
+    tree.open_points([*BASE_OPEN, ("OP-003", "", "After M1")], [*BASE_CLOSED, ("OP-004", "")])
+    assert gate_cells(tree) == {"M0": "pass", "M1": "pass", "M2": "not applied"}
+    assert tree.check() == {}
+    assert tree.gate() == []
+
+
+def test_gate_cell_ignores_a_closed_point_whatever_its_target(tree: Tree, tool: ModuleType) -> None:
+    """The parser gives closed rows no Target; the cell must not count them even if one had."""
+    released(tree)
+    matrix = tree.matrix()
+    milestone = matrix.milestones["M1"]
+    matrix.open_points = [tool.OpenPoint(id="OP-003", is_open=False, refs=[], target="M1")]
+    assert tool.milestone_gate(matrix, milestone) == "pass"
+    matrix.open_points.append(tool.OpenPoint(id="OP-004", is_open=True, refs=[], target="M1"))
+    assert tool.milestone_gate(matrix, milestone) == "**fail**"
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        "requirement without a test",
+        "only test in the system folder",
+        "only test in a conftest",
+        "open point targeting it",
+    ],
+)
+def test_gate_cell_of_a_released_milestone_that_fails(tree: Tree, cause: str) -> None:
+    released(tree)
+    if cause == "requirement without a test":
+        tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004"), requirement("SRS-005"))
+    elif cause == "only test in the system folder":
+        tree.root.joinpath("dsp/tests/requirements/test_srs_004.py").unlink()
+        tree.write("dsp/tests/system/test_srs_004.py", python_test_file(marked("t4", "SRS-004")))
+    elif cause == "only test in a conftest":
+        tree.root.joinpath("dsp/tests/requirements/test_srs_004.py").unlink()
+        tree.write("dsp/tests/requirements/conftest.py", python_test_file(marked("t", "SRS-004")))
+    else:
+        tree.open_points([*BASE_OPEN, ("OP-003", "", "M1")], BASE_CLOSED)
+    assert gate_cells(tree) == {"M0": "pass", "M1": "**fail**", "M2": "not applied"}
+    assert tree.gate() != []
+
+
+def test_gate_cell_of_a_milestone_in_progress_always_fails(tree: Tree) -> None:
+    """Its version is a development version, which the gate rejects; even with the version of a
+    release (a failure of the version rule), the cell does not pass."""
+    tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004", extra="_Deleted_"))
+    assert gate_cells(tree)["M1"] == "**fail**"
+    tree.version("0.1.0")
+    assert gate_cells(tree)["M1"] == "**fail**"
+    assert tree.gate() == []
+
+
+def test_gate_cell_of_a_released_milestone_ignores_the_version(tree: Tree) -> None:
+    """The version items belong to no single milestone: they are shown by the section."""
+    released(tree)
+    tree.version("0.1.0.dev0")
+    assert gate_cells(tree) == {"M0": "pass", "M1": "pass", "M2": "not applied"}
+    assert gate_section(tree).endswith(f"**fail**\n\n- {DEV_ITEM}\n\n")
+
+
+def test_gate_cell_of_a_planned_milestone(tree: Tree) -> None:
+    """Not applied, whatever its requirements and open points."""
+    tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004", milestone="M2"))
+    tree.open_points([*BASE_OPEN, ("OP-003", "", "M2")], BASE_CLOSED)
+    assert gate_cells(tree)["M2"] == "not applied"
+
+
+def test_gate_cell_of_a_released_milestone_with_an_open_point_of_another(tree: Tree) -> None:
+    released(tree)
+    tree.register({"M0": "Released", "M1": "Released", "M2": "Planned", "M3": "Released"})
+    tree.version("0.3.0")
+    tree.open_points([*BASE_OPEN, ("OP-003", "", "M3")], BASE_CLOSED)
+    assert gate_cells(tree) == {
+        "M0": "pass",
+        "M1": "pass",
+        "M2": "not applied",
+        "M3": "**fail**",
+    }
+
+
+def test_release_gate_section_when_the_gate_passes(tree: Tree) -> None:
+    released(tree)
+    # Between the milestones table and the gaps; the section ends with the outcome line.
+    assert (
+        "| M2 | Title of M2 | Planned | 1 | 0 | not applied |\n\n"
+        "## Release gate\n\n"
+        "Outcome of `--release-gate` on milestones M0, M1: pass\n\n"
+        "## Gaps\n\n"
+    ) in tree.render()
+    assert gate_section(tree) == (
+        "## Release gate\n\nOutcome of `--release-gate` on milestones M0, M1: pass\n\n"
+    )
+    assert tree.check() == {}
+
+
+def test_release_gate_section_when_the_gate_fails(
+    tree: Tree, run: Callable[..., tuple[int, str]]
+) -> None:
+    tree.srs(
+        requirement("SRS-005"),
+        *BASE_REQUIREMENTS,
+        requirement("SRS-004", milestone=None),
+        requirement("SRS-006", milestone="M0"),
+    )
+    tree.open_points([("OP-004", "", "M1"), *BASE_OPEN, ("OP-003", "", "M0")], BASE_CLOSED)
+    items = [
+        "SRS-004: no valid milestone, so the gate cannot place it",
+        "SRS-005 (M1, In progress): no verifying test",
+        "SRS-006 (M0, Released): no verifying test",
+        "OP-003: open point still targets M0; close or retarget it",
+        "OP-004: open point still targets M1; close or retarget it",
+        DEV_ITEM,
+    ]
+    assert tree.gate() == items
+    assert gate_section(tree) == (
+        "## Release gate\n\n"
+        "Outcome of `--release-gate` on milestones M0, M1: **fail**\n\n"
+        + "".join(f"- {item}\n" for item in items)
+        + "\n"
+    )
+    # The same items, in the same order and text, as the command prints them.
+    status, out = run("--release-gate")
+    assert status == 1
+    assert out == "FAIL: Release gate on milestones M0, M1\n" + "".join(
+        f"  - {item}\n" for item in items
+    )
+
+
+def test_release_gate_section_with_an_unreadable_version(tree: Tree) -> None:
+    released(tree)
+    tree.write("dsp/sinus_dsp/__init__.py", '"""Package."""\n')
+    assert gate_section(tree) == (
+        "## Release gate\n\n"
+        "Outcome of `--release-gate` on milestones M0, M1: **fail**\n\n"
+        "- dsp/sinus_dsp/__init__.py: __version__ assigned 0 times, expected once\n\n"
+    )
+
+
+def test_release_gate_section_without_gated_milestones(tree: Tree) -> None:
+    tree.register({"M0": "Planned", "M1": "Planned", "M2": "Planned"})
+    tree.version("0.0.1")
+    assert gate_section(tree) == (
+        "## Release gate\n\nOutcome of `--release-gate` on milestones none: pass\n\n"
+    )
+    assert set(gate_cells(tree).values()) == {"not applied"}
+
+
+def test_release_gate_section_names_the_gated_milestones_in_order(tree: Tree) -> None:
+    tree.register(
+        {"M10": "Released", "M2": "Released", "M9": "Planned", "M0": "Released", "M1": "Released"}
+    )
+    tree.version("0.10.0")
+    assert gate_section(tree).startswith(
+        "## Release gate\n\nOutcome of `--release-gate` on milestones M0, M1, M2, M10: "
+    )
+
+
+# --- the matrix: verifying tests (architecture §8.16 items 2 and 7) --------------------------
+
+
+@pytest.mark.parametrize(
+    ("req_id", "moved_from", "moved_to", "item"),
+    [
+        (
+            "SRS-001",
+            "dsp/tests/requirements/test_srs_001.py",
+            "dsp/tests/system/test_srs_001.py",
+            "SRS-001 has Verification level Requirement (tests in tests/requirements/), but is "
+            "tagged in dsp/tests/system/test_srs_001.py::test_removes_wander",
+        ),
+        (
+            "SRS-002",
+            "dsp/tests/system/test_srs_002.py",
+            "dsp/tests/requirements/test_srs_002.py",
+            "SRS-002 has Verification level System (tests in tests/system/), but is tagged in "
+            "dsp/tests/requirements/test_srs_002.py::test_detects_beats",
+        ),
+    ],
+)
+def test_only_test_in_the_folder_of_the_other_level_verifies_nothing(
+    tree: Tree, req_id: str, moved_from: str, moved_to: str, item: str
+) -> None:
+    path = tree.root / moved_from
+    text = path.read_text(encoding="utf-8")
+    path.unlink()
+    tree.write(moved_to, text)
+    cited = {"SRS-001": "dsp/sinus_dsp/filters.py:4", "SRS-002": "dsp/scripts/validate.py:1"}
+    assert tree.check() == {
+        LEVEL: [item],
+        UNTESTED: [f"{req_id}: cited in `{cited[req_id]}`"],
+    }
+    text = tree.render()
+    assert table_rows(text, r"SRS-\d+")[req_id][4] == "**none**"
+    assert table_rows(text, r"M\d+")["M1"][3] == "1"
+    assert f"- Requirements without tests: {req_id}, SRS-003\n" in text
+    assert f"- Implemented requirements without tests: {req_id}\n" in text
+    tree.release()
+    assert tree.gate() == [f"{req_id} (M1, Released): no verifying test"]
+    assert gate_cells(tree)["M1"] == "**fail**"
+
+
+def test_only_cpp_test_in_the_folder_of_the_other_level_verifies_nothing(tree: Tree) -> None:
+    tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004"))
+    tree.write("libs/sinus-dsp/src/later.cpp", "// SRS-004\n")
+    tree.write(SYS_CPP, cpp_test("// Verifies: SRS-004"))
+    assert tree.check() == {
+        LEVEL: [
+            "SRS-004 has Verification level Requirement (tests in tests/requirements/), but is "
+            f"tagged in {SYS_CPP}::Qrs.Detects"
+        ],
+        UNTESTED: ["SRS-004: cited in `libs/sinus-dsp/src/later.cpp:1`"],
+    }
+    assert table_rows(tree.render(), r"SRS-\d+")["SRS-004"][4] == "**none**"
+
+
+def test_a_test_in_each_folder(tree: Tree, tool: ModuleType) -> None:
+    """Only the test in the folder of the requirement's level is shown and counted; the other
+    one is still reported by the level rule."""
+    tree.write("dsp/tests/system/test_more.py", python_test_file(marked("test_more", "SRS-001")))
+    tree.write(REQ_CPP, cpp_test("// Verifies: SRS-002"))
+    assert tree.check() == {
+        LEVEL: [
+            "SRS-001 has Verification level Requirement (tests in tests/requirements/), but is "
+            "tagged in dsp/tests/system/test_more.py::test_more",
+            "SRS-002 has Verification level System (tests in tests/system/), but is tagged in "
+            f"{REQ_CPP}::Qrs.Detects",
+        ]
+    }
+    rows = table_rows(tree.render(), r"SRS-\d+")
+    assert rows["SRS-001"][4] == f"`{BASE_PY_TEST}`"
+    assert rows["SRS-002"][4] == "`dsp/tests/system/test_srs_002.py::test_detects_beats`"
+    matrix = tree.matrix()
+    assert [t.name for t in tool.verifying(matrix, "SRS-001")] == [BASE_PY_TEST]
+    assert tree.test_names("SRS-001") == [BASE_PY_TEST, "dsp/tests/system/test_more.py::test_more"]
+
+
+def test_every_tagged_test_counts_when_the_level_is_not_known(tree: Tree, tool: ModuleType) -> None:
+    """Undefined requirement, or a level that is neither: every tagged test counts (both cases
+    already fail --check)."""
+    tree.srs(
+        requirement("SRS-001", "Remove baseline wander", level="Unknown"),
+        *BASE_REQUIREMENTS[1:],
+    )
+    tree.write("dsp/tests/system/test_more.py", python_test_file(marked("test_more", "SRS-001")))
+    tree.write("dsp/tests/system/test_other.py", python_test_file(marked("test_x", "SRS-099")))
+    matrix = tree.matrix()
+    assert [t.name for t in tool.verifying(matrix, "SRS-001")] == [
+        BASE_PY_TEST,
+        "dsp/tests/system/test_more.py::test_more",
+    ]
+    assert [t.name for t in tool.verifying(matrix, "SRS-099")] == [
+        "dsp/tests/system/test_other.py::test_x"
+    ]
+    assert tool.verifying(matrix, "SRS-098") == []
+    assert tree.check() == {FIELDS: [f"SRS-001: {BAD_LEVEL}"], UNKNOWN: ["SRS-099"]}
+
+
+def test_deleted_requirement_in_the_matrix(tree: Tree) -> None:
+    """Architecture §8.16 item 7: not a gap, and shown as ``deleted`` without a verifying
+    test."""
+    tree.srs(*BASE_REQUIREMENTS, "### SRS-004: _Deleted_\n", requirement("SRS-005"))
+    text = tree.render()
+    rows = table_rows(text, r"SRS-\d+")
+    assert rows["SRS-004"] == ["_Deleted_", "—", "—", "—", "deleted", "—"]
+    assert rows["SRS-005"][4] == "**none**"
+    assert "- Requirements without tests: SRS-003, SRS-005\n" in text
+    assert tree.check() == {}
+
+
+def test_deleted_requirement_with_a_test_shows_the_test(tree: Tree) -> None:
+    tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004", extra="_Deleted_"))
+    tree.write(
+        "dsp/tests/requirements/test_old.py", python_test_file(marked("test_old", "SRS-004"))
+    )
+    rows = table_rows(tree.render(), r"SRS-\d+")
+    assert rows["SRS-004"][4] == "`dsp/tests/requirements/test_old.py::test_old`"
+
+
+def test_deleted_requirement_cited_in_code_is_still_an_implemented_gap(tree: Tree) -> None:
+    tree.srs(*BASE_REQUIREMENTS, "### SRS-004: _Deleted_\n")
+    tree.write("dsp/sinus_dsp/old.py", "# SRS-004\n")
+    text = tree.render()
+    assert "- Requirements without tests: SRS-003\n" in text
+    assert "- Implemented requirements without tests: SRS-004\n" in text
 
 
 # --- the command line -----------------------------------------------------------------------
@@ -1963,6 +2584,58 @@ def test_check_lists_each_failing_rule_and_does_not_write(
         "  - SRS-003: cited in `dsp/sinus_dsp/more.py:2`\n",
     )
     assert not (tree.root / OUTPUT).exists()
+
+
+def test_check_lists_the_new_rules_in_their_place(
+    tree: Tree, run: Callable[..., tuple[int, str]]
+) -> None:
+    """Marks outside test files right after the independence rule; Targets right after the
+    duplicate open point IDs (architecture §8.16, order of the rules)."""
+    tree.write("dsp/tests/unit/test_more.py", python_test_file(marked("test_more", "SRS-001")))
+    tree.write("dsp/tests/unit/conftest.py", python_test_file(marked("test_more", "SRS-001")))
+    tree.write(REQ_CPP, cpp_test("// Verifies: SRS-1"))
+    tree.open_points([*BASE_OPEN, ("OP-001", "", "M1 (rest M2)")], BASE_CLOSED)
+    assert run() == (0, f"Wrote {OUTPUT}\n")
+    assert run("--check") == (
+        1,
+        f"FAIL: {INDEPENDENCE}\n"
+        "  - dsp/tests/unit/test_more.py:4\n"
+        f"FAIL: {OUTSIDE}\n"
+        "  - dsp/tests/unit/conftest.py:4\n"
+        f"FAIL: {CPP_TAGS}\n"
+        f"  - {REQ_CPP}:1: {MALFORMED}\n"
+        f"FAIL: {DUPLICATE}\n"
+        "  - OP-001\n"
+        f"FAIL: {TARGET}\n"
+        f"  - {target_item('OP-001', 'M1 (rest M2)')}\n",
+    )
+
+
+def test_help_and_docstring_name_the_new_rules(
+    tool: ModuleType, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as caught:
+        tool.main(["--help"])
+    assert caught.value.code == 0
+    text = " ".join(capsys.readouterr().out.split())
+    for words in [
+        "a requirement mark is in a file under dsp/tests that is not a test file",
+        "have a Target that is not 'Mn' or 'After Mn' with Mn in the milestone register",
+        "has a verifying test in the folder of its verification level",
+    ]:
+        assert words in text
+    assert tool.__doc__ is not None
+    doc = " ".join(tool.__doc__.split())
+    for words in [
+        "A requirement mark in any other file under dsp/tests (a conftest.py, a helper module) "
+        "fails --check and is never counted.",
+        "The Target of a row of the Open section is ``Mn`` or ``After Mn``, with Mn a milestone "
+        "of the register.",
+        "A test verifies a requirement only in the folder of the requirement's Verification level",
+        "outside test folders (a folder named tests, test or test_apps)",
+        "the outcome of the release gate as a whole",
+    ]:
+        assert words in doc
 
 
 def test_release_gate_alone(tree: Tree, run: Callable[..., tuple[int, str]]) -> None:
@@ -2059,7 +2732,7 @@ def test_script_cites_no_requirement(tool: ModuleType) -> None:
 def test_the_real_check_reads_nothing_from_this_file(tool: ModuleType) -> None:
     layout = tool.Layout(REPO_ROOT)
     here = layout.rel(Path(__file__).resolve())
-    _, misplaced = tool.scan_python_tests(layout)
-    assert [item for item in misplaced if item.startswith(f"{here}:")] == []
+    _, misplaced, outside = tool.scan_python_tests(layout)
+    assert [item for item in misplaced + outside if item.startswith(f"{here}:")] == []
     citations = [where for places in tool.scan_code(layout).values() for where in places]
     assert [where for where in citations if "dsp/tests/" in where] == []

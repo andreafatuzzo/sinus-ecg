@@ -263,9 +263,27 @@ def test_rule_is_part_of_check(tree: Callable[..., Any], tool: ModuleType, tmp_p
     assert failures["Software version"] == expected_dev("0.0.1", "0.1.0.dev0 (M1 In progress)")
 
 
-def test_rule_does_not_change_the_matrix(tree: Callable[..., Any], tool: ModuleType) -> None:
-    assert tool.render(tree(M1_IN_PROGRESS, "0.1.0.dev0")) == tool.render(
-        tree(M1_IN_PROGRESS, "0.0.1")
+def _split_at_release_gate(text: str) -> tuple[str, str]:
+    """The matrix without its release gate section, and the section."""
+    start = text.index("## Release gate\n")
+    end = text.index("## Gaps\n", start)
+    return text[:start] + text[end:], text[start:end]
+
+
+def test_version_changes_only_the_release_gate_section(
+    tree: Callable[..., Any], tool: ModuleType
+) -> None:
+    """The version rule is not shown by the matrix; a development version is, as an item of the
+    release gate section (architecture §8.16 item 1)."""
+    rest_dev, section_dev = _split_at_release_gate(tool.render(tree(M1_IN_PROGRESS, "0.1.0.dev0")))
+    rest_other, section_other = _split_at_release_gate(tool.render(tree(M1_IN_PROGRESS, "0.0.1")))
+    assert rest_dev == rest_other
+    assert section_dev == (
+        "## Release gate\n\nOutcome of `--release-gate` on milestones M0, M1: **fail**\n\n"
+        f"- {PYPROJECT}: version 0.1.0.dev0 is a development version, not a release\n\n"
+    )
+    assert section_other == (
+        "## Release gate\n\nOutcome of `--release-gate` on milestones M0, M1: pass\n\n"
     )
 
 
