@@ -1,6 +1,6 @@
 # Risk analysis
 
-_Inspired by ISO 14971:2019. Version 0.3.4, 2026-10-01. Status: draft (Milestone 0)._
+_Inspired by ISO 14971:2019. Version 0.3.5, 2026-10-06. Status: draft (Milestone 1)._
 
 ## Conventions
 
@@ -22,6 +22,7 @@ _Inspired by ISO 14971:2019. Version 0.3.4, 2026-10-01. Status: draft (Milestone
 | 0.3.2 | 2026-09-29 | Process review: header version; HAZ-007 acceptability now cites Milestones 2 to 4 (heart-rate tracking at Milestone 2) |
 | 0.3.3 | 2026-09-30 | Cause added to HAZ-001: a QRS complex that follows the previous one very closely can be missed (heart rates above the 30–200 bpm range of SRS-006, as in a fast ventricular tachycardia, or a very early premature beat), from the decision on OP-055. Severity, probabilities and risk controls unchanged |
 | 0.3.4 | 2026-10-01 | RC-003 is also implemented by SRS-002 (a record without the requested channel, or in units other than mV) and SRS-005 (a mains setting other than 50 Hz or 60 Hz); HAZ-003 and RC-003 name these inputs and settings. Probabilities of HAZ-001 and HAZ-002 revisited with the Milestone 1 validation results (OP-011): levels unchanged, with the basis and the limits of the evidence stated below the hazard table. Causes seen in those results added to HAZ-001 (early ectopic or aberrated beats, especially in atrial fibrillation or flutter; stretches where the QRS complex is very small on the recorded lead) and HAZ-002 (stretches of noise or artefact; atrial fibrillation or flutter). RC-003, HAZ-003 and the causes confirmed by the project owner on 2026-10-01; the probability assessment confirmed by the project owner on 2026-10-03 (closes OP-011) |
+| 0.3.5 | 2026-10-06 | Status line: Milestone 1, the milestone of versions 0.3.3 and 0.3.4. No change to hazards, risk controls or estimates |
 
 ## Scope
 

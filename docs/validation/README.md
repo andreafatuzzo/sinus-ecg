@@ -9,6 +9,12 @@ Generated evaluation reports (EC57-style Se / +P for QRS detection, beat classif
 
 A report states the software and the data it was produced from. The full report is regenerated whenever the code that produces it changes, and at each milestone release (`docs/regulatory/sdp.md`). The subset report is updated in the same change as any change to the package (`CONTRIBUTING.md`).
 
+Milestone verification reports are not generated: each is written once, at the release of its milestone (`docs/regulatory/sdp.md` §3, activity 6), and later releases do not update it. It records the software and data verified, the checks run, the result per requirement, the deviations from the targets, the open anomalies and the outcome of the release gate, and takes every result it quotes from the generated reports. It states the software in rows of its own, not in the rows `Software` and `Runtime` that `dsp/scripts/software_check.py` compares with the software being released, and it states the licence of each database it quotes, in the row `Database licence`.
+
+| Milestone | Verification report |
+|---|---|
+| M1 | [`m1-verification-report.md`](m1-verification-report.md) |
+
 ## Data sources
 
 The reports contain information from the [MIT-BIH Arrhythmia Database, version 1.0.0](https://physionet.org/content/mitdb/1.0.0/) (both reports) and the [MIT-BIH Noise Stress Test Database, version 1.0.0](https://physionet.org/content/nstdb/1.0.0/) (`qrs-ec57-report.md`), which are made available by PhysioNet under the [Open Data Commons Attribution License v1.0](https://opendatacommons.org/licenses/by/1-0/). Each report states the licence of each database it uses, in the row `Database licence`.
