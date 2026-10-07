@@ -19,7 +19,7 @@ _Release register, inspired by IEC 62304 §5.8. Read by `dsp/scripts/traceabilit
 |---|---|---|
 | M0 | Foundations | Released |
 | M1 | Python reference | Released |
-| M2 | Portable C++ DSP library | Planned |
+| M2 | Portable C++ DSP library | In progress |
 | M3 | Qt desktop application with replay | Planned |
 | M4 | Hardware, firmware and integration | Planned |
 | M5 | Backend and interoperability | Planned |
