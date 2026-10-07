@@ -29,7 +29,7 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 |---|---|---|---|---|---|
 | M0 | Foundations | Released | 0 | 0 | pass |
 | M1 | Python reference | Released | 16 | 16 | pass |
-| M2 | Portable C++ DSP library | Planned | 0 | 0 | not applied |
+| M2 | Portable C++ DSP library | In progress | 0 | 0 | **fail** |
 | M3 | Qt desktop application with replay | Planned | 0 | 0 | not applied |
 | M4 | Hardware, firmware and integration | Planned | 0 | 0 | not applied |
 | M5 | Backend and interoperability | Planned | 0 | 0 | not applied |
@@ -37,7 +37,25 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 
 ## Release gate
 
-Outcome of `--release-gate` on milestones M0, M1: pass
+Outcome of `--release-gate` on milestones M0, M1, M2: **fail**
+
+- OP-005: open point still targets M2; close or retarget it
+- OP-021: open point still targets M2; close or retarget it
+- OP-031: open point still targets M2; close or retarget it
+- OP-032: open point still targets M2; close or retarget it
+- OP-043: open point still targets M2; close or retarget it
+- OP-046: open point still targets M2; close or retarget it
+- OP-049: open point still targets M2; close or retarget it
+- OP-056: open point still targets M2; close or retarget it
+- OP-057: open point still targets M2; close or retarget it
+- OP-062: open point still targets M2; close or retarget it
+- OP-063: open point still targets M2; close or retarget it
+- OP-065: open point still targets M2; close or retarget it
+- OP-066: open point still targets M2; close or retarget it
+- OP-067: open point still targets M2; close or retarget it
+- OP-068: open point still targets M2; close or retarget it
+- OP-069: open point still targets M2; close or retarget it
+- dsp/pyproject.toml: version 0.2.0.dev0 is a development version, not a release
 
 ## Gaps
 
