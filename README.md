@@ -152,15 +152,16 @@ sinus-ecg/
 
 **Milestone 2: Portable C++ DSP library**
 - [ ] `libs/sinus-dsp`: C++17, no dynamic allocation in the real-time path, builds for host and ESP32
-- [ ] FIR/IIR biquad filters: baseline high-pass, 50/60 Hz notch, low-pass
-- [ ] LMS adaptive filter for mains and motion artefacts (accelerometer reference if present)
-- [ ] Streaming Pan–Tompkins QRS detector
-- [ ] Kalman filter for heart rate from RR intervals
-- [ ] Per-window signal quality index (SQI)
-- [ ] Equivalence with the Python reference on golden vectors, within a defined tolerance
+- [ ] FIR/IIR biquad filters: baseline high-pass, 50/60 Hz notch
+- [ ] Streaming Pan–Tompkins QRS detector, with beats at the start of a stream marked as not yet reliable
+- [ ] Heart rate from RR intervals (Kalman filter), robust to isolated missed or extra beats, with a Python reference
+- [ ] Per-window signal quality index (SQI), with a Python reference, validated on the noise stress records
+- [ ] Equivalence with the Python reference on golden vectors, within a defined tolerance, on the host and on the ESP32-S3 in an emulator
+- [ ] Same detection results as the Python reference on the whole MIT-BIH databases
 
 **Milestone 3: Qt desktop application with replay**
 - [ ] Live plot with R-peak marks, heart rate and SQI indicator
+- [ ] Low-pass filtering of high-frequency noise in the displayed waveform
 - [ ] Recording in WFDB format
 - [ ] Replay of MIT-BIH records as if they came from the device
 - [ ] Serial or UDP test input for tests without hardware (BLE comes with Milestone 4)
@@ -170,7 +171,8 @@ sinus-ecg/
 - [ ] ESP-IDF / FreeRTOS firmware: acquisition, processing and BLE tasks with explicit priorities, queues and ring buffers
 - [ ] BLE GATT streaming with packet sequence numbers
 - [ ] Watchdog, explicit error state, low-battery handling
-- [ ] Fixed sampling rate, with jitter and latency measurements
+- [ ] Fixed sampling rate, with jitter and latency measurements, and the processing time of the DSP library on the device
+- [ ] LMS adaptive filter for mains and motion artefacts (accelerometer reference if present)
 - [ ] Integration with the desktop application
 
 **Milestone 5: Backend and interoperability**

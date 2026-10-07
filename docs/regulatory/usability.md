@@ -1,6 +1,6 @@
 # Usability: use specification and use-related hazards
 
-_Inspired by IEC 62366-1:2015+A1:2020. Version 0.1, 2026-09-29. Status: draft (Milestone 0)._
+_Inspired by IEC 62366-1:2015+A1:2020. Version 0.1.1, 2026-10-07. Status: draft (Milestone 0); version 0.1.1 updates open-point citations only._
 
 > Sinus is not a medical device and claims no compliance with IEC 62366-1. This document borrows, in a light form, the structure of a usability engineering file: it describes who uses Sinus, where and through which user interface, and which use errors could lead to the hazards in [`risk-analysis.md`](risk-analysis.md), so that the user interface is designed around them.
 
@@ -16,6 +16,7 @@ _Inspired by IEC 62366-1:2015+A1:2020. Version 0.1, 2026-09-29. Status: draft (M
 | Version | Date | Changes |
 |---|---|---|
 | 0.1 | 2026-09-29 | First draft: use specification, user-interface elements related to safety, use problems UP-1 to UP-9, hazard-related use scenarios HRS-1 to HRS-5, evaluation plan |
+| 0.1.1 | 2026-10-07 | Open points only: the heart rate and the signal quality indicator (§1.4) and UP-2 and UP-3 (§2) cite OP-071 and OP-072, the display parts of OP-021 and OP-032, which were closed with the Milestone 2 requirements (`srs.md` v0.8). No other change |
 
 ## 1. Use specification
 
@@ -53,8 +54,8 @@ The desktop application has one main (live) view. Its layout and the user-interf
 | Data source indication | Device, replay (with the record or session name) or test input; always visible | F3.10 | RC-015 (OP-037) |
 | Intended-use statement | "Not a medical device, not for diagnosis or health decisions"; always visible | F3.6 | RC-005 (OP-015) |
 | Waveform | Conditioned ECG against time, with detected beats marked | F3.1 | — |
-| Heart rate | In bpm, shown only while valid; otherwise withheld, with the reason | F3.2 | RC-007, RC-008 (OP-021) |
-| Signal quality indicator | Quality of the current window; not-usable windows shown as such | F3.9 | RC-007 (OP-032) |
+| Heart rate | In bpm, shown only while valid; otherwise withheld, with the reason | F3.2 | RC-007, RC-008 (OP-071) |
+| Signal quality indicator | Quality of the current window; not-usable windows shown as such | F3.9 | RC-007 (OP-072) |
 | Signal status | Usable or not usable, with the reason (low quality, contact lost, data interrupted, device state) | F3.3 | RC-007, RC-008 (OP-020) |
 | Device state | Connection, battery level, low battery, error, restart | F4.5, F4.6, F4.7 | RC-013, RC-014 (OP-035, OP-036) |
 | Recording control | Start and stop recording, with a visible recording indicator | F2.4 | — |
@@ -77,8 +78,8 @@ Known and foreseeable use problems, from the foreseeable misuse in `functional-a
 | ID | Use problem | Hazard | User-interface control | Open point |
 |---|---|---|---|---|
 | UP-1 | The heart rate, beat marks or (later) beat classes are read as health information, or shown to a clinician | HAZ-001, HAZ-002, HAZ-010 | Intended-use statement always visible; no judging labels or alarms | OP-015 |
-| UP-2 | Data stops arriving but the screen still looks live, and the last heart rate is taken as current | HAZ-007 | Interruption shown within a defined time; heart rate withheld; device state shown | OP-021, OP-036 |
-| UP-3 | The signal quality indicator or the "not usable" status is not noticed, and a heart rate computed from noise is read | HAZ-006 | Heart rate withheld while not usable, not just flagged; quality indicator next to the heart rate | OP-020, OP-032 |
+| UP-2 | Data stops arriving but the screen still looks live, and the last heart rate is taken as current | HAZ-007 | Interruption shown within a defined time; heart rate withheld; device state shown | OP-071, OP-036 |
+| UP-3 | The signal quality indicator or the "not usable" status is not noticed, and a heart rate computed from noise is read | HAZ-006 | Heart rate withheld while not usable, not just flagged; quality indicator next to the heart rate | OP-020, OP-072 |
 | UP-4 | A replayed record or a recorded session is taken for the wearer's live signal | HAZ-013 | Data source always visible; replayed recordings marked | OP-037 |
 | UP-5 | The low-battery indication is missed and the session ends without the wearer noticing | HAZ-011 | Low battery shown before the signal degrades; the end of acquisition is shown and recorded | OP-035 |
 | UP-6 | A gap after a device restart is not noticed, and the missing beats are read as a pause of the heart | HAZ-012 | Restart and gap shown; no beat intervals across a gap | OP-036 |
@@ -110,4 +111,4 @@ The requirements for the user interface are written as `SRS-xxx` entries at Mile
 
 ## 6. Open points referenced
 
-OP-015, OP-020 to OP-024, OP-028, OP-032, OP-033, OP-035 to OP-040. See [`open-points.md`](open-points.md).
+OP-015, OP-020, OP-022 to OP-024, OP-028, OP-033, OP-035 to OP-040, OP-071, OP-072. See [`open-points.md`](open-points.md). OP-021 and OP-032, cited by version 0.1, were closed on 2026-10-07 for Milestone 2; their display parts continue as OP-071 and OP-072.

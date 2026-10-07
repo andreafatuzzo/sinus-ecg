@@ -1,6 +1,6 @@
 # Software Requirements Specification
 
-_Inspired by IEC 62304 §5.2. Version 0.7.2, 2026-10-05. Status: confirmed by the project owner (Milestone 1)._
+_Inspired by IEC 62304 §5.2. Version 0.8, 2026-10-07. Status: confirmed by the project owner on 2026-10-07 (Milestone 2 requirements SRS-017 to SRS-038, and the changes to SRS-003 and SRS-007), except the figures that the tech lead proposes with the detailed design for approval by the project owner: the equivalence tolerances of SRS-034 (OP-005) and the memory limit of SRS-032 (OP-049)._
 
 ## Conventions
 
@@ -16,7 +16,17 @@ _Inspired by IEC 62304 §5.2. Version 0.7.2, 2026-10-05. Status: confirmed by th
 
 ## Scope of this version
 
-This version covers the Milestone 1 software item only: the offline DSP reference implementation and its validation pipeline (`dsp/`), features F1.1 to F1.12 of the functional analysis. Requirements for the portable real-time signal-processing library (Milestone 2), the desktop application (Milestone 3), the firmware (Milestone 4), the backend (Milestone 5) and beat classification (Milestone 6) are added at the milestones that introduce them, from the features listed for them in [`functional-analysis.md`](functional-analysis.md) §5.
+This version covers:
+- Milestone 1: the offline DSP reference implementation and its validation pipeline (`dsp/`), features F1.1 to F1.12 of the functional analysis (SRS-001 to SRS-016);
+- Milestone 2: the portable real-time signal-processing library (`libs/sinus-dsp/`) and the reference functions and validation it is checked against, features F2.5, F2.7, F2.8, F2.9, F3.4 and F2.10 of the functional analysis (SRS-017 to SRS-038).
+
+Requirements for the desktop application (Milestone 3), the firmware (Milestone 4), the backend (Milestone 5) and beat classification (Milestone 6) are added at the milestones that introduce them, from the features listed for them in [`functional-analysis.md`](functional-analysis.md) §5.
+
+Terms used by the Milestone 2 requirements:
+- **The reference** is the offline implementation in `dsp/`; **the real-time library** is `libs/sinus-dsp/`.
+- A **stream** is the sequence of samples given to the real-time library since its configuration or its last reset; its first sample has index 0. For the reference, the input of one call plays the role of a stream.
+- A **delay** is counted from the moment the real-time library has been given the sample concerned to the moment it reports the output, as a number of samples given, converted to seconds with the sampling frequency.
+- A value written `[OP-xxx: …]` is a figure that the tech lead proposes with the detailed design and the project owner approves; the open point tracks it until then. The requirement that contains it is confirmed, and its verification cannot pass before the figure is set.
 
 ## Revision history
 
@@ -32,6 +42,7 @@ This version covers the Milestone 1 software item only: the offline DSP referenc
 | 0.7 | 2026-10-03 | Decisions of the project owner on the software identity of `dsp` (OP-061, `sdp.md` §4) and on SRS-006. SRS-012 and SRS-015: the report and each golden-vector file state the software version with an identifier of the source code that produced them, because the version stays the same while a milestone is developed; their verification compares the identifier with one computed by the test itself. SRS-012: the report also states the versions of the third-party software used at run time, and its verification compares them with those of the environment that runs the test; rationale updated. SRS-009 and SRS-015: byte-identical output is required for the same software version and source code and the same versions of the third-party software used, and for SRS-015 on the same computer, as in the approved design (`architecture.md` §7.4, §8.10); rationales updated. SRS-006: an input of constant value (a flat line) gives an output with no index, so that the verification case with a flat input follows from the statement; rationale updated. Confirmed by the project owner on 2026-10-03 |
 | 0.7.1 | 2026-10-05 | Decisions of the project owner on the verification of the subset records, as in the approved design (`architecture.md` §7.2, §8.3, §8.11, §8.12). SRS-016: the subset report states the outcome of the verification of the files of the six records, in place of the outcome of the SRS-001 verification, which covers the whole database that the build does not obtain; no subset report is written if that verification fails, as its verification already checked. SRS-015: the record segments are written where the files of the records of the SRS-016 subset are available and verified against the checksum list of SRS-001, instead of "where the verified database is available". Verifications unchanged. Confirmed by the project owner on 2026-10-05 |
 | 0.7.2 | 2026-10-05 | Licence of the databases in the reports (OP-064). SRS-012 and SRS-014: the report states the licence under which each database used is published, with the address of the licence text, because a work produced from a database and used publicly must carry a notice that its content comes from the database and is available under that licence (Open Data Commons Attribution License v1.0, §4.3); rationales and verifications updated. SRS-016 includes the item through the items of SRS-012, unchanged. Decided by the project owner on 2026-10-05. SRS-015: the record segments are written for all six records of the subset of SRS-016 or for none of them, as in the approved design (`architecture.md` §7.2, §8.12); its verification names the case of one record whose files fail verification; confirmed by the project owner on 2026-10-05 |
+| 0.8 | 2026-10-07 | Milestone 2 requirements, from functional analysis v0.3, with the decisions of the project owner of 2026-10-07 on OP-005, OP-021, OP-031, OP-032, OP-049, OP-056, OP-063, OP-067, OP-068 and OP-070. Added SRS-017 to SRS-038 for the portable real-time library and the reference functions it is checked against: configuration checks and invalid samples (SRS-017, SRS-018); signal conditioning, streaming detection and its delay (SRS-019 to SRS-021); start-up marks of detections and detection at the start of real recordings (SRS-022, SRS-023; OP-068); heart rate (SRS-024 to SRS-026; OP-021); signal quality index, its validation on the noise stress records and the new report sections (SRS-027 to SRS-030; OP-032); restart and fixed memory (SRS-031, SRS-032); golden vectors of the new functions and equivalence with the reference on the computer, on every push, on the ESP32-S3 and on the whole reference databases (SRS-033 to SRS-038; OP-005). The tolerances of SRS-034 (OP-005) and the memory limit of SRS-032 (OP-049) are figures that the tech lead proposes with the detailed design, for approval by the project owner. Adaptive interference reduction (F2.6) moves to Milestone 4, and the removal of high-frequency noise to the displayed waveform of Milestone 3 (OP-070), so neither has a requirement in this version. SRS-003: an input that contains a sample whose magnitude exceeds 1000 mV is also rejected, as by the real-time library (SRS-018; OP-063). **This changes a requirement released with Milestone 1**: the reference and the requirement tests of SRS-003 must be updated, and SRS-003 verified again, in Milestone 2. SRS-007: its verification result is recorded in the milestone verification report, the report written at the release of each milestone (OP-069). Confirmed by the project owner on 2026-10-07, except the figures of OP-005 and OP-049 named above |
 
 ## Requirements
 
@@ -67,13 +78,13 @@ If the record does not have the requested channel, or the signal units of that c
 **Software item:** dsp
 **Milestone:** M1
 **Statement:** Before filtering or detection, the software shall reject, with an explicit error and without producing a filtered signal or detections, an input that:
-- is empty or contains non-finite values (NaN or ±infinity);
+- is empty, contains non-finite values (NaN or ±infinity), or contains a sample whose magnitude exceeds 1000 mV;
 - is shorter than 10 s;
 - or has a sampling frequency that is not finite or lies outside 125–1000 Hz (bounds included).
 
-**Rationale:** Meaningless input must not produce output that looks valid. 10 s holds at least five beats at 30 bpm, the minimum for detection to establish its signal level. 125 Hz keeps the 60 Hz mains frequency below the Nyquist limit; 1000 Hz covers common ECG front ends. The device samples at 360 Hz (OP-004, closed), inside this range.
+**Rationale:** Meaningless input must not produce output that looks valid. 10 s holds at least five beats at 30 bpm, the minimum for detection to establish its signal level. 125 Hz keeps the 60 Hz mains frequency below the Nyquist limit; 1000 Hz covers common ECG front ends. The device samples at 360 Hz (OP-004, closed), inside this range. 1000 mV is far above any ECG and any electrode offset that a front end passes, so a larger sample can only come from a defect; inputs of extreme amplitude made the filters return non-finite samples, or detection end in an error that no requirement described (OP-063). The real-time library rejects the same samples (SRS-018). The bound was added in Milestone 2, after the release of this requirement with Milestone 1.
 **Verification level:** Requirement (QA)
-**Verification:** Test, for the filters of SRS-004 and SRS-005 and the detection of SRS-006. Rejected with an error and no output: an empty input; an input with one NaN, one with +infinity and one with −infinity; 9.99 s; 124.9 Hz; 1000.1 Hz; a non-finite sampling frequency. Accepted: 10 s at 125 Hz and at 1000 Hz.
+**Verification:** Test, for the filters of SRS-004 and SRS-005 and the detection of SRS-006. Rejected with an error and no output: an empty input; an input with one NaN, one with +infinity and one with −infinity; an input with one sample equal to the smallest float64 value greater than 1000 mV, and one with the negative of that value; 9.99 s; 124.9 Hz; 1000.1 Hz; a non-finite sampling frequency. Accepted: 10 s at 125 Hz and at 1000 Hz; an input of 10 s at 360 Hz that contains samples equal to 1000 mV and to −1000 mV.
 **Risk controls:** RC-003.
 
 ### SRS-004: Baseline wander removal
@@ -113,7 +124,7 @@ If the record does not have the requested channel, or the signal units of that c
 **Statement:** On all 48 records of the MIT-BIH Arrhythmia Database, using the first stored signal of each record and the mains interference filter set to 60 Hz, and evaluated as specified in SRS-008 and SRS-011, QRS detection shall achieve a gross sensitivity (Se) of at least 99.5% and a gross positive predictive value (+P) of at least 99.5%.
 **Rationale:** Quantified detection performance is the main control against missed and false beats. The target is close to the results published for Pan–Tompkins (Se 99.76%, +P 99.56%). The first stored signal is MLII in 45 records and a modified V5 in records 102, 104 and 114.
 **Verification level:** System (test engineer)
-**Verification:** Analysis, from the validation report generated per SRS-009 and SRS-012. A test that requires the local database checks both thresholds; it is skipped in CI, where the database is not available, and its result is recorded in the milestone's validation report.
+**Verification:** Analysis, from the validation report generated per SRS-009 and SRS-012. A test that requires the local database checks both thresholds; it is skipped in CI, where the database is not available, and its result is recorded in the milestone verification report.
 **Risk controls:** RC-001.
 
 ### SRS-008: EC57 beat-by-beat matching
@@ -249,3 +260,239 @@ Each file shall contain: an identifier of the input; its sampling frequency in H
 **Verification level:** Requirement (QA)
 **Verification:** Test with fixture records and a fixture checksum list. When the stored subset report equals the regenerated one, the check passes; when one value in the stored report differs, the check fails and names the difference; when a record file fails verification, the check fails and no report is written. Inspection of the CI configuration confirms that the check runs on every push.
 **Risk controls:** RC-004.
+
+### SRS-017: Configuration checks of the real-time library
+
+**Software item:** libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The real-time library shall reject, with an explicit error status, a configuration whose sampling frequency is not finite or lies outside 125–1000 Hz (bounds included), or whose mains setting is other than 50 Hz or 60 Hz. Signal conditioning, beat detection, heart rate and the signal quality index shall produce no output until they are validly configured.
+**Rationale:** The real-time library accepts the sampling frequencies and mains settings that the reference accepts (SRS-003, SRS-005), so every configuration it accepts is one for which the reference defines the result (SRS-034). A function used without a valid configuration must not produce output that looks valid (HAZ-003). A stream has no length to check, so the minimum duration of SRS-003 has no counterpart here; the start of a stream is covered by SRS-022.
+**Verification level:** Requirement (QA)
+**Verification:** Test on the build for the computer. Configurations with a sampling frequency of 124.9 Hz, 1000.1 Hz, NaN, +infinity or −infinity, and with a mains setting of 49, 51, 59, 61 or 100 Hz, are each rejected with an error status, and samples given afterwards produce no output of any kind. Configurations at 125 Hz and at 1000 Hz, with each mains setting, are accepted.
+**Risk controls:** RC-003.
+
+### SRS-018: Invalid input samples in the real-time library
+
+**Software item:** libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The real-time library shall not process an input sample that is not finite (NaN or ±infinity) or whose magnitude exceeds 1000 mV. It shall report such a sample with an explicit error status, and produce no conditioned sample, detection, heart rate or signal quality index from that sample onwards until it is reset.
+**Rationale:** Every supported source gives finite samples far below the limit (the MIT-BIH Arrhythmia Database was digitised over a 10 mV range), so such a sample comes from a defect upstream, and filtering it would corrupt every later output of the stream (HAZ-003). Stopping until a reset lets the caller treat the event as a gap in the data: processing starts again as a new stream (SRS-031), with the start-up marks of SRS-022, as the desktop application does at every gap (`architecture.md` §4.2). The limit also keeps every computation of the library finite in binary32, and it is the limit of the reference (SRS-003). Decided by the project owner on 2026-10-07 (OP-063).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the build for the computer, with a synthetic ECG of SRS-006 at 360 Hz in which one sample, after at least 10 s, is replaced in turn by NaN, +infinity, −infinity, the smallest binary32 value greater than the limit, and its negative: each case gives an error status at that sample and no output of any kind afterwards until a reset; after the reset, the outputs equal those of a newly configured library given the same samples. A sample equal to the limit, and one equal to its negative, are processed without an error status.
+**Risk controls:** RC-003.
+
+### SRS-019: Real-time signal conditioning
+
+**Software item:** libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The real-time library shall remove baseline wander and then mains interference from a stream, one input sample at a time, each stage meeting the attenuation and band criteria of its requirement (SRS-004 for baseline wander, SRS-005 for mains interference), and shall output the conditioned value of each input sample before the next input sample is given (a delay of 0 samples).
+**Rationale:** The stages, their order and their criteria are those of the validated reference (`architecture.md` §7.1), so that the validation of the reference applies to the real-time conditioning within the equivalence of SRS-034; removing the baseline first keeps the input of the mains stage small, which preserves precision in binary32. Any delay would add to the time between acquisition and display (OP-014); the reference and the library are compared sample by sample without a delay allowance (SRS-034), so the conditioning adds none (decided by the project owner on 2026-10-07, OP-049). Removing high-frequency noise is not part of this conditioning: beat detection limits the band of its own input, and the removal for the displayed waveform is OP-070.
+**Verification level:** Requirement (QA)
+**Verification:** Test on the build for the computer, at 360 Hz and 250 Hz, with the inputs and the measurement rule of SRS-004 and SRS-005 (each input at least ten periods and at least 2 s long, amplitude measured on its second half), given one sample at a time: the output of each stage meets the criteria of its requirement, for both mains settings, and the conditioned value of every input sample is output before the next input sample is given.
+**Risk controls:** RC-002.
+
+### SRS-020: Streaming QRS detection
+
+**Software item:** libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The real-time library shall detect QRS complexes in the conditioned signal of SRS-019, one sample at a time, and report each detection with its sample index in the time base of the stream. For the inputs of SRS-006 and SRS-010, the detections shall meet every criterion of those requirements.
+**Rationale:** The live view, and later the device, need the beats while the samples arrive (`functional-analysis.md` F2.7). Stating the criteria of SRS-006 and SRS-010 for the real-time detection makes them verifiable on the library itself, beside its equivalence with the reference (SRS-034). The performance on real recordings (SRS-007, SRS-014) is carried over by SRS-038.
+**Verification level:** Requirement (QA)
+**Verification:** Test on the build for the computer, with the synthetic inputs and the pass criteria of SRS-006 and SRS-010 (regular rhythms at 30, 40, 75, 180 and 200 bpm, at 360 Hz and 250 Hz, without interference and with the interference of SRS-010 at 50 Hz and at 60 Hz with the matching mains setting), given one sample at a time: the pass criteria of those requirements hold. A flat input of 10 s gives no detection and no error status.
+**Risk controls:** RC-001, RC-002.
+
+### SRS-021: Delay of streaming detection
+
+**Software item:** libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The real-time library shall report each detection no later than the maximum delay documented in `architecture.md` for the detection rules (about 8 s) after the sample at its index. For a noise-free input with a regular rhythm between 30 and 200 bpm (bounds included), it shall report each detection whose index lies after the start-up period of SRS-022 at most 0.35 s after the sample at its index.
+**Rationale:** A beat mark or a heart rate that appears long after the beat adds to the time between acquisition and display (OP-014). Some detections can only be confirmed later than others: those of the first seconds of a stream, while detection learns its signal levels, and those found by search-back, a second look with lower thresholds at a stretch without a detected beat (`architecture.md` §8.7.3, §8.7.4). Hence a general maximum and a smaller bound for a regular rhythm. With the approved rules, a detection found by the normal thresholds is reported at most about 0.29 s after its index (at 250 Hz and 360 Hz, `architecture.md` §8.7.4), within 0.35 s. The maximum is that of the approved rules, which stay unchanged in Milestone 2 (OP-056): about 8 s, the time without a detected QRS complex after which detection learns its levels again. Decided by the project owner on 2026-10-07 (OP-049).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the build for the computer, at 360 Hz and 250 Hz. On the synthetic inputs of SRS-006, the delay of every detection after the start-up period is at most 0.35 s. On synthetic inputs documented in `architecture.md` that make detection report a beat found during its learning period, a beat found by search-back and a beat found after detection has learned its signal levels again, every delay is within the documented maximum.
+**Risk controls:** None.
+
+### SRS-022: Start-up mark of detections
+
+**Software item:** dsp and libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The reference and the real-time library shall report each detection with a mark: start-up, if its index lies in a stretch of 2 s from which detection learns its signal levels, that is the first 2 s of the stream (its start-up period) or the 2 s from which detection learns its levels again after a stretch without detected QRS complexes (`architecture.md` §8.7.3); reliable otherwise. The mark shall not change which detections are reported or their indices.
+**Rationale:** At the start of a stream, detection learns its signal levels from the first seconds, which may hold artefacts while the electrodes settle; on the MIT-BIH Arrhythmia Database the reference reported detections in the first 50 ms of records 104, 107 and 116, before the first annotated beat (OP-068). Marking these detections, instead of removing them, keeps the detections of SRS-006 and the results of SRS-007 unchanged, and lets the heart rate leave them out (SRS-024). The same holds when detection learns its levels again after a stretch without beats, for example after a loss of electrode contact; when the signal comes back later than that stretch, the heart rate is in any case withheld until enough new intervals are available (SRS-026). The mark is compared between the reference and the library like every other output (SRS-034). The detections in the first 50 ms of records 104, 107 and 116 lie in the start-up period; whether 2 s is enough on real recordings is measured by SRS-023. Decided by the project owner on 2026-10-07 (OP-068).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the reference and on the build for the computer, at 360 Hz and 250 Hz. On the synthetic ECGs of SRS-006 at 40, 75 and 180 bpm, the detections whose index lies in the first 2 s are marked start-up and all others reliable, and the detections of the reference equal those of SRS-006 on the same input. After a reset of the real-time library, the same holds from the reset. On a synthetic ECG with a flat stretch long enough for detection to learn its signal levels again (`architecture.md` §8.7.3), followed by the ECG, the detections whose index lies in the 2 s from which the levels are learned again are marked start-up, and the following ones reliable.
+**Risk controls:** RC-017.
+
+### SRS-023: Detection at the start of real recordings
+
+**Software item:** dsp (scripts)
+**Milestone:** M2
+**Statement:** On segments of 60 s of the 48 records of the MIT-BIH Arrhythmia Database, starting at the first sample of each record and at each whole minute from 1:00 to 29:00 (30 segments per record, 1440 in all), each processed by the reference as a stream of its own with the channel and mains setting of SRS-007, and evaluated as specified in SRS-008 and SRS-011 with the start-up period of SRS-022 (the first 2 s of the segment) in place of the first 5 minutes, the detections marked reliable shall achieve, over all the segments, a gross Se of at least 99.5% and a gross +P of at least 99.5%.
+**Rationale:** A live stream starts at any point of the cardiac cycle, and its first reliable detections give the first heart rate (OP-068). SRS-007 scores each record only from 5:00, and SRS-006 checks the start of a stream only on synthetic ECGs, so no other requirement measures the detections that follow the start-up period on real recordings (HAZ-001, HAZ-002). The thresholds are those of SRS-007. The real-time library starts like the reference: their equivalence is checked on record segments that begin at the first sample of their record (SRS-034). Decided by the project owner on 2026-10-07 (OP-068).
+**Verification level:** System (test engineer)
+**Verification:** Analysis, from the validation report generated per SRS-009 and SRS-030. A test that requires the local database checks both thresholds; it is skipped in CI, where the database is not available, and its result is recorded in the milestone verification report.
+**Risk controls:** RC-017.
+
+### SRS-024: Heart rate from detections
+
+**Software item:** dsp and libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The reference and the real-time library shall report a heart rate in bpm at each detection marked reliable and at each change of its validity, as valid or as withheld with its reason (SRS-026), computed only from intervals between consecutive detections of the stream that are both marked reliable. For the detections of a regular rhythm between 30 and 200 bpm (bounds included), every heart rate reported as valid shall be within 2 bpm of the true rate; after a change from one such rhythm to another, every heart rate reported as valid from the fifth interval of the new rhythm onwards shall be within 2 bpm of the new rate.
+**Rationale:** The heart rate is the main value of the live view (`functional-analysis.md` F2.8, F3.2). Detections marked start-up are left out (SRS-022, OP-068), and no interval spans the start of a stream, so none spans a reset (SRS-031). The first criterion bounds the error for a regular rhythm; the second makes the heart rate follow a real change of rhythm instead of treating it as isolated detection errors (SRS-025), which would show a heart rate that is too low or too high (HAZ-001, HAZ-002). The rhythm range is that of SRS-006. At 360 Hz, one sample of rounding changes a single interval at 200 bpm by about 1.9 bpm, hence 2 bpm. The method of computation is a design choice (`architecture.md`). Values decided by the project owner on 2026-10-07 (OP-021).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the reference and on the build for the computer, with sequences of detections marked reliable at the positions of a regular rhythm, rounded to the sample at 360 Hz and at 250 Hz. At 30, 40, 75, 180 and 200 bpm, every valid heart rate is within 2 bpm of the true rate. With changes from 40 to 180 bpm, from 180 to 40 bpm, from 75 to 120 bpm and from 120 to 75 bpm, every valid heart rate from the fifth interval of the new rhythm onwards is within 2 bpm of the new rate. A sequence that begins with detections marked start-up gives the same heart rates as the sequence of its reliable detections alone.
+**Risk controls:** RC-017, RC-018.
+
+### SRS-025: Heart rate with an isolated missed or extra detection
+
+**Software item:** dsp and libs/sinus-dsp
+**Milestone:** M2
+**Statement:** For the detections of a regular rhythm between 30 and 200 bpm (bounds included) from which one detection is missing, or to which one detection is added at least 200 ms from the detections before and after it, every heart rate that the reference and the real-time library report as valid shall differ from the true rate by no more than 5 bpm.
+**Rationale:** Detection misses or adds isolated beats: on the MIT-BIH Arrhythmia Database about one beat in 360 is missed and one detection in 580 is false (SRS-007, [`docs/validation/qrs-ec57-report.md`](../validation/qrs-ec57-report.md)). One such error must not make the heart rate jump (`functional-analysis.md` F2.8; HAZ-001, HAZ-002). An added detection is at least 200 ms from its neighbours because detection never reports two indices closer than that (SRS-006). A plain mean of recent intervals would not meet 5 bpm (one missed beat at 75 bpm moves a mean of eight intervals to about 67 bpm), which is the purpose of the criterion; SRS-024 makes sure that a real change is still followed. Value decided by the project owner on 2026-10-07 (OP-021).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the reference and on the build for the computer, with sequences of detections marked reliable at 360 Hz, at 30, 40, 75, 180 and 200 bpm: one detection removed after the first valid heart rate; and, at the rates whose interval is at least 400 ms, one detection added in the middle of an interval and one added 200 ms after a detection. Every valid heart rate is within 5 bpm of the true rate.
+**Risk controls:** RC-018.
+
+### SRS-026: Withheld heart rate
+
+**Software item:** dsp and libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The reference and the real-time library shall report the heart rate as withheld, with the reason:
+- "not enough beats", until 4 intervals between consecutive detections marked reliable are available in the stream;
+- "no recent beat", from the first sample that lies at least 3 s after the index of the last detection marked reliable reported until then, until 4 intervals whose detections all come after that sample are available;
+- "out of range", when the heart rate computed lies outside 30–200 bpm (bounds included).
+
+**Rationale:** A heart rate must not be shown before enough beats are available, nor carried forward or predicted across missing beats beyond a defined time (RC-008, HAZ-007), nor outside the range in which detection is specified (SRS-006). Four intervals are enough to set aside one wrong interval; the first heart rate then comes about 3 s after the start-up period at 75 bpm and 8 s at 30 bpm. 3 s is longer than the longest interval of the range (2 s at 30 bpm). How the desktop application shows a withheld heart rate, and the signal status that also withholds it while the signal is not usable, are specified with the desktop application (Milestone 3; OP-020, OP-071). Values decided by the project owner on 2026-10-07 (OP-021).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the reference and on the build for the computer, at 360 Hz, with sequences of detections marked reliable. The first valid heart rate comes with the fourth interval. At 30 bpm and at 75 bpm, a stretch without detections longer than 3 s gives "no recent beat" from the first sample at least 3 s after the last detection, and the next valid heart rate comes with the fourth interval after it; a stretch shorter than 3 s gives none. Regular rhythms at 29 bpm and at 201 bpm give "out of range"; at 30 bpm and at 200 bpm they do not.
+**Risk controls:** RC-008.
+
+### SRS-027: Signal quality index per window
+
+**Software item:** dsp and libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The reference and the real-time library shall compute a signal quality index between 0 and 1 (higher meaning better quality) for each window of 10 s of the stream, from its input and conditioned samples, a new window starting every 1 s from the first sample of the stream, and mark each window usable if its index is at or above the threshold documented in `architecture.md`, and not usable otherwise. Each window shall be reported with its index, its mark and the sample indices of its first and last samples in the time base of the stream, at most 0.5 s after its last sample.
+**Rationale:** Beats and a heart rate computed from noise or a flat line must not be presented as valid (HAZ-006). The index is what the signal status of the desktop application uses to withhold them (Milestone 3, OP-020), and what beat classification will use to abstain (Milestone 6). A window of 10 s holds at least five beats at 30 bpm, as the minimum duration of SRS-003, and a new window every second keeps the indication of the live view current; the detections inside a window are known at most about 0.3 s after its end (SRS-021), hence 0.5 s. The quality measures, how they are combined and the threshold are design choices (`architecture.md`), fixed before the evaluation on the reference databases (SRS-029); a threshold or measure changed after those results have been seen is recorded as tuned on the evaluation data (`sdp.md` §6). Decided by the project owner on 2026-10-07 (OP-032, OP-049).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the reference and on the build for the computer, at 360 Hz and 250 Hz, on a synthetic ECG of SRS-006 of 60 s: the windows last 10 s, start every 1 s from the first sample, carry the sample indices of their first and last samples, have an index between 0 and 1, and are marked as their index and the documented threshold require; each is reported at most 0.5 s after its last sample. After a reset of the real-time library, the windows start again from the reset.
+**Risk controls:** RC-007.
+
+### SRS-028: Signal quality index on defined signals
+
+**Software item:** dsp and libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The reference and the real-time library shall mark usable every window that lies entirely in a noise-free ECG with a regular rhythm between 30 and 200 bpm (bounds included), with or without the interference of SRS-010, and begins at least 2 s after the first sample of the stream. They shall mark not usable every window that lies entirely in a flat line (a constant value) or in white noise without ECG of any RMS amplitude from 0.01 mV to 1 mV, and every window in which the input stays at one value for a continuous stretch of at least 5 s, half of the window (a saturated signal, held at the limit of the acquisition range).
+**Rationale:** These are the cases of `functional-analysis.md` F2.9. A clean ECG must stay usable, so that the index does not withhold a valid heart rate without reason; the first 2 s are left out because the mains interference filter needs them to settle, as in the verification of SRS-005. A flat line (lost contact, a disconnected lead), noise alone and a saturated signal must be marked not usable, because detection on them gives false beats or none (HAZ-006). Real noise is covered by SRS-029. Decided by the project owner on 2026-10-07 (OP-032).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the reference and on the build for the computer, at 360 Hz and 250 Hz. Every window of the synthetic ECGs of SRS-006 and SRS-010 at 30, 40, 75, 180 and 200 bpm that begins at least 2 s after the first sample is marked usable. Every window of a flat input of 60 s at 0 mV and at 1 mV, and of white Gaussian noise of RMS 0.01 mV, 0.1 mV and 1 mV, is marked not usable. On a synthetic ECG of SRS-006 of 60 s whose input is held at 2 mV from 20 s to 40 s, every window that contains at least 5 s of that stretch is marked not usable.
+**Risk controls:** RC-007.
+
+### SRS-029: Signal quality index on the noise stress records
+
+**Software item:** dsp (scripts)
+**Milestone:** M2
+**Statement:** With the reference, the first stored signal, the mains setting of SRS-007 and the windows of SRS-027, applied to the 12 ECG records of the MIT-BIH Noise Stress Test Database, to records 118 and 119 of the MIT-BIH Arrhythmia Database and to the three noise records of the Noise Stress Test Database (baseline wander, electrode motion and muscle artefact):
+- over the windows that lie entirely in the stretches of the 12 records to which noise was added, the median index shall not increase from one SNR to the next lower one (24, 18, 12, 6, 0 and −6 dB), and shall be lower at −6 dB than at 24 dB;
+- at least 95% of the windows of records 118 and 119 from 5:00, and at least 90% of the windows in the noisy stretches at 24 dB and at 18 dB, shall be marked usable;
+- at most 20% of the windows in the noisy stretches at 6 dB and lower SNRs, and at most 10% of the windows of the three noise records, shall be marked usable.
+
+**Rationale:** The index is validated where the effect of noise on detection is known (SRS-014): in the Milestone 1 validation report, detection is unchanged at 24 dB and 18 dB SNR and degrades below, mostly through false detections (gross +P 95.69% at 12 dB, 79.16% at 6 dB). The index must keep a usable signal usable and mark as not usable the levels at which detection is no longer reliable (HAZ-006). The windows at 12 dB, where detection starts to degrade, are reported without a criterion (SRS-030). These criteria take the place of minimum detection results per SNR (OP-031). Which stretches of each record carry added noise is documented with the database; the first 5 minutes carry none. Decided by the project owner on 2026-10-07 (OP-032).
+**Verification level:** System (test engineer)
+**Verification:** Analysis, from the validation report generated per SRS-009 and SRS-030. A test that requires the local databases checks each criterion; it is skipped in CI, where the databases are not available, and its result is recorded in the milestone verification report.
+**Risk controls:** RC-007.
+
+### SRS-030: Signal quality and start-of-stream sections of the validation report
+
+**Software item:** dsp (scripts)
+**Milestone:** M2
+**Statement:** The command of SRS-009 shall also compute the results of SRS-023 and SRS-029 and add to the report of SRS-012:
+- a signal quality section that contains: the window length, the window spacing and the threshold of SRS-027; for each SNR of the noise stress records, the number of windows in the noisy stretches, their median index and the share of them marked usable; the same figures for records 118 and 119 from 5:00 and for each noise record; for each of the 48 records of SRS-007, the share of its windows from 5:00 marked usable, and the numbers of false negatives and false positives of SRS-008 that lie in at least one window marked not usable; and the pass or fail of each criterion of SRS-029;
+- a start-of-stream section that contains: the start-up period of SRS-022; the starting points of SRS-023; the statistics of SRS-011 for each record, summed over its segments, and for all the segments; and the pass or fail of each threshold of SRS-023.
+
+**Rationale:** The results of SRS-023 and SRS-029 are published with the other validation results and regenerated by the same command, so that anyone can reproduce them (README goal 4, SRS-009). The false negatives and false positives that fall in windows marked not usable show how much of the risk of HAZ-006 the index can control (RC-007); they are reported without a threshold, so that no threshold is fitted to these records.
+**Verification level:** Requirement (QA)
+**Verification:** Test with fixture records that have the names and structure of the records concerned, and known detections and indices: each section contains every listed item, with values matching the fixture, and a criterion or threshold that is not met is reported as fail.
+**Risk controls:** RC-004, RC-007.
+
+### SRS-031: Restart of the real-time library
+
+**Software item:** libs/sinus-dsp
+**Milestone:** M2
+**Statement:** After a reset, the outputs of the real-time library for the samples given after the reset (conditioned samples, detections and their marks, heart rates, signal quality windows) shall be identical to those of a newly configured library given the same samples; no interval, heart rate or window shall use a sample given before the reset.
+**Rationale:** The desktop application starts a new continuous segment at every gap in the data (lost samples, a device restart) and resets the processing there, so that beat intervals and the heart rate are never computed across a gap (`architecture.md` §4.2; HAZ-012, RC-014). A reset is also how processing resumes after an invalid sample (SRS-018).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the build for the computer, at 360 Hz: a synthetic ECG with the interference of SRS-010 is processed for 20 s, the library is reset and the ECG continues; the outputs after the reset are identical, value for value, to those of a newly configured library given the samples after the reset, for resets at several points of the cardiac cycle and during the start-up period.
+**Risk controls:** RC-014.
+
+### SRS-032: Fixed memory of the real-time library
+
+**Software item:** libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The real-time library shall use memory of a size fixed before processing starts: it shall not obtain or release memory dynamically while it is configured, processes samples or is reset, and one complete processing chain (signal conditioning, detection, heart rate and signal quality index) shall occupy at most [OP-049: memory of one processing chain, in bytes] for any accepted sampling frequency.
+**Rationale:** On the device, memory obtained while processing can run out during a session or delay the processing of a sample unpredictably; a fixed size can be checked against the memory of the ESP32-S3 before the firmware is written (`functional-analysis.md` F2.5). The limit is proposed by the tech lead from the design, for approval by the project owner, as a small fraction of the internal memory of the ESP32-S3, so that the firmware tasks and the Bluetooth LE stack keep most of it (OP-049).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the build for the computer: with every dynamic memory request of the test process counted, the configuration at 125, 250, 360 and 1000 Hz, the processing of the inputs of the golden vectors of SRS-015 and SRS-033 and a reset make no request; the size of a complete processing chain, as given by the build, is at most the limit.
+**Risk controls:** None.
+
+### SRS-033: Golden vectors of the real-time functions
+
+**Software item:** dsp (scripts)
+**Milestone:** M2
+**Statement:** Each golden-vector file of SRS-015 shall also contain: the mark of each detection (SRS-022); the heart rate reported at each detection marked reliable and at each change of its validity, with its sample index, its validity and, when withheld, its reason (SRS-024, SRS-026); and each signal quality window with the sample indices of its first and last samples, its index and its mark (SRS-027). The set of inputs of SRS-015 shall also include synthetic inputs, documented in `architecture.md`, on which a detection is marked start-up after detection has learned its signal levels again, the heart rate is withheld for each reason of SRS-026, and at least one window is marked not usable.
+**Rationale:** The real-time library is checked against the reference on these outputs (SRS-034), so the vectors must hold them. The synthetic ECGs of SRS-015 are clean regular rhythms of 30 s, on which no window is not usable and the heart rate is withheld only at the start, so further inputs are needed to exercise every mark and reason. The format is documented in `architecture.md`, as for SRS-015.
+**Verification level:** Requirement (QA)
+**Verification:** Test, as for SRS-015: each file contains each listed item, and the values read back equal the outputs of the reference functions called directly on the same input. The set of files contains a detection marked start-up after detection has learned its signal levels again, a heart rate withheld for each reason, and a window marked not usable.
+**Risk controls:** RC-012.
+
+### SRS-034: Equivalence with the reference on the computer
+
+**Software item:** libs/sinus-dsp
+**Milestone:** M2
+**Statement:** For every golden-vector file of SRS-015 and SRS-033, the real-time library built for the computer, configured with the sampling frequency and the mains setting of the file and given its input samples one at a time, shall produce:
+- for each conditioning stage, an output within [OP-005: tolerance, in mV] of the file's at every sample;
+- as many detections as the file, each with the same mark as the corresponding detection of the file and an index within [OP-005: tolerance, in samples] of it;
+- heart rates with the same validity and reason at the same samples, each valid one within [OP-005: tolerance, in bpm] of the file's;
+- the same signal quality windows (first and last samples), with the same marks, each index within [OP-005: tolerance] of the file's.
+
+**Rationale:** The validation results of the reference (SRS-007, SRS-014, SRS-023, SRS-029) apply to the real-time library only if it computes the same results (RC-012; HAZ-001, HAZ-002). The reference is causal and shares the filter design, the stage order and the initial state with the library, so the outputs are compared sample by sample, without a delay allowance; the tolerances absorb the rounding differences between the binary32 library and the binary64 reference (`architecture.md` §7.1; OP-057). The counts, marks, validity, reasons and usable marks must be the same, and the values agree within tolerances, as decided by the project owner on 2026-10-07; no difference of detection is allowed in advance, not even a near tie between two band-pass lobes (OP-056 (b)): if a file fails for such a reason, the project owner decides then. The tolerances are proposed by the tech lead from the numerical analysis of each stage, for approval by the project owner (OP-005).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the build for the computer, with the golden vectors exported from the same commit: every file passes. A copy of a file in which one value of each compared output is changed by more than its tolerance, or from which one detection is removed, fails, and the failure names the file, the output and the sample.
+**Risk controls:** RC-012.
+
+### SRS-035: Equivalence check on every change
+
+**Software item:** dsp (scripts); libs/sinus-dsp; CI workflow
+**Milestone:** M2
+**Statement:** On every push, the automated build shall export the golden vectors of SRS-015 and SRS-033 from the commit under test, including the record segments, whose records it obtains and verifies as for SRS-016, and run the check of SRS-034 on all of them. The build shall fail if a file of the set is missing or fails the check.
+**Rationale:** Any change of the reference that the library does not follow, or the reverse, fails at once (`functional-analysis.md` F3.4). The export skips the record segments when the files of their records are not verified (SRS-015), so the build also fails on a missing file (`architecture.md` §7.5). Whether golden vectors of record segments may be passed between steps of the build as public artifacts, and with which notices, is OP-067.
+**Verification level:** Requirement (QA)
+**Verification:** Test and inspection. The check run on a set from which one file is missing fails and names the file. Inspection of the CI configuration confirms that the export and the check run on every push.
+**Risk controls:** RC-012.
+
+### SRS-036: Equivalence on the device processor
+
+**Software item:** libs/sinus-dsp (build for the ESP32-S3); CI workflow
+**Milestone:** M2
+**Statement:** On every push, the real-time library built for the ESP32-S3 shall run the check of SRS-034, with the tolerances of SRS-034, on the golden vectors of SRS-035, including the record segments, in an emulator of the ESP32-S3; the build shall fail if a file of the set is missing or fails the check.
+**Rationale:** The desktop application and the device use one implementation (`functional-analysis.md` F2.10), so the build for the device processor is checked against the same reference as the build for the computer. The check runs in the emulator, as decided by the project owner (OP-051, closed); a development board on the bench, with no person connected, is the fallback. With the same tolerances on both builds, one statement of equivalence covers both, and the record segments keep real ECG in the check on the device processor; the build artifacts that carry them carry the notice of their database (OP-067). Decided by the project owner on 2026-10-07 (OP-005).
+**Verification level:** System (test engineer)
+**Verification:** Inspection and test. The CI configuration and the log of a run show that the check runs in the emulator on every push, on the set of SRS-035; a run with a file changed by more than a tolerance fails.
+**Risk controls:** RC-012.
+
+### SRS-037: Content of the equivalence results
+
+**Software item:** libs/sinus-dsp
+**Milestone:** M2
+**Statement:** The check of SRS-034 and SRS-036 shall report, for each golden-vector file and each compared output, the largest difference found, its tolerance and the outcome (pass or fail). It shall also state the build target (computer or ESP32-S3), the reference software that wrote the vectors (the software version and the identifier of the source code read from the files), and the version of the real-time library with an identifier of its source code, in the form documented in `architecture.md` (OP-062).
+**Rationale:** The equivalence results are the evidence of RC-012 and are quoted in the milestone verification report (`sdp.md` §6). Like the validation reports (SRS-012), they must identify the software on both sides, and a version alone does not identify the code while a milestone is developed (`sdp.md` §4; OP-062).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the build for the computer. With a set of golden vectors in which one output of one file is changed by a known amount, larger than every other difference of that output and within its tolerance, the reported largest difference for that file and output equals that amount within the rounding of the comparison. The reported reference software equals that stated in the files. The reported version of the library and the identifier of its source code equal those that the test computes itself with the method documented in `architecture.md`.
+**Risk controls:** RC-012.
+
+### SRS-038: Detection by the real-time library on the reference databases
+
+**Software item:** libs/sinus-dsp; dsp (scripts)
+**Milestone:** M2
+**Statement:** QRS detection by the real-time library built for the computer, with the channel and mains setting of SRS-007, on the 48 records of the MIT-BIH Arrhythmia Database and on the 12 ECG records of the MIT-BIH Noise Stress Test Database, evaluated as specified in SRS-008 and SRS-011, shall give for each record the same numbers of true positives, false negatives and false positives as the reference.
+**Rationale:** The golden vectors hold 6 minutes of real ECG. The comparison on the whole databases shows that the results of SRS-007 and SRS-014 hold for the implementation that runs in real time (RC-012; HAZ-001, HAZ-002). Identical counts per record are required, so that those results can be stated for the real-time library without qualification. Decided by the project owner on 2026-10-07 (OP-005).
+**Verification level:** System (test engineer)
+**Verification:** Analysis. A test that requires the local databases compares the counts of each record with those of the reference; it is skipped in CI, where the databases are not available, and its result is recorded in the milestone verification report.
+**Risk controls:** RC-012.
