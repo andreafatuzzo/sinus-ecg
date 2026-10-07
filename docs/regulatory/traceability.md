@@ -29,8 +29,8 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 | SRS-021 | Delay of streaming detection | M2 | Requirement | — | **none** | OP-049, OP-056 |
 | SRS-022 | Start-up mark of detections | M2 | Requirement | — | **none** | — |
 | SRS-023 | Detection at the start of real recordings | M2 | System | — | **none** | — |
-| SRS-024 | Heart rate from detections | M2 | Requirement | — | **none** | OP-071 |
-| SRS-025 | Heart rate with an isolated missed or extra detection | M2 | Requirement | — | **none** | — |
+| SRS-024 | Heart rate from detections | M2 | Requirement | — | **none** | OP-071, OP-073 |
+| SRS-025 | Heart rate with an isolated missed or extra detection | M2 | Requirement | — | **none** | OP-073 |
 | SRS-026 | Withheld heart rate | M2 | Requirement | — | **none** | OP-071 |
 | SRS-027 | Signal quality index per window | M2 | Requirement | — | **none** | OP-049, OP-072 |
 | SRS-028 | Signal quality index on defined signals | M2 | Requirement | — | **none** | — |
@@ -102,4 +102,4 @@ Outcome of `--release-gate` on milestones M0, M1, M2: **fail**
 - Implemented requirements without tests: none
 - Unknown IDs referenced in code/tests: none
 - Open points citing undefined IDs: none
-- Open points still open: 48 (see `open-points.md`)
+- Open points still open: 49 (see `open-points.md`)
