@@ -6,6 +6,7 @@ The writer (``render_golden_vector``), the readers (``parse_golden_vector``,
 """
 
 import dataclasses
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -324,15 +325,23 @@ def test_non_finite_values_are_checked_before_anything_else() -> None:
         render_golden_vector(vector)
 
 
-def test_an_overflowing_filter_output_is_a_non_finite_output_error() -> None:
-    """A constant input of extreme amplitude overflows the filters (OP-063)."""
-    vector = golden_vector(
-        "extreme", "test", "a=1", np.full(3600, 1e308), 360.0, 50, [], software=SOFTWARE
-    )
-    assert bool(np.isfinite(vector.input_mv).all())
-    assert not bool(np.isfinite(vector.stage_outputs_mv[0]).all())
-    with pytest.raises(NonFiniteOutputError, match="^extreme: "):
-        render_golden_vector(vector)
+@pytest.mark.parametrize(
+    "value", [1e308, -1e308, math.nextafter(1000.0, math.inf), -math.nextafter(1000.0, math.inf)]
+)
+def test_an_input_beyond_1000_mv_is_rejected_before_any_output(value: float) -> None:
+    """Architecture §13.2: the input that overflowed the filters (OP-063) is now rejected."""
+    with pytest.raises(InvalidInputError, match="magnitude exceeds 1000.0 mV"):
+        golden_vector(
+            "extreme", "test", "a=1", np.full(3600, value), 360.0, 50, [], software=SOFTWARE
+        )
+
+
+def test_an_input_at_1000_mv_gives_finite_outputs_that_render() -> None:
+    """The largest accepted magnitude, alternating in sign, cannot overflow (§13.2)."""
+    signal = np.where(np.arange(3600) % 2 == 0, 1000.0, -1000.0)
+    vector = golden_vector("bound", "test", "a=1", signal, 360.0, 50, [], software=SOFTWARE)
+    assert all(bool(np.isfinite(output).all()) for output in vector.stage_outputs_mv)
+    assert_same_vector(parse_golden_vector(render_golden_vector(vector), "t"), vector)
 
 
 # --- writer: content the reader would reject ----------------------------------------------------

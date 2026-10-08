@@ -5,6 +5,7 @@ list. Most tests use a fake loader that returns records built from the synthetic
 reads WFDB records written with ``wfdb``.
 """
 
+import dataclasses
 import hashlib
 import subprocess
 import sys
@@ -437,16 +438,58 @@ def test_errors_of_the_loader_propagate(
 
 
 def test_a_non_finite_output_stops_the_export(
-    database: tuple[Path, Database], tmp_path: Path
+    database: tuple[Path, Database], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # No accepted input gives a non-finite output since the 1000 mV bound (architecture
+    # §13.2), so the vector of record 108 gets one by hand, after the real computation.
     root, fixture = database
-    loader = FakeLoader(constant={"108": 1e308})
+    original = golden.golden_vector
+
+    def with_infinity(input_id: str, *args: Any, **kwargs: Any) -> golden.GoldenVector:
+        vector = original(input_id, *args, **kwargs)
+        if input_id != "mitdb-108-first60s":
+            return vector
+        baseline = vector.stage_outputs_mv[0].copy()
+        baseline[7] = np.inf
+        return dataclasses.replace(
+            vector, stage_outputs_mv=(baseline, *vector.stage_outputs_mv[1:])
+        )
+
+    monkeypatch.setattr(golden, "golden_vector", with_infinity)
     with pytest.raises(NonFiniteOutputError) as caught:
-        export_golden_vectors(tmp_path / "out", data_root=root, database=fixture, loader=loader)
+        export_golden_vectors(
+            tmp_path / "out", data_root=root, database=fixture, loader=FakeLoader()
+        )
     assert caught.value.input_id == "mitdb-108-first60s"
     assert names_in(tmp_path / "out") == sorted(
         [*SYNTHETIC_FILES, "mitdb-100-first60s.golden.txt", "mitdb-105-first60s.golden.txt"]
     )
+
+
+@pytest.mark.parametrize("level", [1e308, -1000.0000000000001])
+def test_a_record_beyond_1000_mv_stops_the_export(
+    database: tuple[Path, Database], tmp_path: Path, level: float
+) -> None:
+    """The input check rejects the segment (architecture §13.2); earlier files stay."""
+    root, fixture = database
+    loader = FakeLoader(constant={"108": level})
+    with pytest.raises(InvalidInputError, match="magnitude exceeds 1000.0 mV"):
+        export_golden_vectors(tmp_path / "out", data_root=root, database=fixture, loader=loader)
+    assert names_in(tmp_path / "out") == sorted(
+        [*SYNTHETIC_FILES, "mitdb-100-first60s.golden.txt", "mitdb-105-first60s.golden.txt"]
+    )
+
+
+def test_a_record_at_1000_mv_is_exported(database: tuple[Path, Database], tmp_path: Path) -> None:
+    root, fixture = database
+    loader = FakeLoader(constant={"108": -1000.0})
+    summary = export_golden_vectors(
+        tmp_path / "out", data_root=root, database=fixture, loader=loader
+    )
+    assert "mitdb-108-first60s.golden.txt" in summary.written
+    vector = read_golden_vector(tmp_path / "out" / "mitdb-108-first60s.golden.txt")
+    assert bool(np.all(vector.input_mv == -1000.0))
+    assert vector.beats.shape == (0,)
 
 
 def test_an_unwritable_output_folder_raises_os_error(tmp_path: Path) -> None:

@@ -12,3 +12,6 @@ FloatArray: TypeAlias = npt.NDArray[np.float64]
 
 #: Sample indices, int64, strictly increasing unless stated.
 IndexArray: TypeAlias = npt.NDArray[np.int64]
+
+#: One flag per element of another array, e.g. the mark of each detection (architecture §13.1).
+BoolArray: TypeAlias = npt.NDArray[np.bool_]
