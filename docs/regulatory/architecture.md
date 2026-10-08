@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.3, 2026-10-07. Status: approved by the project owner up to v0.3 (sections 1 to 7 and 9 to 12 in v0.1 and the detailed design of §8 in v0.2 on 2026-09-29; the corrections of v0.2.2 on 2026-09-30; the corrections of v0.2.4 on 2026-10-01; the software identity and versioning rule of v0.2.6 on 2026-10-03; v0.2.8 is editorial; the readings of §8.10 and §8.14 of v0.2.9 on 2026-10-04; the changes of v0.2.10 and of v0.2.11 on 2026-10-05; the changes of v0.2.12 on 2026-10-06; the Milestone 2 detailed design of `dsp` (§13) of v0.3 on 2026-10-07); v0.2.13 is editorial._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.4, 2026-10-08. Status: v0.4 (the detailed design of `libs/sinus-dsp`, §14, and the traceability rules of §13.12) pending approval by the project owner; approved by the project owner up to v0.3 (sections 1 to 7 and 9 to 12 in v0.1 and the detailed design of §8 in v0.2 on 2026-09-29; the corrections of v0.2.2 on 2026-09-30; the corrections of v0.2.4 on 2026-10-01; the software identity and versioning rule of v0.2.6 on 2026-10-03; v0.2.8 is editorial; the readings of §8.10 and §8.14 of v0.2.9 on 2026-10-04; the changes of v0.2.10 and of v0.2.11 on 2026-10-05; the changes of v0.2.12 on 2026-10-06; the Milestone 2 detailed design of `dsp` (§13) of v0.3 on 2026-10-07); v0.2.13 is editorial._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;
@@ -12,7 +12,7 @@ This document describes **how** Sinus is built:
 
 Significant decisions are recorded as architecture decision records in [`docs/adr/`](../adr/README.md), and this document cites them.
 
-The detailed design of each requirement (module, interface, algorithm with references, parameters, edge cases) is added milestone by milestone. For Milestone 1 it is in §8, which builds on the equivalence principle and the golden-vector format of §7. For Milestone 2, the reference side (`dsp`: the amplitude bound of SRS-003, detection marks and report timing, heart rate, signal quality, the new validation and report sections, golden-vector format version 2) is in §13; the design of the real-time library (`libs/sinus-dsp`) follows in a later version of this document.
+The detailed design of each requirement (module, interface, algorithm with references, parameters, edge cases) is added milestone by milestone. For Milestone 1 it is in §8, which builds on the equivalence principle and the golden-vector format of §7. For Milestone 2, the reference side (`dsp`: the amplitude bound of SRS-003, detection marks and report timing, heart rate, signal quality, the new validation and report sections, golden-vector format version 2) is in §13, and the design of the real-time library (`libs/sinus-dsp`: arithmetic, interfaces, memory, equivalence tolerances, build, tests, CI and the ESP32-S3 emulator) in §14.
 
 ## Conventions
 
@@ -41,6 +41,7 @@ The detailed design of each requirement (module, interface, algorithm with refer
 | 0.2.12 | 2026-10-05 | Traceability checks (approved by the project owner on 2026-10-06; no change to `sinus_dsp`). New §8.16: corrections and clarifications of `scripts/traceability.py` found by its unit tests (OP-052, closed): the matrix states the outcome of the release gate, per milestone and in a new section `Release gate`; a test in the folder of the other verification level no longer counts as verifying (ADR 0004 §6); folders named `tests`, `test` or `test_apps` are not scanned as production code under the Python code roots either (ADR 0004 §1); a requirement mark in a file under `dsp/tests` that is not a test file fails `--check` (ADR 0004 §2); the Target of an open point must be `Mn` or `After Mn`; deleted requirements are not listed as requirements without tests; disabled and skipped tests: rule now, check with the first C++ tests (OP-066); the order of the items is kept. §8.14: the development-version item is what rejects a milestone still in progress, and the unit tests of the script are those of OP-052. §8.1: `traceability.py` cites §8.16. §8.13: the changes of v0.2.12. §9: the Python interpreter is SOUP of `dsp` (`soup.md`). §12: OP-066 |
 | 0.2.13 | 2026-10-06 | Editorial, no design change. OP-064 closed on 2026-10-06; its Milestone 2 part, notices for golden vectors of record segments made public, continues as OP-067. §7.5 and §8.15 "Golden vectors" cite OP-067 instead of the Milestone 2 part of OP-064; §8.15 "Consequences of the change" records the closure. §12: OP-067 added; OP-064 stays listed, as closed open points do |
 | 0.3 | 2026-10-07 | Milestone 2 detailed design of `dsp` (approved by the project owner on 2026-10-07), for `srs.md` v0.8. New §13: the 1000 mV bound of SRS-003 (OP-063); the detection trace with the start-up mark of SRS-022, the sample at which each detection is reported and the path that found it; the delays of the detection rules and the documented maximum of SRS-021 (OP-049); the heart-rate reference (SRS-024 to SRS-026); the signal quality index reference with its measures and threshold, fixed before any run on the reference databases (SRS-027, SRS-028); the evaluation of the start of real recordings, the signal quality index on the noise stress records and the new report sections (SRS-023, SRS-029, SRS-030), including the stretches of the noise stress records that carry added noise and reading records without annotation files; golden-vector format version 2 and eight synthetic event inputs (SRS-033); the wording of `docs/validation/README.md` (OP-069); implementation order. §2, §3: `dsp` also delivers in Milestone 2 (references of heart rate and signal quality). §5.2: no low-pass stage (OP-070), no adaptive canceller (F2.6, Milestone 4) and no decimator in Milestone 2. §7.2, §7.3: pointers to version 2. §8.2: `NonFiniteOutputError` cannot occur for an accepted input any more. §12 updated |
+| 0.4 | 2026-10-08 | Milestone 2 detailed design of the real-time library `libs/sinus-dsp`, for `srs.md` v0.8.1 (pending approval by the project owner). New §14: decisions (§14.1); layout, CMake presets, compiler options, GoogleTest 1.18.0 pinned by URL and SHA-256, development tools pinned in a uv project (§14.2); arithmetic: signal conditioning in binary64, detection, heart rate and signal quality in binary32, the order of every operation, no contraction (§14.3, ADR 0008 proposed, OP-057); modules and public interfaces (§14.4); configuration checks and invalid samples (§14.5, SRS-017, SRS-018); conditioning (§14.6, SRS-019); streaming detection, its state, the store of peaks and its provable capacity (§14.7, SRS-020 to SRS-022); heart rate with a test entry point fed with detections (§14.8, SRS-024 to SRS-026); signal quality with a ring of blocks (§14.9, SRS-027, SRS-028); restart and fixed memory, about 51.6 KB per chain, proposed limit 64 KiB (§14.10, SRS-031, SRS-032, OP-049); equivalence tolerances from the analysis of each stage and a binary32 model run on the golden set and the whole reference databases, proposed values (§14.11, SRS-034, OP-005); the equivalence check, its results and the CI jobs, with the notice file of the golden vectors (§14.12, SRS-035, SRS-037, OP-067); the ESP32-S3 build with ESP-IDF v6.1, a binary pack of the vectors and Espressif's QEMU (§14.13, SRS-036); the C interface called from Python for the whole databases (§14.14, SRS-038); the identity of the library (§14.15, OP-062); its SBOM (§14.16, OP-046); tests (§14.17); implementation order (§14.18). New §13.12: traceability rules for Milestone 2: one verifying test per software item that implements a requirement (ADR 0006 proposed), Python tests of C++ items, disabled requirement tests (OP-066), the version of the C++ items. §13.8: the export writes a notice file with the record segments (OP-067). §13.5: quotes of SRS-024 and SRS-026 as worded in `srs.md` v0.8.1. Corrections: §8.2, the finite impulse response stages of the reference run through `numpy.convolve` and BLAS, whose last bits may differ between machines; §4.2, §5.1, §7.1, the arithmetic of the library; §5.1, the worst case of the bounded work per sample; §5.2, §5.3, §7.4, §7.5, §8.14, §8.16, §9, §11, §13 and §13.1, pointers to §13.12 and §14. §12 updated |
 
 ## 1. System context
 
@@ -155,7 +156,7 @@ The byte layout of IF-4 and IF-5 frames and the REST resources of IF-7 are desig
 
 ### 4.2 Common data conventions
 
-- **Amplitude** in mV. Python uses float64. The C++ real-time path uses `float` (IEEE 754 binary32), because the ESP32-S3 floating-point unit is single precision. Values are converted to mV where they enter an item: by the ADC calibration on the device, by the stream scale in the desktop, by wfdb physical units in dsp.
+- **Amplitude** in mV. Python uses float64. The C++ library takes and gives samples as `float` (IEEE 754 binary32), the precision of the ESP32-S3 floating-point unit; it computes signal conditioning in binary64 and detection, heart rate and signal quality in binary32 (§14.3, ADR 0008). Values are converted to mV where they enter an item: by the ADC calibration on the device, by the stream scale in the desktop, by wfdb physical units in dsp.
 - **Sampling frequency** in Hz: a parameter of every function and object that depends on it, never a global constant. The device samples at 360 Hz ([ADR 0005](../adr/0005-device-sampling-rate-360-hz.md)). Inputs are accepted from 125 Hz to 1000 Hz (SRS-003).
 - **Time base**: sample index, where 0 is the first sample of the record or session; `numpy.int64` in Python, `std::uint64_t` in C++. Time in s is index / sampling frequency.
 - **Beat position**: the sample index of the detected QRS complex in the source time base (D4). RR intervals in ms are computed only between beats of the same continuous segment.
@@ -188,15 +189,15 @@ The byte layout of IF-4 and IF-5 frames and the REST resources of IF-7 are desig
 | No dynamic memory anywhere in the library: no `new`, `delete` or `malloc`, and no allocating standard containers. All state lives inside objects of fixed size; capacities are compile-time constants sized for the highest supported sampling frequency (1000 Hz) | A host test that fails on any heap allocation during construction, configuration and processing |
 | No exceptions and no RTTI: errors are returned as values. Built with `-fno-exceptions -fno-rtti` (GCC, Clang) on every target | Build flags on every target |
 | Deterministic: no global mutable state, no clocks, no random numbers, no I/O. The same input sequence gives the same output on a given build | Review; equivalence tests |
-| The real-time path computes in `float`; `double` is used only at configuration time (filter design). Implicit promotion to `double` is a compile error | `-Wdouble-promotion -Wfloat-conversion` treated as errors |
-| Bounded work per sample, independent of the signal content. A bounded delay per stage, reported by the object | Worst-case timing on the ESP32-S3 against the budget (OP-049) |
+| The real-time path computes in `float`, except the two signal-conditioning stages, which compute in `double` (§14.3; ADR 0008, proposed); `double` is also used at configuration time (filter design, parameters in samples). Every use of `double` is explicit: implicit promotion is a compile error | `-Wdouble-promotion -Wfloat-conversion` treated as errors |
+| Bounded work per sample: the worst case (a sample at which detection learns its levels) is bounded by the capacities, whatever the signal (§14.7). A bounded delay per stage, reported by the object | Worst-case timing on the ESP32-S3 against the budget (OP-014, OP-049) |
 | One object per signal, used from one thread; no internal locking; objects are independent of each other | Review |
 | The same source code and the same results on every target: no target-specific code paths. A target-optimised kernel would need its own equivalence tests | Equivalence tests on the host and on the ESP32-S3 in Espressif's QEMU emulator in CI (§7, OP-051 closed) |
-| Coding standard, formatting and static analysis rules: OP-043 | CI |
+| Coding standard, formatting and static analysis rules: [ADR 0007](../adr/0007-cpp-coding-standard-and-static-analysis.md) (proposed; OP-043) | CI (§14.2, §14.12) |
 
 ### 5.2 Interface style
 
-The interfaces themselves are designed with the Milestone 2 requirements; they follow these rules.
+The interfaces themselves are designed with the Milestone 2 requirements (§14.4); they follow these rules.
 
 - Namespace `sinus::dsp`. Public headers are in `include/sinus/dsp/`. The CMake target is `sinus_dsp`, with the alias `sinus::dsp`.
 - An object is **configured once** from a configuration value (sampling frequency in Hz, mains frequency and so on). Configuration validates the values, for example a sampling frequency within 125–1000 Hz and a mains frequency of 50 Hz or 60 Hz, and returns a status. An object that is not validly configured produces no output.
@@ -217,12 +218,12 @@ Not in Milestone 2: the polyphase decimator for the device's oversampled ADC, wh
 
 ### 5.3 Build, integration and tests
 
-- **Build.** CMake, with presets for the host (debug, release, coverage with sanitizers) and for the ESP32-S3.
+- **Build.** CMake, with presets for the host (debug, release, sanitizers, coverage, static analysis); the ESP32-S3 build is an ESP-IDF project that uses a component of the library (§14.2, §14.13).
 - **Integration.**
   - The desktop build includes the library's CMake project.
-  - The firmware includes it through an ESP-IDF component that registers the same sources (`firmware/components/sinus_dsp/`).
+  - The firmware includes it through the ESP-IDF component `libs/sinus-dsp/esp-idf/sinus_dsp`, which registers the same sources (§14.13).
   - No source file is copied into another item.
-- **Tests.** GoogleTest on the host: unit tests, requirement tests and the equivalence tests on the golden vectors (§7). Folders and tags follow [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md):
+- **Tests.** GoogleTest on the host: unit tests, requirement tests and the equivalence tests on the golden vectors (§7); pytest where a test needs Python (§14.17). Folders and tags follow [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md):
   - folders `libs/sinus-dsp/tests/{unit,requirements,system}/`;
   - a verifying test carries the comment `// Verifies: SRS-nnn` directly above its `TEST` macro, and only in `requirements/` or `system/`.
   - An equivalence test verifies a Milestone 2 equivalence requirement, and sits in the folder of that requirement's Verification level.
@@ -296,7 +297,7 @@ Both implementations therefore evaluate the same difference equations on the sam
 - **Filter design.** Coefficients are computed at configuration time from the sampling frequency and the settings, in float64, with the same formulas.
 - **Stage order.** Baseline wander removal (SRS-004), then mains interference removal (SRS-005), then beat detection (SRS-006) on the output of the mains stage. Removing the baseline first keeps the input of the notch small, which preserves precision in binary32.
 - **Initial state.** Each second-order section starts in the steady state that a constant input equal to the first input sample would produce. For the baseline filter this gives zero output on a constant input, which avoids the start-up transient of an offset. The detector's initialisation is specified in §8.7.3 and is the same in both.
-- **Precision.** The real-time library computes in binary32, the reference in binary64. The differences come from rounding and must stay within the tolerances of OP-005: conditioning output in mV, beat positions in samples.
+- **Precision.** The real-time library computes signal conditioning in binary64 and detection, heart rate and signal quality in binary32, with binary32 inputs and outputs (§14.3); the reference computes in binary64. The differences come from rounding and must stay within the tolerances of SRS-034 (§14.11).
 
 **Trade-off.** A causal high-pass filter distorts the phase of the lowest ECG components (ST segment, T wave), which a zero-phase reference would avoid. Sinus makes no claim on ST-segment or morphology measurements, and a causal reference makes the validation results (SRS-007) apply to the algorithm that actually runs in real time. The band criteria of SRS-004 and SRS-005 concern amplitude only and can be met by causal filters.
 
@@ -420,7 +421,7 @@ The reason given with the line is free text that names the rule. It is not part 
 ### 7.4 Determinism and exact read-back
 
 - **Determinism.** The content depends only on the input, the settings, the software identity (version and source digest, §8.14) and the computations of NumPy and SciPy on the computer that runs them. The file contains no dates, times, host names, user names, paths or random numbers, and nothing depends on the iteration order of an unordered collection. Two runs on the same computer and the same inputs, with the same software version and source code and the same versions of the third-party software used, therefore give byte-identical files: the condition of SRS-015. The same version and source digest mean the same source code (§8.14). A file does not state the versions of Python and of the runtime SOUP, which the reports state (§8.10): SRS-015 asks for the software version and the identifier of the source code, byte identity is required on one computer only, and CI compares the C++ library only with files written in the same run (§7.5).
-- **Exact read-back.** Python's `float()` is correctly rounded, so reading back gives exactly the values computed (SRS-015). The C++ reader converts with `std::from_chars` (C++17), which the supported toolchains implement with correct rounding. Its unit tests check exact read-back of edge values: the smallest subnormal and the largest finite value, negative zero, and values that need 17 significant digits.
+- **Exact read-back.** Python's `float()` is correctly rounded, so reading back gives exactly the values computed (SRS-015). The C++ reader converts with `std::from_chars` (C++17), which the supported toolchains implement with correct rounding (libstdc++ from GCC 11, libc++ from LLVM 20; the ESP32-S3 test app reads a binary pack instead, §14.13). Its unit tests check exact read-back of edge values: the smallest subnormal and the largest finite value, negative zero, and values that need 17 significant digits.
 - **Across machines.** NumPy and SciPy results may differ in the last bits between machines or library builds. The tolerances of OP-005 absorb this, and CI always compares the C++ library with vectors generated in the same run from the same commit (§7.5).
 
 ### 7.5 Generation and use
@@ -431,8 +432,8 @@ The reason given with the line is free text that names the rule. It is not part 
   - The files are regenerated deterministically on demand, and in CI from the commit under test (below).
   - Every file states the source digest (§8.14). Stored files would therefore change with every change of the package, like the stored subset report (§8.11): about 16 MB of text in every such change, for no information that the commit does not already hold.
   - Vectors of record segments are derived from the database, which the repository never holds (SRS-015). The licence of both PhysioNet databases used (MIT-BIH Arrhythmia Database 1.0.0 and MIT-BIH Noise Stress Test Database 1.0.0) is the Open Data Commons Attribution License v1.0 (checked on their PhysioNet pages on 2026-10-04 and 2026-10-05, §8.15). It allows copies, extracts and works produced from the data, with notices when they are made public: the licence and its address with a database extract that is conveyed publicly, and a notice that the content comes from the database, available under that licence, with a work produced from it that is used publicly. Storing the vectors would therefore be allowed with those notices; it is not done for the reasons above. The notices for what Sinus publishes are in §8.15: the validation reports, which are produced from both databases, state the licence of each, and README §Data sources and `docs/validation/README.md` carry the notice and the citations. In Milestone 1 the golden vectors are written only to the local data folder and are not published, so they need no notice. Whether a golden vector of a record segment is made public from Milestone 2 (for example as a CI artifact of the public repository), and with which notices, is decided with the CI design of Milestone 2 (OP-067).
-- **In CI (from Milestone 2).** The Python build generates the vectors and passes them to the C++ equivalence tests as a build artifact of the same commit. The C++ library is therefore always compared with the current reference, and any change to the reference that the C++ library does not follow fails CI. The export exits successfully when it skips the record segments (§8.12), so the CI step designed at Milestone 2 must also make sure that none was skipped; the CI cache already holds the six records (§8.11).
-- **On the ESP32-S3.** The on-target test image receives the same vectors, in Espressif's QEMU emulator in CI (OP-051 closed).
+- **In CI (from Milestone 2).** The Python build generates the vectors and passes them to the C++ equivalence tests as a build artifact of the same commit. The C++ library is therefore always compared with the current reference, and any change to the reference that the C++ library does not follow fails CI. The export exits successfully when it skips the record segments (§8.12), so the CI step designed at Milestone 2 must also make sure that none was skipped; the CI cache already holds the six records (§8.11). Design from v0.4: the job `dsp` exports the set after its subset check and uploads it as the artifact `golden-vectors` with a notice file; the job `libs` checks it, and a missing file fails that job and is named (§14.12).
+- **On the ESP32-S3.** The on-target test image receives the same vectors, in Espressif's QEMU emulator in CI (OP-051 closed), converted into a binary pack on the host (§14.13).
 
 ## 8. Milestone 1 detailed design of `dsp`
 
@@ -489,7 +490,7 @@ This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requi
 - The products are computed as `t_ms · fs_hz / 1000` with `t_ms` an integer number of milliseconds (e.g. `150 · fs_hz / 1000`), which is exact in binary64 for every integer `fs_hz` up to 1000 Hz. At 360 Hz and 250 Hz every value in this section is therefore exact.
 
 **Determinism.** Everything that feeds a detection decision, a report or a golden vector is computed in a fixed order:
-- recursive and FIR filters with `scipy.signal.sosfilt` and `scipy.signal.lfilter`, which evaluate their difference equations sample by sample;
+- recursive filters with `scipy.signal.sosfilt`, which evaluates its difference equations sample by sample; finite impulse response filters (the derivative and the integration of §8.7.1) with `scipy.signal.lfilter`, which for the denominator `[1.0]` computes `numpy.convolve`: each output is a dot product evaluated by the BLAS library bundled with NumPy (OpenBLAS, which selects its kernel for the processor at run time), so its last bits may differ between machines (corrected in v0.4; found while designing §14.11). No figure of a report changes unless a detection decision is a near tie at that level, and the CI environment is the authority for the stored subset report (§8.11);
 - sums and means of floating-point values with `math.fsum` (correctly rounded, so independent of the machine), never with `numpy.sum` or `numpy.mean`, whose pairwise and SIMD summation order may differ between NumPy builds;
 - maxima with `numpy.max` and `numpy.argmax` (exact; `argmax` returns the first index of the maximum, which is the tie rule everywhere in this section);
 - no iteration over unordered collections (`set`, `dict` built from them) where the order reaches an output; record and file lists are sorted.
@@ -1691,7 +1692,7 @@ Scope and properties:
 - `Layout` gains `pyproject` (`dsp/pyproject.toml`) and `package_init` (`dsp/sinus_dsp/__init__.py`), so that unit tests on fixture trees cover the rule.
 - Not checked mechanically: that P is raised for a correction release, which needs the history of `main`. The release review checks it (`sdp.md` §3, activity 7).
 
-**C++ items.** This rule covers `dsp`. The versioning and identification of the C++ items is part of their detailed design, written at the start of their milestone (Conventions), starting with the library at Milestone 2.
+**C++ items.** This rule covers `dsp`. The versioning and identification of the C++ items is part of their detailed design, written at the start of their milestone (Conventions); for the library it is §14.15 (v0.4): the same version, in a file `VERSION`, and a source digest of its own code by the method above.
 
 **Verification notes.**
 - Developer's unit tests:
@@ -1778,7 +1779,7 @@ The citations are kept as PhysioNet gives them, so that they can be compared wit
 
 ### 8.16 Traceability checks: corrections and clarifications (ADR 0004)
 
-**Purpose.** The unit tests of `scripts/traceability.py` (OP-052) found eight places where the script, [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md) and [`milestones.md`](milestones.md) disagree, or where the rules are silent. This section decides each one. The decision of ADR 0004 does not change: items 2, 3, 4 and 6 make the script do what ADR 0004 states; items 1 and 7 make the matrix state the facts; items 5 and 8 settle what ADR 0004 does not state. Every check stays static and deterministic (ADR 0004, constraints). The repository of 2026-10-05 passes every new rule, and its matrix changes only in the milestones table and the new section of item 1.
+**Purpose.** The unit tests of `scripts/traceability.py` (OP-052) found eight places where the script, [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md) and [`milestones.md`](milestones.md) disagree, or where the rules are silent. This section decides each one. The decision of ADR 0004 does not change: items 2, 3, 4 and 6 make the script do what ADR 0004 states; items 1 and 7 make the matrix state the facts; items 5 and 8 settle what ADR 0004 does not state. Every check stays static and deterministic (ADR 0004, constraints). The repository of 2026-10-05 passes every new rule, and its matrix changes only in the milestones table and the new section of item 1. The rules added for Milestone 2 (one verifying test per software item, Python tests of C++ items, disabled tests, the version of the C++ items) are in §13.12.
 
 **Verifying test.** A test verifies a requirement if it carries the requirement's tag and lies in the folder of the requirement's Verification level: a `tests/requirements/` folder for `Requirement`, a `tests/system/` folder for `System` (ADR 0004 §5, §6). If the requirement is not defined in `srs.md`, or its Verification level is neither of the two, every test tagged with it counts; both cases already fail `--check`.
 
@@ -1830,7 +1831,7 @@ The real repository passes `--check` with the regenerated matrix.
 | Item | Runtime SOUP | Recorded |
 |---|---|---|
 | dsp | Python 3.11 (interpreter and standard library), NumPy, SciPy, wfdb | [`soup.md`](soup.md) |
-| libs/sinus-dsp | None beyond the C++ standard library of each toolchain | With the toolchain, at Milestone 2 |
+| libs/sinus-dsp | None beyond the C++ standard library and the C library of each toolchain: on the computer those of the compiler (GCC 14 with libstdc++ and glibc in CI), on the ESP32-S3 libstdc++ and newlib of the ESP-IDF v6.1 toolchain (§14.13). Used: `<cmath>` (`std::tan`, `std::cos`, `std::sqrt`, `std::floor`, `std::ceil` at configuration; `std::isfinite`, `std::fabs` per sample), no allocation | Planned in [`soup.md`](soup.md); a row with its review when the library code lands (group C2) |
 | firmware | ESP-IDF (drivers, ADC calibration, NimBLE Bluetooth LE host, C and C++ runtime libraries), FreeRTOS as shipped with ESP-IDF | At Milestone 4 |
 | desktop | Qt 6 (LGPL-3.0 modules only, §6.2); WFDB implementation (OP-050) | At Milestone 3 |
 | backend | FastAPI and its runtime dependencies; database and FHIR libraries chosen at Milestone 5 | At Milestone 5 |
@@ -1861,16 +1862,19 @@ Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, Google
 | [0003](../adr/0003-qt-desktop-application-with-replay.md) | Qt 6 desktop application with replay; Widgets or Qt Quick deferred (OP-033) |
 | [0004](../adr/0004-test-tagging-and-traceability-gates.md) | Test tagging and traceability gates |
 | [0005](../adr/0005-device-sampling-rate-360-hz.md) | Device sampling rate 360 Hz |
+| [0006](../adr/0006-verification-per-software-item.md) | Verification per software item: a requirement implemented by several items has a verifying test in each (proposed; amends ADR 0004) |
+| [0007](../adr/0007-cpp-coding-standard-and-static-analysis.md) | C++ coding standard, formatting and static analysis (proposed; OP-043) |
+| [0008](../adr/0008-arithmetic-of-the-real-time-library.md) | Arithmetic of the real-time library: binary64 signal conditioning, binary32 elsewhere (proposed; amends ADR 0002) |
 
 ## 12. Open points referenced
 
-OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-052, OP-056, OP-057, OP-061, OP-062, OP-063, OP-064, OP-066, OP-067, OP-069, OP-070, OP-071, OP-072. See [`open-points.md`](open-points.md). Closed open points stay listed. Since v0.3: OP-021 and OP-032 are closed (their Milestone 2 parts specified by `srs.md` v0.8 and designed in §13.5 and §13.6); OP-049 and OP-063 are designed in §13.4 and §13.2; OP-069 in §13.10.
+OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-046, OP-047, OP-049, OP-050, OP-051, OP-052, OP-056, OP-057, OP-061, OP-062, OP-063, OP-064, OP-066, OP-067, OP-069, OP-070, OP-071, OP-072. See [`open-points.md`](open-points.md). Closed open points stay listed. Since v0.3: OP-021 and OP-032 are closed (their Milestone 2 parts specified by `srs.md` v0.8 and designed in §13.5 and §13.6); OP-049 and OP-063 are designed in §13.4 and §13.2; OP-069 in §13.10. Since v0.4 (pending approval): the tolerances of OP-005 in §14.11, the memory limit of OP-049 in §14.10, OP-043 in ADR 0007 and §14.2, OP-046 for the library in §14.16, OP-057 in §14.3, OP-062 for the library in §14.15, OP-066 in §13.12, OP-067 in §14.12; OP-051 (closed) is cited for the emulator (§14.13), OP-014 for the processing time on the ESP32-S3.
 
 ## 13. Milestone 2 detailed design of `dsp`
 
 This section is the detailed design (IEC 62304 §5.4) of the reference side of the Milestone 2 requirements: the change of SRS-003, the reference parts of SRS-022 and SRS-024 to SRS-028, and SRS-023, SRS-029, SRS-030 and SRS-033, with the documented maximum delay of SRS-021. Everything in §8.1 and §8.2 holds unchanged (module rules, types, argument defaults, times in samples, determinism, writing files, requirement citations, errors). The detection rules of §8.7 do not change (OP-056): the trace of §13.3 records what the detector already does.
 
-The real-time library reproduces §13.3, §13.5 and §13.6 sample by sample; its own design (memory layout, binary32 arithmetic, interfaces) follows in a later version of this document. Wherever a quantity below decides a mark, a status or a count, it is computed on integers, so that the reference and the library decide alike; only the reported values (heart rate in bpm, signal quality index) are floating-point, compared within the tolerances of SRS-034 (OP-005).
+The real-time library reproduces §13.3, §13.5 and §13.6 sample by sample; its own design (memory layout, arithmetic, interfaces) is in §14. Wherever a quantity below decides a mark, a status or a count, it is computed on integers, so that the reference and the library decide alike; only the reported values (heart rate in bpm, signal quality index) are floating-point, compared within the tolerances of SRS-034 (OP-005).
 
 The choices below were checked with a prototype on synthetic signals only (the waveform of §7.2 at any heart rate, morphology variants, synthetic noise), never on the reference databases: the signal quality index in particular is fixed before its first run on them (§13.6).
 
@@ -1908,7 +1912,7 @@ class PipelineResult:
 
 After the conditioning: `trace = _trace(mains_mv, fs)`; `heart_rate = track_heart_rate(trace.detections.indices, trace.detections.startup, fs, n_samples, reported_at=trace.detections.reported_at)`; `quality = assess_quality(input_mv, trace)`. `detect_beats` and `detect_marked` stop after the trace (§13.3), so that the evaluation of detection does not pay for the rest.
 
-**Citations.** `heart_rate.py` and `quality.py` cite SRS-024 to SRS-026 and SRS-027, SRS-028 respectively; `qrs.trace_qrs` cites SRS-022. These requirements belong to both `dsp` and `libs/sinus-dsp` (`srs.md` v0.8): the traceability matrix counts any verifying test, so a Python requirement test alone shows them verified. The milestone verification and the release review check that each of them also has a C++ requirement test.
+**Citations.** `heart_rate.py` and `quality.py` cite SRS-024 to SRS-026 and SRS-027, SRS-028 respectively; `qrs.trace_qrs` cites SRS-022. These requirements belong to both `dsp` and `libs/sinus-dsp` (`srs.md` v0.8). Until v0.3 the traceability matrix counted any verifying test, so a Python requirement test alone showed them verified; from v0.4 each software item that implements a requirement needs its own verifying test (§13.12, ADR 0006), so the C++ requirement test is required as well.
 
 ### 13.2 Amplitude bound of the input (SRS-003; OP-063)
 
@@ -2087,11 +2091,11 @@ At sample `n`:
      - otherwise: `estimate_intervals` on the last `min(6, count)` intervals; status `valid` if in range, otherwise `out_of_range`; the rate in both cases.
 
      An event `(n, index, status, rate)` is reported, whatever the status (SRS-024: at each reliable detection).
-2. **No recent beat.** If `last` exists, "no recent beat" has not fired for it yet, and `n − last.index ≥ no_recent_beat_samples(fs_hz)`: it fires for `last`; `reset_at = n`; the intervals are cleared and `count = 0`; if the status is not already `no_recent_beat`, it becomes so and the event `(n, None, no_recent_beat, None)` is reported (SRS-024: at each change of validity).
+2. **No recent beat.** If `last` exists, "no recent beat" has not fired for it yet, and `n − last.index ≥ no_recent_beat_samples(fs_hz)`: it fires for `last`; `reset_at = n`; the intervals are cleared and `count = 0`; if the status is not already `no_recent_beat`, it becomes so and the event `(n, None, no_recent_beat, None)` is reported (SRS-024: at each change of its validity or of the reason for which it is withheld).
 
 **Readings of SRS-026** that this procedure makes exact:
-- "The last detection marked reliable reported until then" is `last` after step 1 of sample `n`: a detection reported at `n` counts at `n`. With the detector's report delay (§13.4, up to about 0.29 s on the normal path), a stretch without detections a little shorter than 3 s (from about 2.7 s) also gives "no recent beat", because the next detection is reported only after the 3 s have passed: this is what the statement says. A sequence given with `reported_at=None` reproduces the verification of SRS-026 literally (a stretch shorter than 3 s gives none).
-- "4 intervals whose detections all come after that sample": both detections of an interval have an index greater than `reset_at`. A detection with an earlier index reported later (for example by search-back) does not count.
+- "The last detection marked reliable reported up to and including that sample" is `last` after step 1 of sample `n`: a detection reported at `n` counts at `n`. With the detector's report delay (§13.4, up to about 0.29 s on the normal path), a stretch without detections a little shorter than 3 s (from about 2.7 s) also gives "no recent beat", because the next detection is reported only after the 3 s have passed: this is what the statement says. A sequence given with `reported_at=None` reproduces the verification of SRS-026 literally (a stretch shorter than 3 s gives none).
+- "4 intervals whose detections all have their index after that sample": both detections of an interval have an index greater than `reset_at`. A detection with an earlier index reported later (for example by search-back) does not count.
 - When "not enough beats" and "no recent beat" both hold, the status is `no_recent_beat`. Every rule that ends "no recent beat" (four new intervals) also ends "not enough beats".
 - If "no recent beat" fires again while it holds (a new gap after fewer than four new intervals), `reset_at` moves to the new sample and no event is reported (the status does not change).
 
@@ -2492,6 +2496,8 @@ class GoldenVector:
 
 `golden_vector` takes the new fields from `run_pipeline` (§13.1: `PipelineResult.detections`, `.heart_rate`, `.quality`). `render_golden_vector` and `parse_golden_vector` write and read them with the rules above, and `render_golden_vector` rejects with `InvalidInputError` any vector that would break them, as in §8.12. Every text that it returns is accepted by `parse_golden_vector`, which gives back an equal vector.
 
+**Notice (from v0.4, OP-067).** When it writes the record segments, `export_golden_vectors` also writes `NOTICE.md` into the output folder, with the constant text `NOTICE_TEXT` of `golden` given in §14.12, and `ExportSummary.notice` holds its path (`None` when no record segment is written). Every CI artifact that holds the vectors carries it (§14.12).
+
 **Size.** The new sections add a few kilobytes per file; the eight event inputs of §13.9 add about 6 MB. The set is about 22 MB (§7.5), still not stored in the repository.
 
 **Verification notes.**
@@ -2586,6 +2592,687 @@ flowchart BT
 - `golden` also imports `heart_rate` and `quality` for their types and constants.
 
 **Verification by role.**
-- QA, requirement tests in `dsp/tests/requirements/`: SRS-003 (updated), SRS-022, SRS-024 to SRS-028 (reference parts), SRS-030, SRS-033, SRS-015 (version 2). The C++ parts of SRS-022 and SRS-024 to SRS-028 are tested on the library when it exists.
+- QA, requirement tests in `dsp/tests/requirements/`: SRS-003 (updated), SRS-022, SRS-024 to SRS-028 (reference parts), SRS-030, SRS-033, SRS-015 (version 2). The C++ parts of SRS-022 and SRS-024 to SRS-028 are tested on the library (§14.17, §14.18).
 - Test engineer, system tests in `dsp/tests/system/` (`needs_data`, `needs_nstdb`): SRS-023, SRS-029, and the full report for the milestone verification report.
 - The listing of every false negative and false positive of the Milestone 1 evaluation with its detection path, the age of the search-back candidate and the preceding interval (OP-056) uses `Detections.paths` and `reported_at`; it changes no code and no result.
+
+### 13.12 Traceability checks for Milestone 2 (ADR 0006; OP-066)
+
+**Purpose.** From Milestone 2 a requirement can be implemented by two software items: SRS-022 and SRS-024 to SRS-028 name `dsp and libs/sinus-dsp`, and SRS-035 and SRS-038 name both as well. Under ADR 0004 a requirement counts as verified as soon as any verifying test exists, so the Python test alone would show such a requirement verified while the C++ library is not. [ADR 0006](../adr/0006-verification-per-software-item.md) (proposed) decides that **every software item that implements a requirement has its own verifying test**. This section is the design of `scripts/traceability.py` for that rule, for the disabled-test rule that comes with the first C++ tests (§8.16 item 5, OP-066) and for the version of the C++ library (§14.15). The developer implements it in group C1 (§14.18), with unit tests in `dsp/tests/unit/test_traceability.py`.
+
+**Software items of a requirement.** They are read from the line `**Software item:** …` of each requirement in `srs.md`:
+- entries are separated by `;`, and an entry may join items with ` and ` (`dsp and libs/sinus-dsp`);
+- a name may be followed by a qualifier in parentheses, which is ignored (`dsp (scripts)`, `libs/sinus-dsp (build for the ESP32-S3)`);
+- the names are those of the software items of §2: `dsp`, `desktop`, `firmware`, `backend` and `libs/<name>`, with `<name>` matching `[a-z0-9][a-z0-9-]*`;
+- `CI workflow` names the build configuration, which is not a software item. No test is attributed to it: a requirement that names it is verified through the tests of the items listed with it (SRS-016 through `dsp`, for example).
+
+New items of the rule "Requirement or milestone register errors" of `--check`: `SRS-nnn: no '**Software item:**' line`, `SRS-nnn: unknown software item '<text>'` and `SRS-nnn: no software item other than CI workflow`. A deleted requirement is exempt, as for its Milestone line. The eight distinct lines of `srs.md` v0.8.1 all parse (`dsp`; `dsp (scripts)`; `dsp (scripts); CI workflow`; `dsp (scripts); libs/sinus-dsp; CI workflow`; `dsp and libs/sinus-dsp`; `libs/sinus-dsp`; `libs/sinus-dsp (build for the ESP32-S3); CI workflow`; `libs/sinus-dsp; dsp (scripts)`).
+
+**Item of a file.** Its path from the repository root gives it: `dsp/…` belongs to `dsp`, `libs/<name>/…` to `libs/<name>`, `desktop/…`, `firmware/…` and `backend/…` to that item. The rule applies to the citations in production code and to the tests.
+
+**Code and tests of every item.**
+- Production code: the Python files of `dsp/sinus_dsp` and `dsp/scripts` as before, and now also the Python files of each C++ item outside its test folders and its `tools` folder (for example `libs/sinus-dsp/verification/emulator_log.py`, §14.13); the C and C++ files as before (ADR 0004 §1).
+- Python tests: the test files under `dsp/tests` and under the `tests` folder of each C++ item (`libs/<name>/tests`, later `desktop/tests` and `firmware/tests`), with the rules of ADR 0004 §2 and §3 and of §8.16 items 2 and 4 in each. A Python test of a C++ item verifies it from Python: the inspection of its CI job (SRS-036) or its detections on the reference databases through the harness (SRS-038). pytest collects them because `dsp/pyproject.toml` lists `../libs/sinus-dsp/tests` in `testpaths`: they run in the `dsp` environment, with the markers of `dsp/pyproject.toml` and the data hooks of `dsp/tests/conftest.py` (checked with pytest 9.1.1 on a fixture tree on 2026-10-08). `ruff` checks them with `dsp/pyproject.toml` as configuration (`uv run ruff check --config pyproject.toml ../libs`, and the same for `ruff format --check`).
+- C++ tests: as before (ADR 0004 §4).
+
+**Verifying test for an item.** A test verifies requirement R for item X when it carries R's tag, lies in the folder of R's Verification level (§8.16, "Verifying test") and its file belongs to X.
+
+**Rules** (changes to `--check` and `--release-gate`):
+1. "Implemented requirements without a verifying test" applies per item: an item whose production code cites R has a verifying test of R. Item: `SRS-nnn: implemented in <item> (cited in <files>) without a verifying test in <item>`.
+2. New rule of `--check`, "Requirements cited by an item that they do not name": the production code of an item cites R, and the item is not among R's software items. Item: `SRS-nnn: cited in <path>:<line>, but its software items are <items>`. It keeps the `Software item` lines truthful.
+3. New rule of `--check`, "Tests in the folder of an item that the requirement does not name": a test tagged with R lies in an item that R does not name. The test does not count. Item: `SRS-nnn names <items>, but is tagged in <test>`.
+4. Release gate: every requirement, not deleted, of a gated milestone has a verifying test in each of its software items. Item: `SRS-nnn (Mn, <status>): no verifying test in <item>`, one per item without one.
+5. New rule of `--check`, "Disabled requirement tests" (OP-066), as decided in §8.16 item 5: a tagged Python test with a decorator, or a `pytestmark` of its module or class, whose mark is an attribute named `skip` or `xfail` or a call of one (`skipif` is allowed), and a tagged C++ test whose suite or test name starts with `DISABLED_`. Item: `<test>: requirement test disabled (<how>)`. Such a test does not count. Calls inside a test body (`GTEST_SKIP()`, `pytest.skip()`) are not read; the review checks that they depend on a stated precondition.
+6. Rule "Software version" (§8.14) extended to the C++ items: each folder `libs/<name>` (later `desktop`, `firmware`) that holds a `CMakeLists.txt` holds a file `VERSION` with one line, equal to the version of `dsp/pyproject.toml` (§14.15). Items: `<file> not found`, `<file>: not one line`, `<file>: version <found>, expected <version> (as in dsp/pyproject.toml)`. The release gate lists a development version found in a `VERSION` file like the others, once per distinct version.
+
+**Order of the rules of `--check`.** Rule 3 right after "Tests in the wrong folder for the requirement's verification level"; rule 2 right after "Implemented requirements without a verifying test"; rule 5 right after "Malformed or dangling C++ requirement tags". The other rules keep their order and their messages; the help of `--check` and the docstring name the new rules.
+
+**Matrix** (`traceability.md`):
+- requirements table: a new column `Software items` after `Title`, with the items in the order of the line, joined by `, ` (`—` when there is none);
+- `Verified by`: the verifying tests, sorted, as before, then `**none in <item>**` for each software item without one; a requirement with one item and no test still shows `**none**`, a deleted one `deleted`;
+- milestones table: `With a verifying test` counts the requirements verified in each of their items;
+- gaps: "Requirements without tests" lists `SRS-nnn` when no item has a verifying test and `SRS-nnn (<item>, …)` when only some items lack one.
+
+**Migration.** SRS-001 to SRS-016 name `dsp` only and have their tests: their rows gain the new column and nothing else. SRS-022 and SRS-024 to SRS-028 show `**none in libs/sinus-dsp**` once their Python tests exist and until their C++ tests do; the release gate of M2 then lists them per item. The matrix is regenerated in the same change.
+
+**`Layout`** gains `python_test_roots` with each existing `tests` folder of a C++ item, the C++ item folders as roots of Python production code, and `version_files`.
+
+**Verification notes.** Developer's unit tests, each on a fixture tree that passes every other rule: the item parser on the eight lines above, on an unknown name, on a missing line and on `CI workflow` alone; rule 1 with a citation in `libs/x/src` and a test only in `dsp/tests/requirements`; rule 2; rule 3 with a test in `dsp/tests/system` for a requirement of `libs/x` only; rule 4 for a two-item requirement with a test in one item; rule 5 for a `pytest.mark.skip` decorator, `pytestmark = pytest.mark.xfail`, `skipif` (allowed), `DISABLED_Suite` and `Suite.DISABLED_Name`; rule 6 (absent, malformed, different, development version under `--release-gate`); a Python test file under `libs/x/tests/requirements` counted for `libs/x`; the new column and cells literally. The real repository passes `--check` with the regenerated matrix.
+
+## 14. Milestone 2 detailed design of `libs/sinus-dsp`
+
+This section is the detailed design (IEC 62304 §5.4) of the portable real-time library for SRS-017 to SRS-022, SRS-024 to SRS-028, SRS-031, SRS-032 and SRS-034 to SRS-038, with its build, its tests and its CI jobs. The library reproduces, sample by sample, the reference designs of §8.6 (filters), §8.7 (detection), §13.3 (marks, report samples, paths), §13.5 (heart rate) and §13.6 (signal quality index). Where this section does not restate a rule of those sections, that rule applies unchanged; this section adds what C++ needs: arithmetic, memory layout, interfaces, capacities, build and verification. The constraints of §5.1 hold, with the arithmetic of §14.3.
+
+No C++ compiler was used to write this version. Every numerical figure below comes from the analysis of each stage and from a binary32 model of this design written in Python, compared with the reference on the golden set and on the whole reference databases (§14.11).
+
+### 14.1 Decisions of this section
+
+| Topic | Decision | Where |
+|---|---|---|
+| Arithmetic | Signal conditioning in binary64, detection, heart rate and signal quality index in binary32, inputs and outputs in binary32; no contraction, no fast-math | §14.3, [ADR 0008](../adr/0008-arithmetic-of-the-real-time-library.md) (proposed), OP-057 |
+| Interfaces | One `Chain` per signal, configured once, one sample per call, events in a fixed-capacity output; components usable alone; heart-rate tracker fed with detections directly for its tests | §14.4 |
+| Memory | Fixed capacities sized for 1000 Hz; about 51.6 KB per chain; proposed limit 64 KiB | §14.10, SRS-032, OP-049 |
+| Tolerances | Conditioning 2e-5 mV; detection index and report sample 0 samples; heart rate 1e-4 bpm; signal quality index 0.01 (proposed) | §14.11, SRS-034, OP-005 |
+| Build and tools | CMake ≥ 3.25 with presets; GoogleTest 1.18.0 by URL and SHA-256; CMake, Ninja, clang-format, clang-tidy and gcovr pinned in a uv project | §14.2 |
+| Coding standard | ISO C++17, project rules, clang-format and clang-tidy, warnings as errors | [ADR 0007](../adr/0007-cpp-coding-standard-and-static-analysis.md) (proposed), OP-043 |
+| Verification code | Golden reader, equivalence check and results in `verification/`, used on the computer and on the ESP32-S3 | §14.12, §14.13 |
+| ESP32-S3 | ESP-IDF v6.1 in its pinned container image; vectors as a binary pack in a data partition of a 16 MB flash image; Espressif QEMU | §14.13, SRS-036 |
+| Whole databases | A C interface to the library, called from Python with `ctypes` | §14.14, SRS-038 |
+| Identity | One version per milestone for every software item (`VERSION`); a source digest of the library | §14.15, OP-062 |
+| SBOM | CycloneDX 1.6 JSON written by CMake from a template | §14.16, OP-046 |
+| Traceability | One verifying test per implementing software item; C++ tests and Python tests of C++ items | §13.12, §14.17, [ADR 0006](../adr/0006-verification-per-software-item.md) (proposed) |
+
+### 14.2 Layout, build and development tools
+
+**Layout.**
+
+```
+libs/sinus-dsp/
+  CMakeLists.txt          # targets, options, flags, tests
+  CMakePresets.json       # host presets (below)
+  VERSION                 # one line: the version (§14.15)
+  .clang-format           # ADR 0007
+  .clang-tidy             # ADR 0007
+  cmake/                  # SinusDspSources.cmake (source lists, also read by the ESP-IDF components),
+                          # SourceDigest.cmake (identity, §14.15), Flags.cmake, Sbom.cmake, sbom.cdx.json.in
+  include/sinus/dsp/      # public headers of the real-time library (§14.4)
+  src/                    # its implementation and private headers
+  verification/           # golden-vector reader, equivalence check, results, pack (§14.12, §14.13):
+    include/sinus/dsp/verification/   src/   tools/   emulator_log.py
+  harness/                # C interface for the whole-database comparison (§14.14)
+  esp-idf/                # ESP-IDF components sinus_dsp and sinus_dsp_verification (§14.13)
+  tools/                  # uv project pinning the development tools (below)
+  tests/
+    unit/                 # developer: GoogleTest
+    requirements/         # QA: GoogleTest; pytest where Python is needed
+    system/               # test engineer: GoogleTest, pytest; esp32s3_equivalence/ (ESP-IDF test app, §14.13)
+  README.md
+```
+
+- The **library** is the CMake target `sinus_dsp` (alias `sinus::dsp`), a static library built from `src/` with the public headers of `include/`. It is the only code linked into the firmware and the desktop application.
+- The **verification code** (`verification/`) is a separate target, `sinus_dsp_verification`, never linked into the firmware or the desktop application. It implements the check of SRS-034, SRS-035 and SRS-037 and is itself verified by QA (§14.12). It may allocate memory and use `std::vector` and `std::string`; it uses no exceptions, so that the ESP32-S3 test app can run it.
+- `harness/` builds the shared library `sinus_dsp_harness`, on the computer only (§14.14).
+- `build/`, `build-*` and `_deps/` folders are output: git ignores `build/` (`.gitignore`), and `traceability.py` never scans them (ADR 0004 §1).
+
+**CMake.** `cmake_minimum_required(VERSION 3.25)` (presets schema 6). `project(sinus_dsp VERSION <numeric part of VERSION> LANGUAGES CXX)`. `CMAKE_CXX_STANDARD 17`, `CMAKE_CXX_STANDARD_REQUIRED ON`, `CMAKE_CXX_EXTENSIONS OFF`. Options: `SINUS_DSP_BUILD_TESTS` (default `ON` when the project is the top level), `SINUS_DSP_BUILD_HARNESS` (default `ON` on the computer). The source lists are in `cmake/SinusDspSources.cmake`, which the ESP-IDF components include, so that no source file is listed twice and none is copied (§5.3).
+
+**Presets** (`CMakePresets.json`, generator Ninja, binary folder `build/<preset>`, the compiler taken from `CXX`):
+
+| Preset | Build type | Adds | Used |
+|---|---|---|---|
+| `debug` | `Debug` | — | locally |
+| `release` | `Release` (`-O2`) | — | CI and locally; the equivalence check runs on this build |
+| `asan-ubsan` | `Debug` | `-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer` | CI (Linux) |
+| `coverage` | `Debug` | `--coverage` (GCC) | CI; gcovr summary uploaded as an artifact, no threshold |
+| `tidy` | `Debug` | `CMAKE_CXX_CLANG_TIDY` set to the pinned clang-tidy, on the library, `verification/` and `harness/` | CI (gate) |
+
+**Compiler options** (`cmake/Flags.cmake`):
+- Library, verification code and harness: `-fno-exceptions -fno-rtti -ffp-contract=off` and the warnings `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wdouble-promotion -Wfloat-conversion -Wshadow -Wcast-align -Wold-style-cast -Wnon-virtual-dtor -Woverloaded-virtual -Wnull-dereference -Wimplicit-fallthrough -Wundef -Werror`; with GCC also `-Wduplicated-cond -Wlogical-op -Wuseless-cast`.
+- Tests: `-ffp-contract=off -Wall -Wextra -Werror`; GoogleTest is built with its own defaults.
+- Never: `-ffast-math`, `-Ofast`, `-funsafe-math-optimizations`, `-ffinite-math-only`, `-fassociative-math`. The configuration fails if `CMAKE_CXX_FLAGS` contains one of them (OP-057).
+- `-Wdouble-promotion` stays an error: every use of `double` in the real-time path is explicit (§14.3).
+
+**GoogleTest** 1.18.0 (C++17 minimum), fetched with `FetchContent` from the release asset `https://github.com/google/googletest/releases/download/v1.18.0/googletest-1.18.0.tar.gz`, `URL_HASH SHA256=6e3191c1455468b3fc35a417fb565c1c5071aee1b7e7f85e30cf48a98d37d8b5` (894 741 bytes; checked on 2026-10-08, equal to the digest that GitHub states for the asset). A computer without network access sets `FETCHCONTENT_SOURCE_DIR_GOOGLETEST` to a copy. GoogleTest is a test tool, not SOUP (`sdp.md` §7), and is not part of any artifact.
+
+**Development tools pinned by uv.** `libs/sinus-dsp/tools/pyproject.toml` is a uv project that installs no package of its own (`[tool.uv] package = false`) and pins `cmake==4.4.4`, `ninja==1.13.2`, `clang-format==22.1.8`, `clang-tidy==22.1.8` and `gcovr==8.6`; `tools/uv.lock` is committed (wheels exist for Windows and Linux, checked on PyPI on 2026-10-08). The same versions therefore run locally and in CI: `uv sync --locked --project libs/sinus-dsp/tools`, then `uv run --project libs/sinus-dsp/tools cmake --preset release`. They are development tools, updated deliberately like the dependencies of `dsp` (`cybersecurity.md` §7.4). The compilers are not pinned this way: CI uses those of the runner image (GCC 14.2.0 and Clang 18.1.3 on `ubuntu-24.04`, image of 2026-09-27) and of ESP-IDF (§14.13); every result states the compiler (§14.12).
+
+**Local environment.** The development computer has no C++ compiler yet; which toolchain it gets is a decision of the project owner. With the LLVM-MinGW toolchain proposed for it (Clang and libc++ for Windows, installed per user) and the tools above, a developer builds the library and runs the unit, requirement and equivalence tests locally. Only CI runs the GCC and Clang builds on Linux, the sanitizers, the clang-tidy gate and the ESP32-S3 emulator. `std::from_chars` for `double`, used by the golden-vector reader, needs libstdc++ from GCC 11 or libc++ from LLVM 20.
+
+### 14.3 Arithmetic (ADR 0008, proposed; OP-057)
+
+**Precision of each part.**
+- **Inputs and outputs** are binary32 (`float`), in mV, as in §4.2.
+- **Signal conditioning** (the baseline wander and mains stages) computes in **binary64**. Measured with a binary32 model, a binary32 baseline stage differs from the reference by up to 0.71 µV on the golden set and 3.5 µV on record 118e_6 of the Noise Stress Test Database, and by 4.3 µV on a 6 mV synthetic input at 1000 Hz (§14.11): its poles lie so close to z = 1 (radius 0.9939 at 360 Hz) that rounding noise inside the recursion is amplified about 730 times at 360 Hz and 3 400 times at 1000 Hz. In binary64 the difference is the final rounding to binary32 and the rounding of the input, at most 0.0018 µV on all the data.
+- **Detection, heart rate and signal quality index** compute in **binary32**. Their decisions are identical to the reference on all 150 109 detections checked (§14.11); their values differ by rounding only.
+- **Configuration** uses binary64 (filter design, conversions of times to samples, constants).
+
+**Conditioning, binary64.** Each stage is a second-order section in transposed direct form II with the operation order of `scipy.signal.sosfilt`:
+
+```cpp
+// x and the state z1, z2 in double; coefficients as designed in §8.6 (double)
+const double y = b0 * x + z1;
+z1 = (b1 * x - a1 * y) + z2;
+z2 = b2 * x - a2 * y;
+```
+
+- The input is `static_cast<double>(sample_mv)`. The baseline stage starts in the state of §8.6 for a constant input equal to the first sample, computed in binary64 with the formula of `initial_state`, in its order of operations. The mains stage takes the binary64 output of the baseline stage, never its rounded value, and starts in the state for that stage's first input, which is exactly 0.0 (§8.6: the baseline output of the first sample is exactly zero).
+- Coefficients: the design formulas of §8.6, in binary64 and in the same order of operations, including the notch's `b1 = g * (-2.0 * cos(w0))` and `a1 = (-2.0 * g) * cos(w0)`. `std::tan`, `std::cos` and `std::sqrt` may differ from Python's in the last bit on another C library; the resulting difference of the outputs is of the order of 1e-13 mV.
+- Outputs: `static_cast<float>` of each stage's binary64 output (rounding to nearest), as `baseline_mv` and `conditioned_mv`.
+
+**Detection, binary32.** Every operation in this order; coefficients are their binary64 design rounded once (`static_cast<float>`):
+1. Band-pass: two binary32 sections (high-pass 5 Hz, low-pass 15 Hz) in the order above, starting in the state of §8.6 computed in binary32 from the first conditioned sample, which is 0.0f, so a zero state.
+2. Derivative: `d = ((c4 * b[n-4] + c3 * b[n-3]) + c1 * b[n-1]) + c0 * b[n]` with `c0 = float(fs / 8)`, `c1 = float(fs / 4)`, `c3 = -c1`, `c4 = -c0`, and `b[k] = 0.0f` for `k < 0`. The tap of `b[n-2]`, whose coefficient is zero, is left out.
+3. Squaring: `s = d * d`.
+4. Integration: `y = sum / static_cast<float>(N)`, where `sum` adds `s[n-N+1]` to `s[n]` in that order (oldest first) in binary32, with `s[k] = 0.0f` for `k < 0`. A running sum is not used: its error would grow with the length of the stream.
+5. Peak tracker (§8.7.2): `y > y_previous && y > v && y >= kMinIntegrated` and the confirmation `y < v * 0.5f || n - m > P`. `kMinIntegrated = 0x1.a36e3p-14f` (1.0000000474974513e-4), the smallest binary32 value not below 1e-4, so that for every binary32 `y` the comparison gives the result of the comparison with the real number 1e-4, as the reference does.
+6. Peak features (§8.7.2): the first index of the largest `|b|` over `[max(0, m−N−1), max(0, m−2)]`, `peak_f = |b[k*]|`, `f = max(0, k* − D)`, `slope` = the largest `|d|` over `[max(0, m−N+1), m]`, `peak_i = y[m]`.
+7. Levels and thresholds (§8.7.3): `spki = 0.125f * p + 0.875f * spki` (search-back: `0.25f` and `0.75f`), `npki = 0.125f * p + 0.875f * npki`, the same for `spkf`, `npkf`; `th1 = npk + 0.25f * (spk - npk)`, `th2 = 0.5f * th1`; T wave: `slope < 0.5f * last_slope`.
+8. Initialisation (§8.7.3): `spki = max(y_w) / 3.0f`, `npki = (S(y_w) / static_cast<float>(count)) / 2.0f`, the same for `|b|`, where `S` is the compensated sum below, in index order. The reference uses `math.fsum`, which is correctly rounded; a compensated binary32 sum is within a few units in the last place of it.
+9. Search-back interval limit (§8.7.3): `(166 * total + 50 * count) / (100 * count)` in integers (`std::uint64_t`), with `total` the sum of the `count` ≤ 8 stored intervals. This equals the reference's `floor(1.66 * fsum(rr) / count + 0.5)` in binary64 for every total up to 200 000 and every count from 1 to 8 (checked exhaustively); a stored interval is shorter than G, so the total stays below 8·G ≤ 64 000.
+
+**Heart rate, binary32.** Every decision on integers (§13.5). The rate is `(rate60 * static_cast<float>(k)) / static_cast<float>(span)` with `rate60 = static_cast<float>(60.0 * fs_hz)` computed at configuration; `k` ≤ 6 and the span (< 2²⁴) convert exactly.
+
+**Signal quality index, binary32.** Sums of `s` by the compensated sum below (§14.9); then `S = e_zone / static_cast<float>(n_zone)`, `B = std::max(0.0f, e_total - e_zone) / static_cast<float>(W - n_zone)` and `index = S / (S + 16.0f * B)`.
+
+**Compensated sum** (Neumaier), binary32, for every sum that the reference computes with `math.fsum`:
+
+```cpp
+// state: sum, compensation (float); add(v):
+const float t = sum + v;
+compensation += (std::fabs(sum) >= std::fabs(v)) ? (sum - t) + v : (v - t) + sum;
+sum = t;
+// value: sum + compensation
+```
+
+It is correct only if the compiler neither contracts nor reassociates floating-point operations, which the options of §14.2 guarantee.
+
+**Times in samples.** Every parameter in samples is computed at configuration in binary64 with the expressions of §8.2, `_units` and §13.5, §13.6 written the same way: `std::floor(t_ms * fs_hz / 1000.0 + 0.5)`, `std::floor(t_ms * fs_hz / 1000.0)`, `std::ceil(t_ms * fs_hz / 1000.0)`, `std::floor(t_s * fs_hz + 0.5)`, with `t_ms`, `t_s` and products such as `300 * k` exact in binary64. IEEE 754 binary64 evaluates the same expression to the same value on every target (correct rounding, no contraction), so the library obtains the same integers as the reference at every sampling frequency, including one that is not a whole number of hertz (SRS-027).
+
+**No contraction, no fast-math (OP-057).** GCC contracts `a * b + c` into a fused multiply-add by default outside ISO mode, as ESP-IDF builds (`-std=gnu++2b`), and the ESP32-S3 has fused instructions (`madd.s`); Clang contracts within an expression by default wherever the target has them. `-ffp-contract=off` is therefore set on every target (§14.2). Two checks: a unit test computes, from `volatile` operands, an expression whose fused and unfused results differ and requires the unfused one; the same check runs first in the ESP32-S3 test app (§14.13). The baseline stage's output for a constant input is then exactly 0.0, as in the reference (§8.6), which a unit test checks at 125, 360 and 1000 Hz.
+
+**Cost on the ESP32-S3**, which has no binary64 unit: the two conditioning stages are about 20 software binary64 operations per sample, of the order of a few thousand cycles, below 1 % of one 240 MHz core at 360 Hz. The emulator cannot measure it; the processing time per sample is measured with the firmware (OP-014).
+
+### 14.4 Modules and public interfaces
+
+**Modules** (namespace `sinus::dsp`; headers in `include/sinus/dsp/`, sources in `src/`):
+
+| Header | Content | Requirements |
+|---|---|---|
+| `status.hpp` | `Status` | SRS-017, SRS-018 |
+| `limits.hpp` | Supported range of sampling frequency and amplitude; capacities (§14.10) | SRS-017, SRS-018, SRS-032 |
+| `config.hpp` | `Config`, `validate`, the parameters in samples | SRS-017 |
+| `biquad.hpp` | Filter design (binary64) and the binary64 and binary32 sections | SRS-019, SRS-020 |
+| `conditioner.hpp` | Baseline wander and mains stages | SRS-019 |
+| `qrs_detector.hpp` | Streaming detection with marks, report samples and paths | SRS-020, SRS-021, SRS-022 |
+| `heart_rate.hpp` | Heart-rate tracker | SRS-024, SRS-025, SRS-026 |
+| `signal_quality.hpp` | Signal quality index per window | SRS-027, SRS-028 |
+| `chain.hpp` | The complete processing chain, input checks, restart | SRS-017, SRS-018, SRS-031, SRS-032 |
+| `version.hpp` | Identity of the library (§14.15) | SRS-037 |
+
+Private headers in `src/`: `ring.hpp` (fixed-capacity ring indexed by the sample counter), `compensated_sum.hpp` (§14.3). Each public function cites in its comment the requirements it implements, and only those (§8.2, "Requirement citations"); citing one claims the requirement for `libs/sinus-dsp` (§13.12).
+
+**Rules for every interface.**
+- Every function is `noexcept`. Functions that can fail return a `Status` and are `[[nodiscard]]`. No function allocates memory (§14.10).
+- An object is usable only after a successful `configure`; `reset` returns it to the state that follows `configure` with the same configuration (§5.2, SRS-031).
+- Sample indices are `std::uint64_t` in the time base of the stream: 0 is the first sample after `configure` or `reset` (`srs.md`, "stream").
+- Values in mV and bpm are `float`; a value that does not exist (the rate of a withheld heart rate) is a quiet NaN, and a flag or a status says whether it exists.
+
+```cpp
+// status.hpp
+enum class Status : std::uint8_t {
+  kOk,                        // the sample was processed; the output holds its results
+  kNotConfigured,             // no valid configuration (SRS-017)
+  kInvalidSamplingFrequency,  // configure: not finite, or outside 125 Hz to 1000 Hz (SRS-017)
+  kInvalidMainsFrequency,     // configure: neither 50 Hz nor 60 Hz (SRS-017)
+  kInvalidSample,             // process: not finite, or magnitude above 1000 mV (SRS-018)
+  kStopped,                   // process: an earlier sample was invalid; no output until reset (SRS-018)
+  kInvalidArgument,           // a component called with arguments that break its preconditions (below)
+};
+
+// limits.hpp
+inline constexpr double kMinSamplingFrequencyHz = 125.0;
+inline constexpr double kMaxSamplingFrequencyHz = 1000.0;
+inline constexpr float kMaxAbsSampleMv = 1000.0f;
+// capacities, sized for kMaxSamplingFrequencyHz (§14.10)
+inline constexpr std::size_t kMaxDetectionsPerSample = 12;
+inline constexpr std::size_t kMaxHeartRateEventsPerSample = 12;
+inline constexpr std::size_t kChainMemoryLimitBytes = 65536;   // SRS-032, proposed (§14.10)
+
+// config.hpp
+struct Config {
+  double sampling_frequency_hz = 0.0;
+  int mains_frequency_hz = 0;   // 50 or 60
+};
+[[nodiscard]] Status validate(const Config& config) noexcept;          // SRS-017
+
+struct DetectorSamples {     // §8.7, table "Parameters in samples"
+  std::uint32_t band_delay, window, peak_timeout, refractory, t_wave_window, learning, relearn_after;
+};
+struct QualitySamples {      // §13.6, table "Parameters"
+  std::uint32_t block, window, held, report_delay, zone;
+};
+// Preconditions: a sampling frequency that validate accepts.
+[[nodiscard]] DetectorSamples detector_samples(double fs_hz) noexcept;
+[[nodiscard]] QualitySamples quality_samples(double fs_hz) noexcept;
+[[nodiscard]] std::uint32_t no_recent_beat_samples(double fs_hz) noexcept;   // ceil(3000 * fs / 1000)
+
+// biquad.hpp
+struct BiquadCoefficients { double b0, b1, b2, a1, a2; };   // a0 = 1, as the [coefficients] rows
+[[nodiscard]] BiquadCoefficients butterworth2_highpass(double cutoff_hz, double fs_hz) noexcept;
+[[nodiscard]] BiquadCoefficients butterworth2_lowpass(double cutoff_hz, double fs_hz) noexcept;
+[[nodiscard]] BiquadCoefficients notch(double notch_hz, double q, double fs_hz) noexcept;
+[[nodiscard]] BiquadCoefficients baseline_coefficients(double fs_hz) noexcept;              // 0.5 Hz high-pass
+[[nodiscard]] BiquadCoefficients mains_coefficients(double fs_hz, int mains_hz) noexcept;   // notch, Q = 30
+class BiquadF64 {   // transposed direct form II in binary64 (§14.3)
+ public:
+  void set(const BiquadCoefficients& c) noexcept;
+  void start(double first_input) noexcept;   // steady state for a constant input (§8.6)
+  [[nodiscard]] double step(double x) noexcept;
+};
+class BiquadF32 {   // the same in binary32, coefficients rounded once
+ public:
+  void set(const BiquadCoefficients& c) noexcept;
+  void start(float first_input) noexcept;
+  [[nodiscard]] float step(float x) noexcept;
+};
+```
+
+The design functions take values that the configuration has already validated; they are pure, and a unit test compares them with the `[coefficients]` rows of the golden vectors and with the formulas of §8.6 at 125, 250, 360, 500 and 1000 Hz (within 4 units in the last place of binary64).
+
+```cpp
+// conditioner.hpp (SRS-019)
+struct ConditionedSample { float baseline_mv; float conditioned_mv; };
+class Conditioner {
+ public:
+  [[nodiscard]] Status configure(const Config& config) noexcept;
+  void reset() noexcept;
+  // Precondition: a finite sample within kMaxAbsSampleMv (Chain checks it).
+  [[nodiscard]] Status process(float sample_mv, ConditionedSample& out) noexcept;
+};
+
+// qrs_detector.hpp (SRS-020, SRS-021, SRS-022)
+enum class Mark : std::uint8_t { kStartUp, kReliable };
+enum class DetectionPath : std::uint8_t { kNormal, kSearchBack, kLearning };
+struct Detection {
+  std::uint64_t index;         // fiducial point, time base of the stream (SRS-020)
+  std::uint64_t reported_at;   // the sample at which it is reported (§13.3); index <= reported_at
+  Mark mark;                   // SRS-022
+  DetectionPath path;          // §13.3; diagnostic, not compared with the reference
+};
+struct ZoneSums {               // for the signal quality index (§14.9)
+  std::uint64_t peak;           // m, the peak of the integrated signal
+  float first_part;             // compensated sum of s over the zone's part in the block of its first sample
+  float second_part;            // over the part in the next block (0.0f if none)
+};
+struct DetectorStep {
+  float squared_derivative = 0.0f;   // s of this sample (§8.7.1, step 3)
+  std::size_t count = 0;             // detections reported at this sample, in the order of §8.7.3
+  std::array<Detection, kMaxDetectionsPerSample> detections{};
+  std::array<ZoneSums, kMaxDetectionsPerSample> zones{};
+};
+class QrsDetector {
+ public:
+  [[nodiscard]] Status configure(double fs_hz) noexcept;
+  void reset() noexcept;
+  [[nodiscard]] Status process(float conditioned_mv, DetectorStep& out) noexcept;
+};
+
+// heart_rate.hpp (SRS-024, SRS-025, SRS-026)
+enum class HeartRateStatus : std::uint8_t { kValid, kNotEnoughBeats, kNoRecentBeat, kOutOfRange };
+struct HeartRateEvent {
+  std::uint64_t sample;        // the sample at which it is reported
+  std::uint64_t beat_index;    // index of its reliable detection; meaningful when has_beat
+  bool has_beat;               // false for a change of status at no detection
+  HeartRateStatus status;
+  float bpm;                   // kValid and kOutOfRange; a quiet NaN otherwise
+};
+struct ReportedDetection { std::uint64_t index; Mark mark; };
+struct HeartRateStep {
+  std::size_t count = 0;
+  std::array<HeartRateEvent, kMaxHeartRateEventsPerSample> events{};
+};
+class HeartRateTracker {
+ public:
+  [[nodiscard]] Status configure(double fs_hz) noexcept;   // the checks of SRS-017 on fs_hz
+  void reset() noexcept;
+  // One sample of the stream, with the detections reported at it, in order. Also the entry point
+  // with which the tests of SRS-024 to SRS-026 give sequences of detections directly.
+  [[nodiscard]] Status step(const ReportedDetection* reported, std::size_t count,
+                            HeartRateStep& out) noexcept;
+};
+
+// signal_quality.hpp (SRS-027, SRS-028)
+inline constexpr float kUsableThreshold = 0.5f;     // §13.6
+inline constexpr float kBackgroundWeight = 16.0f;   // §13.6
+struct QualityWindow {
+  std::uint64_t first_sample, last_sample, reported_at;
+  float index;     // 0 to 1
+  bool usable;     // index >= kUsableThreshold
+};
+class SignalQuality {
+ public:
+  [[nodiscard]] Status configure(double fs_hz) noexcept;
+  void reset() noexcept;
+  // One sample: the input sample as given, and the detector's output for it.
+  [[nodiscard]] Status step(float input_mv, const DetectorStep& detector, bool& has_window,
+                            QualityWindow& window) noexcept;
+};
+
+// chain.hpp (SRS-017, SRS-018, SRS-031, SRS-032)
+struct SampleOutput {
+  float baseline_mv = 0.0f;
+  float conditioned_mv = 0.0f;
+  std::size_t detection_count = 0;
+  std::array<Detection, kMaxDetectionsPerSample> detections{};
+  std::size_t heart_rate_count = 0;
+  std::array<HeartRateEvent, kMaxHeartRateEventsPerSample> heart_rates{};
+  bool has_window = false;
+  QualityWindow window{};
+};
+class Chain {
+ public:
+  Chain() noexcept;                                         // not configured
+  [[nodiscard]] Status configure(const Config& config) noexcept;
+  void reset() noexcept;                                    // new stream, same configuration (SRS-031)
+  [[nodiscard]] Status process(float sample_mv, SampleOutput& out) noexcept;
+  [[nodiscard]] bool configured() const noexcept;
+  [[nodiscard]] const Config& config() const noexcept;
+};
+static_assert(sizeof(Chain) <= kChainMemoryLimitBytes);   // SRS-032
+
+// version.hpp (§14.15)
+struct LibraryIdentity { const char* version; const char* source_sha256; };
+[[nodiscard]] LibraryIdentity library_identity() noexcept;
+```
+
+**Behaviour of `Chain::process`.** It returns `kOk` and fills `out` for a processed sample (counts 0 and `has_window` false when the sample reports nothing). With any other status, `out` holds no result: both values 0.0f, both counts 0, `has_window` false (SRS-017, SRS-018: "no output of any kind"). Within one sample the order is: conditioning; detection; heart rate with the detections reported at this sample; signal quality with the same detections. The events of a sample are those of the reference at that sample, in its order (§13.3, §13.5, §13.6).
+
+**Preconditions of the components** (`kInvalidArgument`, design behaviours, developer's unit tests; the `Chain` never breaks them): `HeartRateTracker::step` with `count` above `kMaxDetectionsPerSample`, a null pointer with a non-zero count, an index above the current sample, or an index not greater than every earlier one; any `process` or `step` before `configure` returns `kNotConfigured`. A rejected call changes no state.
+
+**Capacities per sample.** At most 12 detections are reported at one sample: an initialisation accepts at most ⌈L / R⌉ = 10 stored peaks (accepted peaks are at least R apart and lie in L samples; L / R = 10 at every sampling frequency, by the conversions of §8.7), and at a sample without initialisation at most one by the normal thresholds and one by search-back. At most 11 heart-rate events (one per reliable detection, and one change of status), and at most one window (one every H samples). The capacities are 12; a unit test checks the bounds over every sampling frequency from 125 Hz to 1000 Hz in steps of 0.5 Hz.
+
+### 14.5 Configuration checks and invalid samples (SRS-017, SRS-018)
+
+**`Chain::configure(config)`** checks, in this order, and stops at the first failure:
+1. `sampling_frequency_hz` is finite (`std::isfinite`) and `125.0 ≤ fs ≤ 1000.0` (bounds included, compared in binary64): otherwise `kInvalidSamplingFrequency`;
+2. `mains_frequency_hz` is 50 or 60: otherwise `kInvalidMainsFrequency`.
+
+On failure the chain becomes not configured, whatever it was before: every later `process` returns `kNotConfigured` with no output, until a successful `configure`. On success it designs the filters, computes every parameter in samples (§14.3, "Times in samples") and starts a new stream, as `reset` does. The components check the sampling frequency the same way (`kInvalidSamplingFrequency`); `Conditioner` also checks the mains setting.
+
+**`Chain::process(sample_mv, out)`**, in this order:
+1. not configured: `kNotConfigured`;
+2. stopped by an earlier invalid sample: `kStopped`;
+3. `!std::isfinite(sample_mv) || std::fabs(sample_mv) > kMaxAbsSampleMv`: the chain is stopped, `kInvalidSample`;
+4. otherwise the sample is processed: `kOk`.
+
+With 2 or 3 the sample changes no state and counts as no sample of the stream: the stream ends there. `reset` clears the stop and starts a new stream (SRS-018, SRS-031). The comparison is made in binary32 on the value given: 1000.0f and −1000.0f are processed, 1000.00006103515625 (the next binary32 value) is rejected (SRS-018 verification); a NaN fails `std::isfinite` first.
+
+**Verification notes.** QA, on the computer (SRS-017): each rejected configuration of the SRS (124.9 Hz, 1000.1 Hz, NaN, ±infinity; mains 49, 51, 59, 61, 100 Hz) returns its status, and the following samples return `kNotConfigured` with an empty output; 125 Hz and 1000 Hz with each mains setting are accepted. SRS-018: the synthetic ECG with one sample replaced after 10 s, as listed in the SRS; the status at that sample, `kStopped` and an empty output after it; after `reset`, outputs equal to those of a newly configured chain given the same samples (compare every field of `SampleOutput`, values bit for bit).
+
+### 14.6 Real-time signal conditioning (SRS-019)
+
+**Module.** `conditioner`. Two `BiquadF64`: `baseline_coefficients(fs)`, then `mains_coefficients(fs, mains)` (§8.6), with the arithmetic and the initial states of §14.3. Each processed sample returns both stage outputs (`baseline_mv`, `conditioned_mv`) in the same call: the conditioning adds no delay (SRS-019), since an output exists before the next sample is given.
+
+**Edge cases.** A constant input gives `baseline_mv` exactly 0.0f from the first sample (no contraction, §14.3). The binary64 stages cannot overflow for an accepted input (|x| ≤ 1000 mV; §13.2).
+
+**Verification notes.** QA (SRS-019): the inputs and measurement rule of SRS-004 and SRS-005 (§8.6, "Settling time and the verification rule"), given one sample at a time through `Chain::process`, at 360 Hz and 250 Hz and both mains settings; the gains computed from the `baseline_mv` and `conditioned_mv` outputs meet the criteria of §8.6. The equivalence of the values with the reference is SRS-034.
+
+### 14.7 Streaming detection (SRS-020, SRS-021, SRS-022)
+
+**Module.** `qrs_detector`. The procedure is that of §8.7.3, sample by sample, with the bookkeeping of §13.3 and the arithmetic of §14.3; the reference's `_trace` is its specification, and the golden vectors check it (SRS-034).
+
+**State** (capacities for 1000 Hz, §14.10): the two band-pass sections; rings of `b` (N + P + 3 samples, the look-back of the fiducial search: a peak at `m` is confirmed at the latest at `m + P + 1` and needs `b` from `m − N − 1`), of `d` (N + P + 1, for the slope) and of `s` (N, for the integration); the learning windows of `y` and `|b|` (L samples each, for the initialisation); the store of peaks; the last QRS and the search-back candidate (copies of peak records); the four levels; up to 8 intervals with the RR flag and the current search-back limit; `init_n`; the tracker (`v`, `m`, previous `y`); the sample counter `n`; the current path.
+
+**Peak records.** `{ m (std::uint64_t), m − f (std::uint16_t, at most N + 1 + D ≤ 187), peak_i, peak_f, slope, zone parts (float ×2) }`, 32 bytes. The zone parts are the compensated sums of `s` over the zone `[max(0, m − N + 1), m]` of §13.6, split at the block boundary that the zone crosses, computed when the peak is confirmed (the samples are then in the ring of `d`: `s = d * d` recomputed in the same order), so that a detection accepted later, by search-back or at an initialisation, still has them.
+
+**Store of peaks.** The reference keeps every confirmed peak whose `m` lies within the last L samples (§8.7.3). Consecutive peaks are at least 2 samples apart: a peak at `m` is confirmed at a sample `c ≥ m + 1`, at which the tracker restarts without taking a new maximum, so the next peak is at `m' ≥ c + 1 ≥ m + 2`. A window of L samples therefore holds at most L / 2 peaks: the store has a fixed capacity of 1 000 records (L = 2 000 at 1000 Hz) and can never overflow; the oldest records are dropped as in `store` (§8.7.3).
+
+**Per sample** (§8.7.3, with §13.3):
+1. linear stages and the tracker (§14.3, steps 1 to 5); `y` and `|b|` are written into the learning windows;
+2. a peak confirmed at `n`: its features and zone parts, stored; classified if the detector is initialised;
+3. at `n = L − 1`: initialisation (path `kLearning` while it classifies the stored peaks);
+4. for `n ≥ L`: search-back (path `kSearchBack` for its acceptance), then the re-learning test.
+
+Each acceptance appends a `Detection` with `index = f`, `reported_at = n`, the current path and the mark of §13.3 (`kStartUp` if `max(0, i − L + 1) ≤ f ≤ i` with `i = init_n`), and the peak's `ZoneSums`.
+
+**Work per sample.** A sample costs the linear stages and N additions for the integration. The largest cost is a sample with an initialisation: two compensated sums over L samples, two maxima, and the classification of at most L / 2 stored peaks, all bounded by the capacities; at 360 Hz, about 6 000 floating-point operations, well inside one sample period on the ESP32-S3. The firmware measures it (OP-014).
+
+**Delays** (SRS-021). The library reports each detection at the sample of the reference's trace (`reported_at`), so the bounds of §13.4 are those of the library: at most `G + N + D + 1 − R` samples (8.01 s at any accepted rate), and `N + P + D + 2` samples (0.31 s at most) on the normal path.
+
+**Verification notes.**
+- QA (SRS-020): the synthetic inputs and criteria of SRS-006 and SRS-010 through `Chain::process`, one sample at a time; a flat 10 s input gives no detection and the status `kOk` at every sample.
+- QA (SRS-021): `reported_at − index` of every detection after the start-up period of the SRS-006 inputs ≤ `floor(0.35 · fs)`; on the event inputs of §13.9 (taken from the golden vectors or generated by QA from §13.9), every delay ≤ `G + N + D + 1 − R` samples. The paths each input exercises are those of §13.4, "Verification notes"; `Detection::path` shows them.
+- QA (SRS-022, library part): the marks on the SRS-006 inputs at 40, 75 and 180 bpm; after a `reset` from the reset; on the `artefact` input, at least one start-up detection in the re-learning stretch.
+- Developer: the ring capacities against the conversions at 125–1000 Hz; the store of peaks at its capacity (a test signal with a peak every 2 samples); the integer search-back limit against the binary64 expression over its whole domain (§14.3, step 9); the paths; identical output for the same input after `reset`.
+
+### 14.8 Heart rate (SRS-024, SRS-025, SRS-026)
+
+**Module.** `heart_rate`. `HeartRateTracker` is `track_heart_rate` of §13.5 made streaming: the same state, the same two steps per sample, the same estimator (`estimate_intervals`), integer decisions and range bounds, and the rate in binary32 (§14.3). The range bounds `ceil(300 · k · fs / 1000)` and `floor(2000 · k · fs / 1000)` for k = 1 to 6, and `no_recent_beat_samples`, are computed at configuration (§14.3, "Times in samples").
+
+**Interface for the tests.** `step` takes the detections reported at the current sample. In the `Chain` these are the detector's; a test of SRS-024 to SRS-026 gives its own sequence directly, sample by sample, each detection at the sample of its index (as the verification of SRS-026 states) or later. `reset` starts a new stream: `reset_at` back to −1, no interval kept, status "not enough beats" (SRS-024: no interval spans a reset).
+
+**Verification notes.** QA (SRS-024 to SRS-026, library part): the sequences of the SRS through `HeartRateTracker::step`, at 360 Hz and 250 Hz; statuses, samples and rates as for the reference (§13.5, "Verification notes"). Developer: every pattern of `estimate_intervals`, the integer bounds at 125, 250, 360 and 1000 Hz, the preconditions.
+
+### 14.9 Signal quality index (SRS-027, SRS-028)
+
+**Module.** `signal_quality`. The computation of §13.6, made streaming with a ring of blocks, so that no window of samples is stored:
+- **Blocks** of H samples (§13.6). For each block in the ring (12 blocks: a window covers 10, and is reported in the 11th): `e_total` (compensated sum of `s` over the block), `e_zone` (compensated sum of the zone parts added to the block, in the order in which their detections are reported), `n_zone` (their samples), `n_detections` (reported detections whose index lies in the block), `held_max` and `held_end` (§13.6, step 3).
+- **Held run.** A counter of equal consecutive input samples, compared as given (`input_mv == previous`, binary32). An input that the reference sees as two different binary64 values can be equal in binary32; with the inputs of the golden vectors (multiples of 5 µV, or smooth synthetic waves), no run reaches 5 · H that way.
+- **Detections.** When a detection is reported at `n`, its zone parts are added to their blocks and its index to the count of its block, if those blocks are still in the ring. A detection is reported at most `G + N + D + 1 − R` samples (≈ 8 s) after its index, and its zone ends at `m ≤ reported_at`, so its blocks are always in the ring when a window that contains them is still to be reported.
+- **Windows.** Window `k` (`first = k · H`, `last = first + W − 1`) is reported at `last + Δ`, when the block of that sample is current; its values combine blocks `k` to `k + 9`: `E_t` and `E_z` as compensated sums of the ten block values, `n_z` and the detection count as integer sums, the held gate from `held_end` of block `k + 4` and `held_max` of blocks `k + 5` to `k + 9`, then the index and the mark of §14.3 and §13.6 (gates: held run, 4 to 34 detections, `n_z > 0`). The detections included are exactly those reported by the window's report sample, as in the reference.
+
+**Verification notes.** QA (SRS-027, SRS-028, library part): through `Chain::process` on the inputs of the SRS; window samples, report samples (`last + Δ`, within 0.5 s), index range and marks; after `reset`, windows again from the reset. Developer: the held gate at runs of exactly 5 · H and 5 · H − 1 samples; the count gates at 3, 4, 34 and 35 detections; a zone across a block boundary; a detection reported after a window's report sample left out of it; a search-back detection reported 8 s late still counted in the later windows.
+
+### 14.10 Restart and fixed memory (SRS-031, SRS-032; OP-049)
+
+**Restart.** `reset()` of each component sets every member that `configure` initialises to that value again (one private `start_stream()` shared by both), keeps the configuration, the coefficients and the parameters in samples, and clears the stop of SRS-018. The outputs after a `reset` are therefore those of a newly configured chain given the same samples (SRS-031): stream indices start at 0, the filters start from the first sample after the reset, detection learns again, and no interval, heart rate or window uses an earlier sample.
+
+**Memory.** Every member has a size fixed at compile time; capacities are sized for 1000 Hz, the highest accepted sampling frequency, at which every parameter in samples is largest (each conversion of §8.2 grows with the sampling frequency). One chain at the 1000 Hz capacity (`N = 150`, `P = 95`, `D = 36`, `L = 2 000`, `H = 1 000`):
+
+| Part | Members | Bytes |
+|---|---|---|
+| Detector: store of peaks | 1 000 records × 32 bytes (§14.7), head and count | 32 008 |
+| Detector: learning windows | `y` and `|b|`, 2 × 2 000 × 4 | 16 000 |
+| Detector: look-back rings | `b` 248, `d` 246, `s` 150 values × 4 | 2 576 |
+| Detector: the rest | parameters, band-pass sections, derivative coefficients, last QRS and candidate records, levels, 8 intervals, tracker, counters | about 300 |
+| Heart-rate tracker | parameters, range tables (12 × 4), 6 intervals, state | about 140 |
+| Signal quality | parameters, 12 blocks × 32 bytes, held run, counters | about 430 |
+| Conditioner | two binary64 sections (2 × 56), flags | about 120 |
+| Chain | configuration, status, flags | about 30 |
+| **Total** | | **about 51 600** |
+
+The output of a sample (`SampleOutput`, about 650 bytes) belongs to the caller and is not part of the chain.
+
+**Proposed limit (SRS-032, OP-049): 64 KiB, 65 536 bytes**, for any accepted sampling frequency: 12.5 % of the 512 KiB of internal memory of the ESP32-S3, with about 20 % of margin over the computed size for alignment and implementation details. Two thirds of the size is the store of peaks and the learning windows, which reproduce the reference exactly: a smaller limit would need a store below the provable bound of §14.7, i.e. a change of the detection rules, which Milestone 2 excludes (OP-056). With the alternative arithmetic of ADR 0008 (binary64 throughout) the chain would need about 95 KB.
+
+**Checks.**
+- `static_assert(sizeof(Chain) <= kChainMemoryLimitBytes)` in `chain.hpp`, on every target; `sizeof(Chain)` is stated in the equivalence results (§14.12), which is "the size given by the build" of SRS-032.
+- A CTest test (`no_heap_symbols`) lists the undefined symbols of the library archive with `nm` (`llvm-nm` with LLVM-MinGW) and fails if one is `operator new`, `operator delete`, `malloc`, `calloc`, `realloc`, `free`, `__cxa_allocate_exception` or `__cxa_throw`: no allocation and no exception anywhere in the library.
+- QA (SRS-032): a test executable that replaces the global `operator new` and `operator delete` (all forms) with counting versions, and on Linux also wraps `malloc`, `calloc`, `realloc` and `free` (`-Wl,--wrap=`), counts no request during `configure` at 125, 250, 360 and 1000 Hz, the processing of the inputs of every golden vector and `reset`; and compares `sizeof(Chain)` with the limit.
+
+### 14.11 Tolerances of the equivalence (SRS-034; OP-005)
+
+**Method** (plan of the owner's decision of 2026-10-07): for each compared output, (1) a bound from the analysis of its computation in binary32 or binary64; (2) the largest difference measured with a binary32 model of this design on the golden set and on the reference databases; (3) a tolerance at or above the bound and at least ten times the largest measured difference. Decisions (counts, marks, statuses, usable marks, and the samples at which events are reported) must be identical: the owner allows no difference of detection in advance, and decides on a near tie when one makes a file fail (OP-056 (b)).
+
+**The model.** A Python model of every operation of §14.3, each rounded to binary32 in the prescribed order. SciPy's `sosfilt` in `float32` was checked bit for bit against an explicit per-operation loop; the finite impulse response stages were written as explicit sums, because `scipy.signal.lfilter` with the denominator `[1]` computes `numpy.convolve`, whose summation order is not sequential (§8.2). Reference: the binary64 package of this branch, with the trace, heart rate and signal quality index written from §13.3, §13.5 and §13.6. Data: the 24 golden vectors of Milestone 1 and the 8 event inputs of §13.9 (32 files, 394 340 samples, 1 702 detections, 1 471 heart rates, 908 windows); the 48 records of the MIT-BIH Arrhythmia Database, the 12 noise stress records and the three noise records of the Noise Stress Test Database, whole (148 407 detections). Run on 2026-10-08; no C++ compiler was involved, so the C++ tests of SRS-034 are the confirmation.
+
+**Results by arithmetic** (largest difference from the reference):
+
+| Arithmetic | Conditioning, golden / databases | Detections (count, index, mark) | Integrated peak `m` differs | Report sample differs | Heart rate (golden) | Signal quality index (golden) |
+|---|---|---|---|---|---|---|
+| binary32 throughout | 0.71 µV / 3.51 µV | identical | 90 to 103 of 148 407 | 2 of 148 407 | 7.5e-6 bpm | 2.2e-6 |
+| **§14.3 (binary64 conditioning)** | **0.0018 µV / 0.0018 µV** | **identical** | 110 of 148 407 | 1 of 148 407 | **7.5e-6 bpm** | **7.5e-7** |
+| binary64 throughout | as above | identical | 0 | 0 | — | — |
+
+In every case the true positives, false negatives and false positives of every record are those of the reference (SRS-038), and on the golden set no `m` and no report sample differs. The `m` differences are ties on the flat top of the integrated signal (relative differences below 1e-5 between two consecutive values); the report-sample difference is a tie of the half-maximum confirmation (record 118: `y = 634.757736` against `v / 2 = 634.758254` in binary64, a relative margin of 8e-7; binary32 confirms one sample later).
+
+**Bounds and proposed tolerances** (u = 2⁻²⁴, the unit roundoff of binary32):
+
+| Compared output | Bound | Largest measured | Proposed tolerance |
+|---|---|---|---|
+| Each conditioning stage | The binary64 recursion adds below 1e-12 mV; the rest is the rounding of the input to binary32, through the stages (ℓ1 gain G ≤ 2.43 for the baseline stage, ≤ 5.59 for both, at every rate and mains setting), and the rounding of the output: ≤ (G + 1) · u · max\|x\|, i.e. 7.9e-6 mV on the golden set (inputs up to 20 mV) and 4e-4 mV for any accepted input | 1.8e-6 mV | **2e-5 mV** (0.02 µV: 250 times below 5 µV) |
+| Detection index | 0 unless a decision near tie | 0 in 150 109 detections | **0 samples** |
+| Report sample of a detection | 0 unless a near tie | 0 on the golden set; 1 in 148 407 on the databases | **0 samples** |
+| Heart rate | One rounding of the division at an integer sampling frequency, three at another: ≤ 3 · u · rate, at most 5.4e-5 bpm for any rate up to 300 bpm (detections are at least 200 ms apart) | 7.5e-6 bpm | **1e-4 bpm** |
+| Signal quality index | Rounding: about 1e-6 (measured; a worst-case bound of the infinite impulse responses gives 0.68, which says nothing). A tie that moves the integrated peak of one detection moves its zone: by 1 sample the index of a golden window changes by at most 0.0027, by 2 samples by at most 0.0077 (computed for every detection and window of the golden set; a zone cut by a window edge is the worst case) | 7.5e-7 | **0.01** |
+
+- The report sample is compared although SRS-034 does not list it, because the heart rates must be reported "at the same samples": a different report sample of a reliable detection fails either way, and comparing it names the cause (§14.12). The PM may name it in SRS-034.
+- The index tolerance 0.01 does not loosen any decision: the usable marks are compared exactly, and the closest golden window to the threshold lies 0.0019 from it.
+- With binary64 throughout, every tolerance could be of the order of 1e-9 and the integrated-peak ties would vanish, for about 43 KB more per chain (ADR 0008, alternative).
+- These values hold for the computer and the ESP32-S3 alike (SRS-036): the binary64 stages give the same results on both (IEEE 754 operations, the same order), and the binary32 stages differ only if a hardware or library function rounds differently, which the comparison measures.
+
+### 14.12 Equivalence check, results and CI (SRS-034, SRS-035, SRS-037; OP-067)
+
+**Module.** `verification/` (target `sinus_dsp_verification`), cited for SRS-034, SRS-035 and SRS-037:
+- `golden_reader`: reads a golden-vector file of format version 2 with every reader rule of §7.3 and §13.8, naming the first offending line. Floats by `std::from_chars` after the syntax check (§7.3).
+- `golden_set`: the expected input identifiers, written out (18 synthetic, 8 event, 6 record segments, §7.2 and §13.9).
+- `equivalence`: runs a newly configured `Chain` on the input of one vector (each value `static_cast<float>` of the file's binary64 value) and compares the outputs as below.
+- `equivalence_report`: writes the results (format below).
+- `golden_pack`, `sha256`: the binary pack of §14.13 and the SHA-256 (FIPS 180-4) that seals it.
+- tools: `sinus_dsp_equivalence --vectors <folder> --results <file>` (exit status 0 if every expected file is present and passes, 1 otherwise, 2 on a usage error) and `sinus_dsp_golden_pack --vectors <folder> --output <file>`.
+
+**The set.** The folder must hold exactly the expected files (`<id>.golden.txt`): a missing one is a failure naming it (SRS-035), an unexpected one too (the C++ side states what it expects, so a new reference input fails until the C++ list follows it). Other files of the folder (`NOTICE.md`) are ignored.
+
+**Compared outputs, per file,** each with its largest difference, the sample where it occurs (the first one, if several), its tolerance and its outcome:
+
+| Output | Compared | Largest difference | Tolerance (§14.11) |
+|---|---|---|---|
+| `baseline_mv`, `mains_mv` | every sample | max \|library − file\|, in binary64 | 2e-5 mV |
+| `beats` | count; then, in order, the mark of each detection | max \|index difference\| in samples | 0 |
+| `beat_reported_at` | in order, once the counts agree | max \|difference\| in samples | 0 |
+| `heart_rates` | count; then in order the sample, the beat index (present or not) and the status of each event | max \|bpm difference\| over the events with a rate | 1e-4 bpm |
+| `quality_windows` | count; then in order the first, last and report samples and the usable mark of each window | max \|index difference\| | 0.01 |
+
+A structural difference (a count, a mark, a status, a sample, a usable mark) fails the output and is reported at the first sample where it occurs, in place of a largest difference. A file that a reader rejects fails as a whole, with the reader's line and reason. The outputs are compared in this order, and every output of every file is reported, even after a failure, so that one run shows everything.
+
+**Results** (SRS-037), a Markdown file written by `equivalence_report`, byte for byte the same on every target for the same results:
+
+```
+# Equivalence of the real-time library with the reference
+
+| Item | Value |
+|---|---|
+| Build target | computer (x86_64, Linux, GNU 14.2.0) |
+| Library | sinus-dsp 0.2.0.dev0, source SHA-256 <64 hexadecimal digits> |
+| Reference | sinus-dsp 0.2.0.dev0, source SHA-256 <64 hexadecimal digits> |
+| Golden vectors | 32 files of 32 expected, format version 2 |
+| Chain size | 51600 bytes, limit 65536 |
+| Database notice | <the sentence below> |
+| Outcome | pass |
+
+## Results per file
+
+| File | Output | Largest difference | At sample | Tolerance | Outcome |
+|---|---|---:|---:|---:|---|
+| mitdb-100-first60s | baseline_mv | 1.2383118956904582e-06 | 1850 | 2e-05 | pass |
+...
+```
+
+- `Build target`: `computer (<processor>, <system>, <compiler id> <version>)` from CMake, or `ESP32-S3 (emulator, ESP-IDF <version>, <compiler id> <version>)`.
+- `Reference`: the `software_version` and `source_sha256` of the files; if the files do not all state the same, `not the same in every file` and the outcome `fail` (the vectors of one run come from one export).
+- Numbers: differences written as the shortest text that converts back to the same binary64 value (`std::to_chars`), `0` for exact zero; samples as integers (`—` where none); tolerances as written in §14.11. A structural difference is written `<what> differs` in the column `Largest difference` (for example `count 74, file 73`, `mark`, `status`).
+- `Database notice`, present when a record segment is in the set: `The files mitdb-100-first60s, mitdb-105-first60s, mitdb-108-first60s, mitdb-119-first60s, mitdb-203-first60s and mitdb-207-first60s contain extracts of the MIT-BIH Arrhythmia Database, version 1.0.0, made available by PhysioNet under the Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/; the results above are computed from them.` (§8.15; OP-067).
+
+**Notice beside the vectors (OP-067, option (b) of the owner).** From this version, `export_golden_vectors` (§8.12, §13.8) also writes `NOTICE.md` into the output folder, with `write_atomically`, whenever it writes the record segments, and never otherwise:
+
+````markdown
+# Notice
+
+The files `mitdb-100-first60s.golden.txt`, `mitdb-105-first60s.golden.txt`, `mitdb-108-first60s.golden.txt`, `mitdb-119-first60s.golden.txt`, `mitdb-203-first60s.golden.txt` and `mitdb-207-first60s.golden.txt` contain the first 60 s of the first stored signal of records 100, 105, 108, 119, 203 and 207 of the MIT-BIH Arrhythmia Database, version 1.0.0 (https://physionet.org/content/mitdb/1.0.0/, https://doi.org/10.13026/C2F305), and outputs computed from them. The database is made available by PhysioNet under the Open Data Commons Attribution License v1.0: https://opendatacommons.org/licenses/by/1-0/
+
+The other files of this folder contain synthetic signals generated by Sinus and outputs computed from them.
+````
+
+Every artifact that holds golden vectors or a pack of them carries this file; the equivalence results carry the row above. The text is a constant of `golden.py` (`NOTICE_TEXT`), so that QA can compare it literally; `ExportSummary` gains `notice: Path | None`.
+
+**CI** (`.github/workflows/ci.yml`, every push and pull request; `permissions: contents: read` and `persist-credentials: false` as now):
+- Job `dsp`, after the subset check (the six records are then present and verified): `export_golden.py --output-dir "$RUNNER_TEMP/golden-vectors"`, then `actions/upload-artifact` of that folder as `golden-vectors` (`if-no-files-found: error`, `retention-days: 7`). Whether a record segment is missing is decided by the check of the job `libs`, which names it.
+- Job `libs` (`needs: dsp`, `ubuntu-24.04`): checkout; setup-uv; `uv sync --locked --project libs/sinus-dsp/tools`; clang-format check (`--dry-run --Werror` on every C++ file of `libs/sinus-dsp`); for `CXX=g++-14` and then `CXX=clang++-18`: presets `release` and `asan-ubsan`, build, `ctest` (unit, requirement, system tests and `no_heap_symbols`); preset `tidy` (GCC); preset `coverage` (GCC) with a gcovr summary uploaded as `coverage-libs`; download of `golden-vectors`; `sinus_dsp_equivalence` (GCC release build) writing `equivalence-computer.md`, the step's exit status deciding the job (SRS-035); the requirement tests that read the vectors run with `SINUS_GOLDEN_DIR` set; upload of `equivalence-computer.md` with `NOTICE.md` as `equivalence-computer` (`if: always()`); the SBOM as `sbom-libs` (§14.16).
+- Job `libs-esp32s3` (`needs: dsp`, §14.13).
+- The Python tests under `libs/sinus-dsp/tests` run in the job `dsp`, which runs pytest with its `testpaths` (§13.12).
+- The ruleset of `main` should require `libs` and `libs-esp32s3` once each has passed once (owner action in the repository settings).
+
+**Verification notes.** QA (SRS-034): the C++ requirement test runs the check on the folder of `SINUS_GOLDEN_DIR` (the vectors of the same commit) and requires every file to pass; on copies with one value of each compared output changed by more than its tolerance, and with one detection removed, the check fails and names the file, the output and the sample. Without `SINUS_GOLDEN_DIR` the test that needs the folder skips with a message (a stated precondition, §13.12 rule 5); CI always sets it. QA (SRS-035): the check on a folder without one file fails and names it (C++); a Python test in `dsp/tests/requirements` inspects `ci.yml` (export and upload in `dsp`, `needs: dsp` and the check in `libs`, on every push), as for SRS-016. QA (SRS-037): a copy with one output of one file changed by a known amount within its tolerance and larger than every other difference: the reported largest difference equals it within the rounding of the subtraction; the reference identity equals the files'; the library identity equals the one the test computes with the method of §14.15. Developer: the reader rules (one rejected text per rule, with its line), exact read-back of edge values (§7.4), the report format literally.
+
+### 14.13 Equivalence on the ESP32-S3 (SRS-036)
+
+**ESP-IDF.** Version **v6.1** (released 2026-08-27; in service until 2027-08, end of life 2029-02 under Espressif's support policy), in the official image pinned by tag and digest: `espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c` (Docker Hub, read on 2026-10-08). The image holds the toolchain `xtensa-esp-elf` esp-15.2.0, CMake 4.0.3, Espressif's QEMU `esp_develop_9.2.2_20260417` (machine `esp32s3`) and a host compiler (Ubuntu 24.04 build tools). A new bugfix release of v6.1 is taken deliberately, with its digest. The firmware of Milestone 4 starts from the same version (ADR 0001).
+
+**Components.** `libs/sinus-dsp/esp-idf/sinus_dsp/CMakeLists.txt` registers the library sources of `cmake/SinusDspSources.cmake` and the generated identity (§14.15), with the include folder, and compiles them with `-std=c++17 -fno-exceptions -fno-rtti -ffp-contract=off` and the warnings of §14.2 (ESP-IDF builds C++ with `-std=gnu++2b` and contraction by default otherwise). `esp-idf/sinus_dsp_verification` registers the verification code the same way. The firmware will use the first component (§5.3).
+
+**Test app** `libs/sinus-dsp/tests/system/esp32s3_equivalence/` (an ESP-IDF project; under `tests/`, so never scanned as production code): `sdkconfig.defaults` with target `esp32s3`, flash size 16 MB, the custom partition table, optimisation for performance, task watchdog off; `partitions.csv`:
+
+```
+# Name,    Type, SubType, Offset,   Size
+nvs,       data, nvs,     0x9000,   0x6000
+factory,   app,  factory, 0x10000,  0x1F0000
+golden,    data, 0x40,    0x200000, 0xE00000
+```
+
+`app_main` runs, in order: the contraction self-check of §14.3; the check of the pack's SHA-256; the equivalence check of every vector of the pack, with the `Chain` in static storage; the results of §14.12 printed between the lines `SINUS-EQUIVALENCE-BEGIN` and `SINUS-EQUIVALENCE-END <pass|fail>`; then `esp_restart()`, which ends the emulator (`-no-reboot`).
+
+**How the vectors reach the emulator.** The text set (about 22 MB) does not fit the largest flash image that Espressif's QEMU accepts for the ESP32-S3 (2, 4, 8 or 16 MB; read in its source on 2026-10-08). The job converts it on the host into a **binary pack** with `sinus_dsp_golden_pack`, which reads every file with the verified reader of §14.12, so that the target compares with exactly the values the computer compares with:
+
+- header: the 8 bytes `SINUSGVP`, `uint32` pack version 1, `uint32` number of files, `uint64` payload length, the 32-byte SHA-256 of the payload;
+- per file, in the order of `golden_set`: the 4 bytes `GVF2`; `input_id`, `input_source`, `input_parameters`, `software_version`, `source_sha256` (each a `uint16` length and UTF-8 bytes); `float64` sampling frequency; `uint32` mains; `uint32` counts of samples, coefficient rows, beats, heart rates and windows; the coefficient rows (`uint8` stage, `uint8` section, five `float64`); per sample the input as `float32` (the conversion the computer makes) and both stage outputs as `float64`; per beat `uint64` index, `uint8` mark, `uint64` report sample; per heart rate `uint64` sample, `int64` beat index (−1 if none), `uint8` status, `float64` rate (NaN if none); per window `uint64` first, last and report samples, `float64` index, `uint8` usable;
+- all little-endian. Size for the 32 files: about 8 MB (394 340 samples × 20 bytes, plus the events).
+
+The app reads the partition `golden` in chunks (`esp_partition_read`) and streams it into the check: samples are compared as they come, the events after the samples, as in a text file.
+
+**Job `libs-esp32s3`** (`needs: dsp`, `ubuntu-24.04`, `container:` the image above; `timeout-minutes: 45`): checkout; download of `golden-vectors`; build of `sinus_dsp_golden_pack` with the image's host compiler and CMake, then the pack; `idf.py -C libs/sinus-dsp/tests/system/esp32s3_equivalence build`; one 16 MB flash image from the bootloader, the partition table, the app and the pack at `0x200000` (`esptool.py merge_bin --fill-flash-size 16MB`); `timeout 1800 qemu-system-xtensa -machine esp32s3 -nographic -no-reboot -drive file=flash.bin,if=mtd,format=raw -serial file:qemu.log`; `python3 libs/sinus-dsp/verification/emulator_log.py qemu.log --results equivalence-esp32s3.md`, whose exit status decides the job; upload of the results, the log and `NOTICE.md` as `equivalence-esp32s3` (`if: always()`).
+
+**`emulator_log.py`** (standard library only; cites SRS-036): extracts the block between the two marker lines into the results file and exits 0 only if the log holds exactly one `SINUS-EQUIVALENCE-END pass` line and no other end line; a log without it (a crash, a timeout, a failed self-check) exits 1 with a message; a usage error exits 2.
+
+**Alternatives considered.** Streaming the text over the emulated UART: no size limit, but a host–target protocol, flow control and timeouts to maintain. An SD card image: SDMMC emulation of the ESP32-S3 appeared in QEMU in April 2026. ESP-IDF v6.0.3: more bugfix releases, seven months less support. PSRAM: still needs a transport.
+
+**Verification notes.** Test engineer (SRS-036, System): a Python test in `libs/sinus-dsp/tests/system/` inspects `ci.yml` (the job runs on every push, needs `dsp`, uses the pinned image, builds the app, runs QEMU on the set and fails through `emulator_log.py`) and checks `emulator_log.py` on recorded logs (pass, a failing file, no end line, two end lines); the log of a CI run, and of a run on a pack with one value changed beyond its tolerance, is kept for the milestone verification report.
+
+### 14.14 Detection on the whole reference databases (SRS-038)
+
+**Harness: a C interface called with `ctypes`** (option (a)):
+
+```c
+/* harness/sinus_dsp_harness.h, shared library sinus_dsp_harness (computer only) */
+/* Runs a newly configured Chain on n samples; writes up to `capacity` detections (index, mark,
+   report sample) and returns their total number, or -1 - (int)Status on a configuration error or
+   an invalid sample. */
+int64_t sinus_dsp_harness_detect(double fs_hz, int32_t mains_hz, const float* samples_mv,
+                                 uint64_t n, uint64_t* indices, uint8_t* startup,
+                                 uint64_t* reported_at, uint64_t capacity);
+/* "<version>;<source SHA-256>" of the library */
+const char* sinus_dsp_harness_identity(void);
+```
+
+On the Python side (`dsp`, cites SRS-038), `sinus_dsp.evaluation.harness`:
+- `load_harness(path: Path) -> LibraryHarness` (ctypes; standard library only);
+- `LibraryHarness.detect(signal_mv, fs_hz, mains_hz) -> IndexArray`, a `Detector` of §8.10 (the signal converted to a contiguous `float32` array);
+- `LibraryHarness.identity() -> str`;
+- `compare_detection(database_dir, records, settings, candidate: Detector, *, reference: Detector = detect_beats, loader = load_record) -> tuple[DetectionComparison, ...]`, the counts of `evaluate_record` (§8.10) for both detectors per record, and whether they are equal.
+
+Script `dsp/scripts/compare_library.py --harness <path> [--data-dir DIR]`: the 48 records of the MIT-BIH Arrhythmia Database and the 12 noise stress records, with the settings of SRS-007; prints a Markdown table (record, TP/FN/FP of the reference, TP/FN/FP of the library, equal) with both identities; exit status 0 if every record is equal, 1 otherwise, 2 on a usage error.
+
+**Why ctypes rather than a command-line program.** The library runs in the same process as the evaluation of §8.10 through its `Detector` injection: no file format for signals or detections, no temporary files, no second scoring path. One call per record processes 650 000 samples in C++.
+
+**Verification notes.** Test engineer (SRS-038, System): in `libs/sinus-dsp/tests/system/` a pytest test marked `needs_data`, `needs_nstdb` and `needs_harness` (the shared library of the `release` build, or the path in `SINUS_DSP_HARNESS`; skipped otherwise) runs the comparison on the whole databases and requires equal counts for every record; in `dsp/tests/system/` a test checks `compare_detection` and the script with fixture records and a fake candidate (the record whose counts differ is named). Result recorded in the milestone verification report. The marker `needs_harness` is registered in `dsp/pyproject.toml`, its hook in `libs/sinus-dsp/tests/conftest.py`.
+
+### 14.15 Identity and versioning of the library (SRS-037; OP-062)
+
+**Version.** Every software item has the version of the milestone register (§8.14, `sdp.md` §4): the library states it in `libs/sinus-dsp/VERSION`, one line, equal to the version of `dsp/pyproject.toml` (`0.2.0.dev0` while M2 is in progress, `0.2.0` at its release). `traceability.py` checks it with the version rule (§13.12, rule 6). CMake reads it, and uses its numeric part for `project(VERSION)`.
+
+**Source digest.** The SHA-256 of the manifest of the library's own code, by the method of §8.14: every regular file under `libs/sinus-dsp/include` and `libs/sinus-dsp/src` whose path has no component starting with `.`, named by its path relative to `libs/` (e.g. `sinus-dsp/src/qrs_detector.cpp`), sorted in code-point order, CR LF replaced by LF, one line `<sha256>  <name>` per file, then the SHA-256 of the manifest. It covers only the code linked into the firmware and the desktop application; the build options are stated with the build target (§14.12). The same digest from a shell in `libs/`:
+
+```sh
+find sinus-dsp/include sinus-dsp/src -type f -not -path '*/.*' -print0 | LC_ALL=C sort -z \
+  | xargs -0 sha256sum --text | sha256sum --text
+```
+
+**Embedding.** `cmake/SourceDigest.cmake`, run in script mode (`cmake -P`) by a custom command that depends on every listed source file and on `VERSION` (the lists use `CONFIGURE_DEPENDS`, so that an added file is seen), computes the digest with CMake's `file(READ)` and `string(SHA256)` and writes `generated/sinus_dsp_identity.cpp`, which defines `library_identity()`; the file is rewritten only when its content changes. The ESP-IDF component runs the same script.
+
+**Where it is stated.** The equivalence results (SRS-037); the harness (`sinus_dsp_harness_identity`); later the desktop application and the device information (OP-062, at their milestones, by the same rule).
+
+**Verification notes.** Developer: the digest of a fixture folder equals one computed independently in the test, the CR LF rule, a hidden file left out, the regeneration after a change. QA (SRS-037): the identity in the results equals the version of `VERSION` and a digest that the test computes itself by this method.
+
+### 14.16 SBOM of the library (OP-046)
+
+The library has no third-party runtime code besides the C++ standard library and the C library of each toolchain (§9). `cmake/Sbom.cmake` writes `sbom-libs.cdx.json` from the template `cmake/sbom.cdx.json.in`: CycloneDX 1.6 JSON, no timestamp and no serial number (deterministic), metadata component `sinus-dsp` (type `library`, the version of `VERSION`, licence `Apache-2.0`, a property `sinus:source-sha256` with the digest of §14.15, a property `sinus:build-target`), and one component for the runtime libraries of the toolchain that built it (name and version of the compiler from CMake, for example `GNU 14.2.0: libstdc++, libgcc, glibc`). The job `libs` uploads the SBOM of its GCC release build as `sbom-libs`. It is not scanned: these components have no package ecosystem in the vulnerability databases, so OSV-Scanner would find no package; the toolchains are reviewed as SOUP (`soup.md`). The SBOM parts of the desktop application (M3), the firmware (M4) and the backend (M5) stay with OP-046.
+
+### 14.17 Tests
+
+- **Folders and tags** (ADR 0004, §13.12): `libs/sinus-dsp/tests/unit/` (developer, no tag), `requirements/` (QA), `system/` (test engineer). C++ tests carry `// Verifies: SRS-nnn` directly above the GoogleTest macro; Python tests the pytest marker. A test belongs to `libs/sinus-dsp` because of its folder.
+- **Executables and labels:** `sinus_dsp_unit_tests` (label `unit`), `sinus_dsp_requirement_tests` (`requirement`), `sinus_dsp_system_tests` (`system`), registered with `gtest_discover_tests`, plus `no_heap_symbols`. File names `test_srs_nnn_<topic>.cpp` in `requirements/` and `system/`.
+- **Preconditions:** a C++ test that needs the golden vectors reads `SINUS_GOLDEN_DIR` and calls `GTEST_SKIP()` with a message when it is not set; no other skip is allowed in a tagged test (§13.12 rule 5).
+- **Independence:** the developer writes the library, `verification/`, `harness/` and the unit tests; QA writes the requirement tests, which also verify `verification/` (SRS-034, SRS-035, SRS-037); the test engineer writes the system tests (SRS-036, SRS-038).
+
+### 14.18 Implementation order and verification by role
+
+| # | Group | Requirements | Design | Depends on |
+|---|---|---|---|---|
+| C1 | Build, presets, flags, tools project, GoogleTest, `.clang-format`, `.clang-tidy`, `VERSION` and identity, `no_heap_symbols`, job `libs` (without the equivalence step), `traceability.py` and pytest `testpaths` (§13.12), README of the library | — (ADR 0006, ADR 0007, OP-057, OP-062, OP-066) | §14.2, §14.3, §14.15, §13.12 | — |
+| C2 | `status`, `limits`, `config`, `biquad`, `conditioner`, `chain` (checks, stop, reset) | SRS-017, SRS-018, SRS-019, SRS-031 (conditioning), SRS-032 | §14.4 to §14.6, §14.10 | C1 |
+| C3 | `qrs_detector` | SRS-020, SRS-021, SRS-022 (library), SRS-031 | §14.7 | C2; reference group 2 (§13.11) |
+| C4 | `heart_rate`, `signal_quality`, `chain` complete | SRS-024 to SRS-028 (library), SRS-031 | §14.8, §14.9 | C3; reference groups 3 and 4 |
+| C5 | `verification/` (reader, set, check, results, tools), the export's `NOTICE.md`, the export and equivalence steps in CI, the SBOM | SRS-034, SRS-035, SRS-037 | §14.11, §14.12, §14.16 | C2 to C4; reference group 5 |
+| C6 | ESP-IDF components, test app, pack, `emulator_log.py`, job `libs-esp32s3` | SRS-036 | §14.13 | C5 |
+| C7 | `harness/`, `sinus_dsp.evaluation.harness`, `compare_library.py` | SRS-038 | §14.14 | C3; reference group 6 |
+
+Each group lands with the tests of its requirements in the item that implements it (§13.12). C1 cites no requirement. QA writes the C++ requirement tests of C2 to C5 and the Python inspection test of SRS-035; the test engineer the system tests of C6 and C7. The tolerances of SRS-034 and the limit of SRS-032 are those approved by the project owner (proposed in §14.10 and §14.11); until then, C5 uses the proposed values.

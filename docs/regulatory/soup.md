@@ -42,6 +42,7 @@ Each review below states what Sinus uses, what was reviewed, and the anomalies r
   - Defects fixed after 2.4.6 concern `StringDType`, `datetime64`, random number generation, `f2py`, linear algebra, masked arrays, reference leaks on error paths and iterator internals. Sinus uses none of them. Not affected.
   - Open defects concern object arrays, NaN handling in `argmax` and `argmin`, and the speed of `argmax` on multidimensional arrays. Sinus passes only finite (SRS-003), numeric, 1-D arrays. Not affected.
   - **Machine-dependent results of `exp` and `sin`.** NumPy selects at run time between a baseline implementation of the `float64` `exp` and `sin` and an implementation for AVX2 and FMA3 processors (`numpy.lib.introspect.opt_func_info`, checked on 2026-10-05), so their results may differ in the last bits between machines. Sinus uses them only to build the synthetic inputs of the golden vectors ([`architecture.md`](architecture.md) §7.2), which are regenerated in the CI run that uses them and compared with the C++ library within the tolerances of OP-005 (§7.5). No report value depends on them. No effect on any result.
+  - **Machine-dependent results of `convolve`** (added on 2026-10-08). `scipy.signal.lfilter` with FIR coefficients calls `numpy.convolve`, which computes each output as a dot product through the BLAS library bundled with NumPy (OpenBLAS 0.3.31, which selects its kernel for the processor at run time, `numpy.show_config()`); its summation order is not sequential, so the derivative and the integrated signal of the detection ([`architecture.md`](architecture.md) §8.7.1) may differ in the last bits between machines (checked on 2026-10-08: about 1e-15 relative to a sequential sum). A detection decision changes only on a near tie at that level. Known and handled as for `math` above: the CI environment is the authority for the stored subset report ([`architecture.md`](architecture.md) §8.2, §8.11), and the C++ library is compared within tolerances. No effect on any reported result.
 
 ### SciPy 1.17.1
 
@@ -80,8 +81,10 @@ The components below are chosen in [`architecture.md`](architecture.md) §9 and 
 | FreeRTOS | firmware | M4 | Real-time kernel as shipped and configured by ESP-IDF: tasks, priorities, task notifications |
 | Qt 6 | desktop | M3 | Application framework: Core, GUI, Widgets or Quick (OP-033), Bluetooth, Serial Port, Network. LGPL-3.0 modules only, linked dynamically ([ADR 0003](../adr/0003-qt-desktop-application-with-replay.md)) |
 | FastAPI | backend | M5 | Web API framework, with its runtime dependencies (e.g. Starlette, Pydantic) and an ASGI server; database and FHIR libraries are chosen at Milestone 5 |
+| C++ standard library and C library of the computer's toolchain | libs/sinus-dsp | M2 | Linked into the library on the computer (in CI: libstdc++, libgcc and glibc of GCC 14 on Ubuntu 24.04; with Clang 18 the same libstdc++). Used: `<cmath>` (`std::tan`, `std::cos`, `std::sqrt`, `std::floor`, `std::ceil` at configuration; `std::isfinite`, `std::fabs` per sample) and `<array>`; no allocation ([`architecture.md`](architecture.md) §9, §14.3) |
+| C++ standard library and newlib of the ESP-IDF toolchain | libs/sinus-dsp (build for the ESP32-S3); firmware | M2 (test build); M4 | The same functions, from libstdc++ and newlib of `xtensa-esp-elf` esp-15.2.0 in ESP-IDF v6.1 ([`architecture.md`](architecture.md) §14.13) |
 
-- `libs/sinus-dsp` uses only the C++ standard library of each toolchain. It is recorded with the toolchain when the library is introduced (Milestone 2).
+- `libs/sinus-dsp` uses only the C++ standard library and the C library of each toolchain (the two rows above); they become rows of the table above, with their review, when the library code lands (Milestone 2, group C2 of [`architecture.md`](architecture.md) §14.18).
 - The WFDB implementation of the desktop application is decided in OP-050. A third-party library would be added here.
 
 ## Development tools (not SOUP)
@@ -90,4 +93,4 @@ Development-only tools are not part of any software item and are not listed as S
 - Python: pytest, ruff, mypy, and `cyclonedx-bom`, which generates the SBOM. They are pinned in `dsp/uv.lock` in the `dev` group;
 - vulnerability scanning: OSV-Scanner, which scans the SBOM in CI. Its release is pinned in `.github/workflows/ci.yml` by version and SHA-256 ([`cybersecurity.md`](cybersecurity.md) §7);
 - dependency monitoring: Dependabot, a GitHub service (alerts, and version updates of the CI actions configured in `.github/dependabot.yml`);
-- C++ (planned): CMake, the compilers, GoogleTest, clang-format, clang-tidy or cppcheck.
+- C++ (planned for Milestone 2, [`architecture.md`](architecture.md) §14.2, §14.13): the compilers; CMake, Ninja, clang-format, clang-tidy and gcovr, pinned in `libs/sinus-dsp/tools/uv.lock`; GoogleTest 1.18.0, pinned by URL and SHA-256; the ESP-IDF container image with Espressif's QEMU, pinned by tag and digest (ESP-IDF itself becomes SOUP with the firmware).

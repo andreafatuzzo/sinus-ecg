@@ -31,3 +31,6 @@ An open point in [`open-points.md`](../regulatory/open-points.md) that asks for 
 | [0003](0003-qt-desktop-application-with-replay.md) | Qt 6 desktop application with replay | Accepted | 2026-09-29 |
 | [0004](0004-test-tagging-and-traceability-gates.md) | Test tagging and traceability gates | Accepted | 2026-09-29 |
 | [0005](0005-device-sampling-rate-360-hz.md) | Device sampling rate: 360 Hz | Accepted | 2026-09-29 |
+| [0006](0006-verification-per-software-item.md) | Verification per software item | Proposed | 2026-10-08 |
+| [0007](0007-cpp-coding-standard-and-static-analysis.md) | C++ coding standard and static analysis | Proposed | 2026-10-08 |
+| [0008](0008-arithmetic-of-the-real-time-library.md) | Arithmetic of the real-time library | Proposed | 2026-10-08 |
