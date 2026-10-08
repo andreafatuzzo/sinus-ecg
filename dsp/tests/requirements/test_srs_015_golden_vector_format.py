@@ -76,12 +76,25 @@ def _same_float64(a: Any, b: Any) -> bool:
     return x.shape == y.shape and x.tobytes() == y.tobytes()
 
 
-def _ecg_with_edge_values(make_synthetic_ecg: Callable[..., Any], fs: float) -> np.ndarray:
+# Edge values beyond 1000 mV are refused as input (SRS-003), so they can only reach a file in
+# a hand-built `GoldenVector` rendered directly: `test_values_read_back_exactly` builds the
+# vector from an in-range signal and then puts the large values into it.
+
+
+def _ecg_with_edge_values(
+    make_synthetic_ecg: Callable[..., Any], fs: float, *, large: bool = False
+) -> np.ndarray:
     """10 s of the test's synthetic ECG at 360 Hz (resampled by index for other rates), with
-    the edge values in place of the first samples and of samples spread over the signal."""
+    the edge values in place of the first samples and of samples spread over the signal.
+
+    With `large` false, the values beyond 1000 mV are replaced by in-range ones (the signal
+    can be given to `golden_vector`); with `large` true, they are kept.
+    """
     n = int(np.ceil(10 * fs))
     signal = np.resize(make_synthetic_ecg(360, 75, n_samples=3600).signal_mv, n).copy()
     for i, value in enumerate(EDGE_VALUES):
+        if not large and abs(value) > 1000.0:
+            value = value / 1e3 if abs(value) < 1e6 else 999.0 + 1 / 3
         signal[i] = value
         signal[(i + 1) * (n // (len(EDGE_VALUES) + 1))] = value
     return signal
@@ -103,27 +116,36 @@ def test_values_read_back_exactly(
     -5e-324, 2.2250738585072014e-308, -0.0, 0.1 + 0.2, 1/3, -2/3, 1e-300, -1.2345e-05,
     123456.78901234567, 1e16, 9007199254740994.0, 0.1) at the start and spread over it, at
     125, 333.3, 360 and 1000 Hz, mains 50 or 60 Hz, reference beats with a repeated sample;
-    rendered with `render_golden_vector`.
+    the values beyond 1000 mV (123456.78901234567, 1e16, 9007199254740994.0), which SRS-003
+    refuses as input, replaced by in-range ones in the signal given to `golden_vector` and put
+    into the input and the stage outputs of the vector by `dataclasses.replace` (a hand-built
+    vector); rendered with `render_golden_vector`.
     Expected: the test's own reader accepts the text; every float is written as Python's
-    `repr()` of its value; the values read back (with `float()`) equal bitwise the input, the
-    stage outputs and coefficients of `run_pipeline` on the same input, the sampling frequency
-    and the reference beats; `parse_golden_vector` gives back the same values, bitwise; and
-    rendering the parsed vector gives the same text.
+    `repr()` of its value; the values read back (with `float()`) equal bitwise the input and the
+    stage outputs of the hand-built vector, the coefficients of `run_pipeline`, the sampling
+    frequency and the reference beats; `parse_golden_vector` gives back the same values,
+    bitwise; and rendering the parsed vector gives the same text.
     """
-    signal = _ecg_with_edge_values(make_synthetic_ecg, fs)
-    reference = [0, 5, 5, signal.size - 1]
-    vector = golden_vector(
-        "edge-values", "test", "case=edge", signal, fs, mains, reference, software=SOFTWARE
+    small = _ecg_with_edge_values(make_synthetic_ecg, fs)
+    signal = _ecg_with_edge_values(make_synthetic_ecg, fs, large=True)
+    changed = small != signal
+    assert changed.any(), "the large edge values must be present"
+    reference = [0, 5, 5, small.size - 1]
+    computed = golden_vector(
+        "edge-values", "test", "case=edge", small, fs, mains, reference, software=SOFTWARE
     )
+    expected = run_pipeline(small, fs, mains)
+    # Hand-built vector: the input and the stage outputs hold the values beyond 1000 mV.
+    stage_outputs = tuple(np.where(changed, signal, out) for out in computed.stage_outputs_mv)
+    vector = dataclasses.replace(computed, input_mv=signal, stage_outputs_mv=stage_outputs)
     text = render_golden_vector(vector)
-    expected = run_pipeline(signal, fs, mains)
 
     golden = read_golden_file(text.encode("utf-8"))
     assert golden.not_shortest == ()
     assert float(golden.header["sampling_frequency_hz"]) == fs
     assert _same_float64(golden.input_mv, signal)
-    assert _same_float64(golden.stage_mv("baseline"), expected.baseline_mv)
-    assert _same_float64(golden.stage_mv("mains"), expected.mains_mv)
+    assert _same_float64(golden.stage_mv("baseline"), stage_outputs[0])
+    assert _same_float64(golden.stage_mv("mains"), stage_outputs[1])
     for stage, sos in zip(("baseline", "mains"), expected.coefficients, strict=True):
         assert _same_float64(golden.coefficients[stage], np.asarray(sos)[:, [0, 1, 2, 4, 5]])
     assert golden.beats.tolist() == expected.beats.tolist()
@@ -134,12 +156,10 @@ def test_values_read_back_exactly(
     parsed = parse_golden_vector(text, "edge.golden.txt")
     assert parsed.fs_hz == fs
     assert _same_float64(parsed.input_mv, signal)
-    for read, computed in zip(
-        parsed.stage_outputs_mv, (expected.baseline_mv, expected.mains_mv), strict=True
-    ):
-        assert _same_float64(read, computed)
-    for read, computed in zip(parsed.coefficients, expected.coefficients, strict=True):
-        assert _same_float64(read, computed)
+    for read, written in zip(parsed.stage_outputs_mv, stage_outputs, strict=True):
+        assert _same_float64(read, written)
+    for read, coefficients in zip(parsed.coefficients, expected.coefficients, strict=True):
+        assert _same_float64(read, coefficients)
     assert render_golden_vector(parsed) == text
 
 
