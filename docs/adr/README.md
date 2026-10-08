@@ -27,7 +27,10 @@ An open point in [`open-points.md`](../regulatory/open-points.md) that asks for 
 | ADR | Title | Status | Date |
 |---|---|---|---|
 | [0001](0001-mcu-and-firmware-framework.md) | MCU and firmware framework: ESP32-S3, ESP-IDF with FreeRTOS, C++17 | Accepted | 2026-09-29 |
-| [0002](0002-portable-cpp-dsp-library.md) | One portable C++17 signal-processing library, verified against the Python reference with golden vectors | Accepted | 2026-09-29 |
+| [0002](0002-portable-cpp-dsp-library.md) | One portable C++17 signal-processing library, verified against the Python reference with golden vectors | Accepted; amended by 0008 | 2026-09-29 |
 | [0003](0003-qt-desktop-application-with-replay.md) | Qt 6 desktop application with replay | Accepted | 2026-09-29 |
-| [0004](0004-test-tagging-and-traceability-gates.md) | Test tagging and traceability gates | Accepted | 2026-09-29 |
+| [0004](0004-test-tagging-and-traceability-gates.md) | Test tagging and traceability gates | Accepted; amended by 0006 | 2026-09-29 |
 | [0005](0005-device-sampling-rate-360-hz.md) | Device sampling rate: 360 Hz | Accepted | 2026-09-29 |
+| [0006](0006-verification-per-software-item.md) | Verification per software item | Accepted | 2026-10-08 |
+| [0007](0007-cpp-coding-standard-and-static-analysis.md) | C++ coding standard and static analysis | Accepted | 2026-10-08 |
+| [0008](0008-arithmetic-of-the-real-time-library.md) | Arithmetic of the real-time library | Accepted | 2026-10-08 |
