@@ -1,6 +1,6 @@
 # ADR 0007: C++ coding standard and static analysis
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-08
 - **Deciders:** project owner (decision); tech lead (proposal)
 - **Related:** OP-043; [ADR 0002](0002-portable-cpp-dsp-library.md); [`architecture.md`](../regulatory/architecture.md) §5.1, §14.2, §14.3; [`sdp.md`](../regulatory/sdp.md) §5

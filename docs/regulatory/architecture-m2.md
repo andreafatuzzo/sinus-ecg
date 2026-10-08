@@ -730,7 +730,7 @@ flowchart BT
 
 ### 13.12 Traceability checks for Milestone 2 (ADR 0006; OP-066)
 
-**Purpose.** From Milestone 2 a requirement can be implemented by two software items: SRS-022 and SRS-024 to SRS-028 name `dsp and libs/sinus-dsp`, and SRS-035 and SRS-038 name both as well. Under ADR 0004 a requirement counts as verified as soon as any verifying test exists, so the Python test alone would show such a requirement verified while the C++ library is not. [ADR 0006](../adr/0006-verification-per-software-item.md) (proposed) decides that **every software item that implements a requirement has its own verifying test**. This section is the design of `scripts/traceability.py` for that rule, for the disabled-test rule that comes with the first C++ tests (§8.16 item 5, OP-066) and for the version of the C++ library (§14.15). The developer implements it in group C1 (§14.18), with unit tests in `dsp/tests/unit/test_traceability.py`.
+**Purpose.** From Milestone 2 a requirement can be implemented by two software items: SRS-022 and SRS-024 to SRS-028 name `dsp and libs/sinus-dsp`, and SRS-035 and SRS-038 name both as well. Under ADR 0004 a requirement counts as verified as soon as any verifying test exists, so the Python test alone would show such a requirement verified while the C++ library is not. [ADR 0006](../adr/0006-verification-per-software-item.md) decides that **every software item that implements a requirement has its own verifying test**. This section is the design of `scripts/traceability.py` for that rule, for the disabled-test rule that comes with the first C++ tests (§8.16 item 5, OP-066) and for the version of the C++ library (§14.15). The developer implements it in group C1 (§14.18), with unit tests in `dsp/tests/unit/test_traceability.py`.
 
 **Software items of a requirement.** They are read from the line `**Software item:** …` of each requirement in `srs.md`:
 - entries are separated by `;`, and an entry may join items with ` and ` (`dsp and libs/sinus-dsp`);
@@ -781,18 +781,18 @@ No C++ compiler was used to write this version. Every numerical figure below com
 
 | Topic | Decision | Where |
 |---|---|---|
-| Arithmetic | Signal conditioning in binary64, detection, heart rate and signal quality index in binary32, inputs and outputs in binary32; no contraction, no fast-math | §14.3, [ADR 0008](../adr/0008-arithmetic-of-the-real-time-library.md) (proposed), OP-057 |
+| Arithmetic | Signal conditioning in binary64, detection, heart rate and signal quality index in binary32, inputs and outputs in binary32; no contraction, no fast-math | §14.3, [ADR 0008](../adr/0008-arithmetic-of-the-real-time-library.md), OP-057 |
 | Interfaces | One `Chain` per signal, configured once, one sample per call, events in a fixed-capacity output; components usable alone; heart-rate tracker fed with detections directly for its tests | §14.4 |
-| Memory | Fixed capacities sized for 1000 Hz; about 51.6 KB per chain; proposed limit 64 KiB | §14.10, SRS-032, OP-049 |
-| Tolerances | Conditioning 2e-5 mV; detection index and report sample 0 samples; heart rate 1e-4 bpm; signal quality index 0.01 (proposed) | §14.11, SRS-034, OP-005 |
+| Memory | Fixed capacities sized for 1000 Hz; about 51.6 KB per chain; limit 64 KiB | §14.10, SRS-032, OP-049 |
+| Tolerances | Conditioning 2e-5 mV; detection index and report sample 0 samples; heart rate 1e-4 bpm; signal quality index 0.01 | §14.11, SRS-034, OP-005 |
 | Build and tools | CMake ≥ 3.25 with presets; GoogleTest 1.18.0 by URL and SHA-256; CMake, Ninja, clang-format, clang-tidy and gcovr pinned in a uv project | §14.2 |
-| Coding standard | ISO C++17, project rules, clang-format and clang-tidy, warnings as errors | [ADR 0007](../adr/0007-cpp-coding-standard-and-static-analysis.md) (proposed), OP-043 |
+| Coding standard | ISO C++17, project rules, clang-format and clang-tidy, warnings as errors | [ADR 0007](../adr/0007-cpp-coding-standard-and-static-analysis.md), OP-043 |
 | Verification code | Golden reader, equivalence check and results in `verification/`, used on the computer and on the ESP32-S3 | §14.12, §14.13 |
 | ESP32-S3 | ESP-IDF v6.1 in its pinned container image; vectors as a binary pack in a data partition of a 16 MB flash image; Espressif QEMU | §14.13, SRS-036 |
 | Whole databases | A C interface to the library, called from Python with `ctypes` | §14.14, SRS-038 |
 | Identity | One version per milestone for every software item (`VERSION`); a source digest of the library | §14.15, OP-062 |
 | SBOM | CycloneDX 1.6 JSON written by CMake from a template | §14.16, OP-046 |
-| Traceability | One verifying test per implementing software item; C++ tests and Python tests of C++ items | §13.12, §14.17, [ADR 0006](../adr/0006-verification-per-software-item.md) (proposed) |
+| Traceability | One verifying test per implementing software item; C++ tests and Python tests of C++ items | §13.12, §14.17, [ADR 0006](../adr/0006-verification-per-software-item.md) |
 
 ### 14.2 Layout, build and development tools
 
@@ -848,7 +848,7 @@ libs/sinus-dsp/
 
 **Development tools pinned by uv.** `libs/sinus-dsp/tools/pyproject.toml` is a uv project that installs no package of its own (`[tool.uv] package = false`) and pins `cmake==4.4.4`, `ninja==1.13.2`, `clang-format==22.1.8`, `clang-tidy==22.1.8` and `gcovr==8.6`; `tools/uv.lock` is committed (wheels exist for Windows and Linux, checked on PyPI on 2026-10-08). The same versions therefore run locally and in CI: `uv sync --locked --project libs/sinus-dsp/tools`, then `uv run --project libs/sinus-dsp/tools cmake --preset release`. They are development tools, updated deliberately like the dependencies of `dsp` (`cybersecurity.md` §7.4). The compilers are not pinned this way: CI uses those of the runner image (GCC 14.2.0 and Clang 18.1.3 on `ubuntu-24.04`, image of 2026-09-27) and of ESP-IDF (§14.13); every result states the compiler (§14.12).
 
-**Local environment.** The development computer has no C++ compiler yet; which toolchain it gets is a decision of the project owner. With the LLVM-MinGW toolchain proposed for it (Clang and libc++ for Windows, installed per user) and the tools above, a developer builds the library and runs the unit, requirement and equivalence tests locally. Only CI runs the GCC and Clang builds on Linux, the sanitizers, the clang-tidy gate and the ESP32-S3 emulator. `std::from_chars` for `double`, used by the golden-vector reader, needs libstdc++ from GCC 11 or libc++ from LLVM 20.
+**Local environment.** The development computer has no C++ compiler yet; the project owner chose the LLVM-MinGW toolchain for it on 2026-10-08. With that toolchain (Clang and libc++ for Windows, installed per user) and the tools above, a developer builds the library and runs the unit, requirement and equivalence tests locally. Only CI runs the GCC and Clang builds on Linux, the sanitizers, the clang-tidy gate and the ESP32-S3 emulator. `std::from_chars` for `double`, used by the golden-vector reader, needs libstdc++ from GCC 11 or libc++ from LLVM 20.
 
 ### 14.3 Arithmetic (ADR 0008, proposed; OP-057)
 
@@ -1228,7 +1228,7 @@ In every case the true positives, false negatives and false positives of every r
 | Heart rate | One rounding of the division at an integer sampling frequency, three at another: ≤ 3 · u · rate, at most 5.4e-5 bpm for any rate up to 300 bpm (detections are at least 200 ms apart) | 7.5e-6 bpm | **1e-4 bpm** |
 | Signal quality index | Rounding: about 1e-6 (measured; a worst-case bound of the infinite impulse responses gives 0.68, which says nothing). A tie that moves the integrated peak of one detection moves its zone: by 1 sample the index of a golden window changes by at most 0.0027, by 2 samples by at most 0.0077 (computed for every detection and window of the golden set; a zone cut by a window edge is the worst case) | 7.5e-7 | **0.01** |
 
-- The report sample is compared although SRS-034 does not list it, because the heart rates must be reported "at the same samples": a different report sample of a reliable detection fails either way, and comparing it names the cause (§14.12). The PM may name it in SRS-034.
+- The report sample is compared (SRS-034 lists it since `srs.md` v0.8.2, tolerance 0 samples), because the heart rates must be reported "at the same samples": a different report sample of a reliable detection fails either way, and comparing it names the cause (§14.12).
 - The index tolerance 0.01 does not loosen any decision: the usable marks are compared exactly, and the closest golden window to the threshold lies 0.0019 from it.
 - With binary64 throughout, every tolerance could be of the order of 1e-9 and the integrated-peak ties would vanish, for about 43 KB more per chain (ADR 0008, alternative).
 - These values hold for the computer and the ESP32-S3 alike (SRS-036): the binary64 stages give the same results on both (IEEE 754 operations, the same order), and the binary32 stages differ only if a hardware or library function rounds differently, which the comparison measures.
@@ -1407,4 +1407,4 @@ The library has no third-party runtime code besides the C++ standard library and
 | C6 | ESP-IDF components, test app, pack, `emulator_log.py`, job `libs-esp32s3` | SRS-036 | §14.13 | C5 |
 | C7 | `harness/`, `sinus_dsp.evaluation.harness`, `compare_library.py` | SRS-038 | §14.14 | C3; reference group 6 |
 
-Each group lands with the tests of its requirements in the item that implements it (§13.12). C1 cites no requirement. QA writes the C++ requirement tests of C2 to C5 and the Python inspection test of SRS-035; the test engineer the system tests of C6 and C7. The tolerances of SRS-034 and the limit of SRS-032 are those approved by the project owner (proposed in §14.10 and §14.11); until then, C5 uses the proposed values.
+Each group lands with the tests of its requirements in the item that implements it (§13.12). C1 cites no requirement. QA writes the C++ requirement tests of C2 to C5 and the Python inspection test of SRS-035; the test engineer the system tests of C6 and C7. The tolerances of SRS-034 and the limit of SRS-032 are those of §14.10 and §14.11, approved by the project owner on 2026-10-08.

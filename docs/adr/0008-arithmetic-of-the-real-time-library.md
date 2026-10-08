@@ -1,6 +1,6 @@
 # ADR 0008: Arithmetic of the real-time library
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-08
 - **Deciders:** project owner (decision); tech lead (proposal, analysis)
 - **Related:** amends the precision rule of [ADR 0002](0002-portable-cpp-dsp-library.md) ("binary32 in the real-time path, `double` only at configuration time"); SRS-019, SRS-032, SRS-034, SRS-036, SRS-038; RC-012; OP-005, OP-014, OP-049, OP-057; [`architecture.md`](../regulatory/architecture.md) §4.2, §5.1, §7.1, §14.3, §14.10, §14.11

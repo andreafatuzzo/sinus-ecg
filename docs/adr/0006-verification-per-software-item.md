@@ -1,6 +1,6 @@
 # ADR 0006: Verification per software item
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-08
 - **Deciders:** project owner (the rule: one verifying test per software item that implements a requirement, decided on 2026-10-07); tech lead (how the items and the tests are determined, the checks, the matrix)
 - **Related:** amends [ADR 0004](0004-test-tagging-and-traceability-gates.md) §1, §5, §6, §7 and §8; SRS-022, SRS-024 to SRS-028, SRS-035, SRS-036, SRS-038; OP-066; [`architecture.md`](../regulatory/architecture.md) §13.12 (design of the checks), §14.17; [`sdp.md`](../regulatory/sdp.md) §3.1, §6
