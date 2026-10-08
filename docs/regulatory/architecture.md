@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.2.13, 2026-10-06. Status: approved by the project owner up to v0.2.12 (sections 1 to 7 and 9 to 12 in v0.1 and the detailed design of §8 in v0.2 on 2026-09-29; the corrections of v0.2.2 on 2026-09-30; the corrections of v0.2.4 on 2026-10-01; the software identity and versioning rule of v0.2.6 on 2026-10-03; v0.2.8 is editorial; the readings of §8.10 and §8.14 of v0.2.9 on 2026-10-04; the changes of v0.2.10 and of v0.2.11 on 2026-10-05; the changes of v0.2.12 on 2026-10-06); v0.2.13 is editorial._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.3, 2026-10-07. Status: approved by the project owner up to v0.3 (sections 1 to 7 and 9 to 12 in v0.1 and the detailed design of §8 in v0.2 on 2026-09-29; the corrections of v0.2.2 on 2026-09-30; the corrections of v0.2.4 on 2026-10-01; the software identity and versioning rule of v0.2.6 on 2026-10-03; v0.2.8 is editorial; the readings of §8.10 and §8.14 of v0.2.9 on 2026-10-04; the changes of v0.2.10 and of v0.2.11 on 2026-10-05; the changes of v0.2.12 on 2026-10-06; the Milestone 2 detailed design of `dsp` (§13) of v0.3 on 2026-10-07); v0.2.13 is editorial._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;
@@ -12,7 +12,7 @@ This document describes **how** Sinus is built:
 
 Significant decisions are recorded as architecture decision records in [`docs/adr/`](../adr/README.md), and this document cites them.
 
-The detailed design of each requirement (module, interface, algorithm with references, parameters, edge cases) is added milestone by milestone. For Milestone 1 it is in §8, which builds on the equivalence principle and the golden-vector format of §7.
+The detailed design of each requirement (module, interface, algorithm with references, parameters, edge cases) is added milestone by milestone. For Milestone 1 it is in §8, which builds on the equivalence principle and the golden-vector format of §7. For Milestone 2, the reference side (`dsp`: the amplitude bound of SRS-003, detection marks and report timing, heart rate, signal quality, the new validation and report sections, golden-vector format version 2) is in §13; the design of the real-time library (`libs/sinus-dsp`) follows in a later version of this document.
 
 ## Conventions
 
@@ -40,6 +40,7 @@ The detailed design of each requirement (module, interface, algorithm with refer
 | 0.2.11 | 2026-10-05 | Approved by the project owner on 2026-10-05. (1) Licences of the databases (OP-064, resolution (c) decided by the project owner on 2026-10-05; the licence item of SRS-012 and SRS-014 in `srs.md` v0.7.2, which SRS-016 inherits). New §8.15: the licence of each database version, checked on its PhysioNet page, is a constant of the code next to its pinned checksum list (`DatabaseLicence`, `ODC_BY_1_0`, `Database.licence`, §8.3); the reports state it in a row `Database licence`, after the row `Database`, in report section 2 (MIT-BIH Arrhythmia Database, full and subset report) and in the table of the noise stress section (Noise Stress Test Database) (§8.10, §8.11); the notice and the citations that PhysioNet asks for, in README §Data sources and in `docs/validation/README.md`, are given literally. §7.5 refers to §8.15. (2) Readings of the implemented golden-vector export (§8.12) recorded as design behaviour: `records=None` rejected; the types that `render_golden_vector` accepts; header values encodable as UTF-8; the reasons of the reader errors are not part of the format, the line numbers are; argument types of `synthetic_ecg`; the order of the checks of `golden_vector`; `skipped` computed from `records`; the script prints its `written:` lines after the export has completed; scripts may import the private module `_files` (§8.1). (3) §7.3: the line that a reader names when a row count differs from the header; two code changes to the readers, so that the Python and C++ readers reject the same texts: an integer above 2⁶³ − 1 is rejected at its line, and so is a float that is not zero in its digits but converts to zero. (4) §8.11: an empty stored subset report has no line; the CI cache is visible only to runs of the branch that saved it, of the base branch of a pull request and of the default branch, so a push on a new branch can download the 28 files again. (5) §8.12 step 1 no longer quotes the SRS-015 wording of `srs.md` v0.7 ("where the verified database is available"); it states the condition as worded since v0.7.1, and that the record segments are written all or none, as the design already did (the wording that `srs.md` v0.7.2 proposes for SRS-015). §8.13: the changes of v0.2.11 |
 | 0.2.12 | 2026-10-05 | Traceability checks (approved by the project owner on 2026-10-06; no change to `sinus_dsp`). New §8.16: corrections and clarifications of `scripts/traceability.py` found by its unit tests (OP-052, closed): the matrix states the outcome of the release gate, per milestone and in a new section `Release gate`; a test in the folder of the other verification level no longer counts as verifying (ADR 0004 §6); folders named `tests`, `test` or `test_apps` are not scanned as production code under the Python code roots either (ADR 0004 §1); a requirement mark in a file under `dsp/tests` that is not a test file fails `--check` (ADR 0004 §2); the Target of an open point must be `Mn` or `After Mn`; deleted requirements are not listed as requirements without tests; disabled and skipped tests: rule now, check with the first C++ tests (OP-066); the order of the items is kept. §8.14: the development-version item is what rejects a milestone still in progress, and the unit tests of the script are those of OP-052. §8.1: `traceability.py` cites §8.16. §8.13: the changes of v0.2.12. §9: the Python interpreter is SOUP of `dsp` (`soup.md`). §12: OP-066 |
 | 0.2.13 | 2026-10-06 | Editorial, no design change. OP-064 closed on 2026-10-06; its Milestone 2 part, notices for golden vectors of record segments made public, continues as OP-067. §7.5 and §8.15 "Golden vectors" cite OP-067 instead of the Milestone 2 part of OP-064; §8.15 "Consequences of the change" records the closure. §12: OP-067 added; OP-064 stays listed, as closed open points do |
+| 0.3 | 2026-10-07 | Milestone 2 detailed design of `dsp` (approved by the project owner on 2026-10-07), for `srs.md` v0.8. New §13: the 1000 mV bound of SRS-003 (OP-063); the detection trace with the start-up mark of SRS-022, the sample at which each detection is reported and the path that found it; the delays of the detection rules and the documented maximum of SRS-021 (OP-049); the heart-rate reference (SRS-024 to SRS-026); the signal quality index reference with its measures and threshold, fixed before any run on the reference databases (SRS-027, SRS-028); the evaluation of the start of real recordings, the signal quality index on the noise stress records and the new report sections (SRS-023, SRS-029, SRS-030), including the stretches of the noise stress records that carry added noise and reading records without annotation files; golden-vector format version 2 and eight synthetic event inputs (SRS-033); the wording of `docs/validation/README.md` (OP-069); implementation order. §2, §3: `dsp` also delivers in Milestone 2 (references of heart rate and signal quality). §5.2: no low-pass stage (OP-070), no adaptive canceller (F2.6, Milestone 4) and no decimator in Milestone 2. §7.2, §7.3: pointers to version 2. §8.2: `NonFiniteOutputError` cannot occur for an accepted input any more. §12 updated |
 
 ## 1. System context
 
@@ -73,7 +74,7 @@ flowchart LR
 
 | Item | Location | Language and platform | Milestones | Responsibility |
 |---|---|---|---|---|
-| **dsp**: reference implementation and validation pipeline | `dsp/` | Python 3.11 (NumPy, SciPy, wfdb) | M1; M6 | Offline reference of signal conditioning and beat detection; download and verification of the reference databases; EC57 evaluation, noise stress and reports; golden-vector export; later HRV and beat classification |
+| **dsp**: reference implementation and validation pipeline | `dsp/` | Python 3.11 (NumPy, SciPy, wfdb) | M1; M2; M6 | Offline reference of signal conditioning and beat detection (M1), of the start-up marks, heart rate and signal quality index (M2); download and verification of the reference databases; EC57 evaluation, noise stress, start of real recordings, signal quality validation and reports; golden-vector export; later HRV and beat classification |
 | **libs/sinus-dsp**: portable real-time signal-processing library | `libs/sinus-dsp/` | C++17, CMake; builds for the computer (host) and for the ESP32-S3 | M2 | The single real-time implementation of signal conditioning, beat detection, heart-rate tracking and signal quality, linked into the firmware and the desktop application |
 | **firmware** | `firmware/` | C++17 on ESP-IDF with FreeRTOS; ESP32-S3 | M4 | Acquisition at 360 Hz, electrode contact, device state supervision, streaming over Bluetooth LE |
 | **desktop**: desktop application | `desktop/` | C++17, Qt 6 (user-interface technology: OP-033); Windows, macOS, Linux | M3; M4 | Live view, signal status, recording, replay, test input, connection to the device |
@@ -97,7 +98,7 @@ Decisions: [ADR 0001](../adr/0001-mcu-and-firmware-framework.md) (ESP32-S3, ESP-
 | FB-05 Input validation and signal status | dsp: offline input checks (SRS-003). libs/sinus-dsp: configuration checks and signal quality (M2). desktop: signal status, combining signal quality, electrode contact, interruptions and device state (M3, OP-020). firmware: electrode contact (M4) | M1 to M4 |
 | FB-06 Signal conditioning | dsp: offline reference (M1). libs/sinus-dsp: real time (M2), run by the desktop (displayed results) and by the firmware (device-side results, §3.1) | M1; M2 |
 | FB-07 Beat detection | As FB-06 | M1; M2 |
-| FB-08 Heart rate | libs/sinus-dsp: tracking from beat intervals (M2). desktop: display rules, withholding (M3, OP-021) | M2; M3 |
+| FB-08 Heart rate | dsp: offline reference (M2, §13.5). libs/sinus-dsp: tracking from beat intervals (M2). desktop: display rules, withholding (M3, OP-071) | M2; M3 |
 | FB-09 Heart-rate variability | dsp (offline) | M6 |
 | FB-10 Beat classification | dsp (offline) | M6 |
 | FB-11 Live display | desktop | M3 |
@@ -105,7 +106,7 @@ Decisions: [ADR 0001](../adr/0001-mcu-and-firmware-framework.md) (ESP32-S3, ESP-
 | FB-13 Export | backend | M5 |
 | FB-14 Validation | dsp: EC57 and noise stress (M1), classification and HRV (M6). libs/sinus-dsp test suite: equivalence (M2). firmware and desktop: instrumentation for jitter, latency and lost samples, analysed offline (M4, OP-014) | M1; M2; M4; M6 |
 | FB-15 Replay | desktop | M3 |
-| FB-16 Signal quality index | libs/sinus-dsp, run wherever FB-06 runs. A Python reference exists if its equivalence is checked on golden vectors (OP-005, OP-032) | M2 |
+| FB-16 Signal quality index | dsp: offline reference and its validation on the noise stress records (M2, §13.6, §13.7). libs/sinus-dsp, run wherever FB-06 runs; its equivalence with the reference is checked on golden vectors (SRS-033, SRS-034). Display: OP-072 (M3) | M2 |
 | FB-17 Reference output export | dsp (SRS-015, §7) | M1 |
 | FB-18 Device state supervision | firmware; the state is shown by the desktop | M4 |
 
@@ -141,7 +142,7 @@ A discrepancy is counted and recorded with the session. It is not shown as a res
 | ID | From → to | Data | Transport and format | Milestone | Defined in |
 |---|---|---|---|---|---|
 | IF-1 | PhysioNet → dsp | D2: WFDB records and annotations, and the published SHA-256 checksum list | HTTPS download into `data/` (never committed) | M1 | SRS-001, SRS-013, SRS-016; §8 |
-| IF-2 | dsp → libs/sinus-dsp tests | D14: golden vectors | Text files, format §7.3 | M1 (export); M2 (use) | SRS-015; §7 |
+| IF-2 | dsp → libs/sinus-dsp tests | D14: golden vectors | Text files, format §7.3 (version 1, Milestone 1) and §13.8 (version 2, from Milestone 2) | M1 (export); M2 (use) | SRS-015, SRS-033; §7, §13.8 |
 | IF-3 | libs/sinus-dsp → firmware, desktop | D3, D4, D5, D13 | In-process C++17 API | M2 | §5 |
 | IF-4 | firmware → desktop | D1 (acquired samples, sample counter, packet sequence number, electrode contact, motion reference if present), D15 (device state), device-side results (§3.1) | Bluetooth LE GATT notifications; security in `cybersecurity.md` (OP-044) | M4 | §6.1 |
 | IF-5 | test input → desktop | D1, in the frame format of IF-4 | Serial port or UDP (local host only by default); only for sources that are not worn (OP-038) | M3 | §6.2 |
@@ -204,15 +205,15 @@ The interfaces themselves are designed with the Milestone 2 requirements; they f
 - `reset()` returns an object to its initial state. The desktop calls it at the start of each continuous segment.
 - Filters start in the initial state defined in §7.1, which the reference uses as well.
 
-Planned content for Milestone 2 (functional-analysis.md §5.2):
+Content for Milestone 2 (functional-analysis.md v0.3 §5.2; `srs.md` v0.8), each reproducing a function of the Python reference:
 - second-order-section filters (transposed direct form II) and their design;
-- the conditioning chain: baseline wander, mains notch, low-pass;
-- a polyphase decimator for the device's oversampled ADC;
-- an LMS adaptive interference canceller, with a mains reference (sine and cosine at the mains frequency) or a motion reference (OP-041);
-- streaming Pan–Tompkins detection;
-- Kalman heart-rate tracking from RR intervals (OP-021);
-- the per-window signal quality index (OP-032);
+- the conditioning chain of the reference: baseline wander, then mains notch (§7.1, §8.6). No low-pass stage: detection limits the band of its own input, and the removal of high-frequency noise is specified with the displayed waveform in Milestone 3 (functional-analysis.md F3.12, OP-070);
+- streaming Pan–Tompkins detection with the rules of §8.7, the start-up mark and the report timing of §13.3;
+- heart rate from beat intervals, as in §13.5;
+- the per-window signal quality index of §13.6;
 - a pipeline that composes them, used by both the firmware and the desktop application.
+
+Not in Milestone 2: the polyphase decimator for the device's oversampled ADC, which serves acquisition and is specified with the device (Milestone 4); the adaptive interference canceller with a mains or motion reference (functional-analysis.md F2.6, Milestone 4, OP-041). A Kalman filter for the heart rate, planned in v0.1, is not used: §13.5 gives the reasons.
 
 ### 5.3 Build, integration and tests
 
@@ -310,6 +311,8 @@ The command writes one file per input (SRS-015):
 
 If the files of the six records are not available or not verified, the record segments are skipped with a message naming them and the reason, and the synthetic files are still written. The export never downloads: the records are those already in the data folder (§7.5).
 
+From Milestone 2 the set also holds eight synthetic event inputs (SRS-033), defined in §13.9.
+
 **Synthetic ECG** (`sinus_dsp.synthetic`, deterministic, float64):
 - **Duration and sampling.** 30 s; sample instants t_n = n / fs, for n = 0 … 30·fs − 1.
 - **R-wave centres.** RR = 60 / heart rate (s). The R wave of beat k is centred on the sample r_k = ⌊(0.5 + k·RR)·fs + 0.5⌋, for every k ≥ 0 with 0.5 + k·RR ≤ 29.5 s. These r_k are the true beat positions of the input.
@@ -332,6 +335,8 @@ If the files of the six records are not available or not verified, the record se
   - `clean`: nothing is added.
 
 ### 7.3 File format, version 1
+
+Version 1 is the format of Milestone 1. From Milestone 2 the files are written in version 2 (§13.8), which keeps every rule of this section and adds the outputs of SRS-033; the readers accept version 2 only.
 
 One UTF-8 text file per input, named `<input identifier>.golden.txt`. Lines end with a line feed. There is no byte-order mark, no empty line, and no space, tab or carriage return anywhere, and the file ends with one line feed after `[end]`. The fields of a row are separated by a comma. It contains a header followed by four sections, always in this order:
 
@@ -470,7 +475,7 @@ This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requi
 - Signal-processing functions are pure: no global state, no I/O and no printing. Only scripts print messages. Files are written only by the functions whose design says so (downloads, §8.3; reports, §8.10 and §8.11; golden vectors, §8.12), always with `write_atomically` (§8.2).
 - The algorithms are written so that they port to the C++ library: causal filtering with second-order sections (`scipy.signal.sosfilt`, same difference equations); detection decisions taken on candidate peaks in time order, with bounded look-back; no zero-phase filtering and no whole-signal statistics in the detection logic.
 - Data folders: `data/mitdb/`, `data/nstdb/`, `data/golden/`, all ignored by git.
-- Private helpers shared by several modules (e.g. the time-to-samples conversions of §8.2) may go in private modules whose names start with `_` (e.g. `sinus_dsp/_units.py`). Their content is fixed by this section; they add no public interface. A module does not import a private name (`_name`) of another module that is not such a private module; the one exception is `qrs._detect`, the detection without input check, which `pipeline` calls after checking the input once (§8.7). The private modules are `_types` (type aliases), `_units` (conversions of times to samples) and `_files` (writing files), all in §8.2. The scripts of `dsp/scripts/` follow the same rule: they may import the names of a private module, and no private name of another module. One does: `subset_check.py` writes the copy of the updated stored report with `_files.write_atomically` (§8.11).
+- Private helpers shared by several modules (e.g. the time-to-samples conversions of §8.2) may go in private modules whose names start with `_` (e.g. `sinus_dsp/_units.py`). Their content is fixed by this section; they add no public interface. A module does not import a private name (`_name`) of another module that is not such a private module; the one exception is `qrs._detect`, the detection without input check, which `pipeline` calls after checking the input once (§8.7); from v0.3 it is `qrs._trace`, which also returns the trace (§13.3). The private modules are `_types` (type aliases), `_units` (conversions of times to samples) and `_files` (writing files), all in §8.2. The scripts of `dsp/scripts/` follow the same rule: they may import the names of a private module, and no private name of another module. One does: `subset_check.py` writes the copy of the updated stored report with `_files.write_atomically` (§8.11).
 
 ### 8.2 Common conventions and errors
 
@@ -502,7 +507,7 @@ This section is the detailed design (IEC 62304 §5.4) of every Milestone 1 requi
 | `DataVerificationError` | `SinusError` | A database, or the requested records of it, is not verified: a listed file is missing or its SHA-256 differs, or the checksum list itself is missing or differs from its pinned digest (§8.3). Also raised, before anything is written, by the commands that need verified data (§8.10, §8.11). The golden-vector export does not raise it: it skips the record segments and states the reason (§8.12) | `database: str` (e.g. `mitdb 1.0.0`); `missing: tuple[str, ...]` and `mismatched: tuple[str, ...]`, relative paths sorted in code-point order | SRS-001, SRS-012, SRS-013, SRS-014, SRS-016 |
 | `MalformedFileError` | `SinusError`, `ValueError` | A file does not follow its format: a golden-vector file that a reader rejects, including one that is not UTF-8 text (§7.3, §8.12), a checksum list (§8.3), an annotation file whose sample indices decrease (§8.4), a record list `RECORDS` that is not UTF-8 text, names an invalid record or a record twice, or names none (§8.10), a stored subset report that differs from the regenerated one and is not UTF-8 text (§8.11) | `path: str`; `line: int | None` (1-based); `reason: str` | SRS-015; also SRS-001, SRS-002, SRS-016 |
 | `SubsetReportMismatchError` | `SinusError` | The regenerated subset report differs from the stored one (§8.11) | `differences: tuple[str, ...]`: one entry per differing line, at most 20, then the entry `… and <k> more`; or the single entry `no stored report: <path>` (formats in §8.11) | SRS-016 |
-| `NonFiniteOutputError` | `SinusError` | The golden-vector export finds a value that is not finite (§7.3). With the inputs of §7.2 this cannot happen; with a finite input of extreme amplitude the filters can overflow (OP-063), and the check keeps such values out of the file format | `input_id: str` | SRS-015 |
+| `NonFiniteOutputError` | `SinusError` | The golden-vector export finds a value that is not finite (§7.3). With the inputs of §7.2 this cannot happen; with a finite input of extreme amplitude the filters could overflow (OP-063). From v0.3 the input check rejects every sample beyond 1000 mV (§13.2), so no accepted input can produce such a value; the check stays as a guard of the file format | `input_id: str` | SRS-015 |
 
 The checks of §8.8, §8.9, §8.10 and §8.12 named in the table that no requirement states are design behaviours: they guard the preconditions of internal functions, whose inputs come from verified functions, and the developer's unit tests verify them.
 
@@ -1744,12 +1749,12 @@ PhysioNet asks users of these databases to cite the original publication of each
 - PhysioNet: Pollard, T., Moody, B. E., Lehman, L., Gow, B., Fernandes, C., Xie, C., Johnson, A., Mark, R. G., & Heldt, T. (2026). PhysioNet as a global platform for biomedical research. Nature Health. https://doi.org/10.1038/s44360-026-00096-z. Available from: https://rdcu.be/faatM
 ````
 
-`docs/validation/README.md`: a new last section:
+`docs/validation/README.md`: a new last section (its first paragraph as reworded in v0.3, §13.10, OP-069):
 
 ````markdown
 ## Data sources
 
-The reports contain information from the [MIT-BIH Arrhythmia Database, version 1.0.0](https://physionet.org/content/mitdb/1.0.0/) (both reports) and the [MIT-BIH Noise Stress Test Database, version 1.0.0](https://physionet.org/content/nstdb/1.0.0/) (`qrs-ec57-report.md`), which are made available by PhysioNet under the [Open Data Commons Attribution License v1.0](https://opendatacommons.org/licenses/by/1-0/). Each report states the licence of each database it uses, in the row `Database licence`.
+The validation reports contain information from the [MIT-BIH Arrhythmia Database, version 1.0.0](https://physionet.org/content/mitdb/1.0.0/) (both validation reports) and the [MIT-BIH Noise Stress Test Database, version 1.0.0](https://physionet.org/content/nstdb/1.0.0/) (`qrs-ec57-report.md`), which are made available by PhysioNet under the [Open Data Commons Attribution License v1.0](https://opendatacommons.org/licenses/by/1-0/). Each validation report states the licence of each database it uses, in the row `Database licence`. The milestone verification reports quote results of the validation reports.
 
 PhysioNet asks users of these databases to cite the original publication of each database and the standard citation for PhysioNet:
 - MIT-BIH Arrhythmia Database: Moody GB, Mark RG. The impact of the MIT-BIH Arrhythmia Database. IEEE Eng in Med and Biol 20(3):45-50 (May-June 2001). (PMID: 11446209)
@@ -1859,4 +1864,728 @@ Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, Google
 
 ## 12. Open points referenced
 
-OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-052, OP-056, OP-057, OP-061, OP-063, OP-064, OP-066, OP-067. See [`open-points.md`](open-points.md).
+OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-047, OP-049, OP-050, OP-052, OP-056, OP-057, OP-061, OP-062, OP-063, OP-064, OP-066, OP-067, OP-069, OP-070, OP-071, OP-072. See [`open-points.md`](open-points.md). Closed open points stay listed. Since v0.3: OP-021 and OP-032 are closed (their Milestone 2 parts specified by `srs.md` v0.8 and designed in §13.5 and §13.6); OP-049 and OP-063 are designed in §13.4 and §13.2; OP-069 in §13.10.
+
+## 13. Milestone 2 detailed design of `dsp`
+
+This section is the detailed design (IEC 62304 §5.4) of the reference side of the Milestone 2 requirements: the change of SRS-003, the reference parts of SRS-022 and SRS-024 to SRS-028, and SRS-023, SRS-029, SRS-030 and SRS-033, with the documented maximum delay of SRS-021. Everything in §8.1 and §8.2 holds unchanged (module rules, types, argument defaults, times in samples, determinism, writing files, requirement citations, errors). The detection rules of §8.7 do not change (OP-056): the trace of §13.3 records what the detector already does.
+
+The real-time library reproduces §13.3, §13.5 and §13.6 sample by sample; its own design (memory layout, binary32 arithmetic, interfaces) follows in a later version of this document. Wherever a quantity below decides a mark, a status or a count, it is computed on integers, so that the reference and the library decide alike; only the reported values (heart rate in bpm, signal quality index) are floating-point, compared within the tolerances of SRS-034 (OP-005).
+
+The choices below were checked with a prototype on synthetic signals only (the waveform of §7.2 at any heart rate, morphology variants, synthetic noise), never on the reference databases: the signal quality index in particular is fixed before its first run on them (§13.6).
+
+### 13.1 Module structure (changes from §8.1)
+
+| Module (`dsp/sinus_dsp/`) | Change | Requirements |
+|---|---|---|
+| `_types.py` | New alias `BoolArray = numpy.typing.NDArray[numpy.bool_]` | — |
+| `input_checks.py` | The 1000 mV bound; `validate_fs` factored out of `validate_input` (§13.2) | SRS-003 |
+| `qrs.py` | The detection trace: `QrsTrace`, `Detections`, `trace_qrs`, the path names; `detect_qrs` unchanged in result (§13.3) | SRS-006, SRS-022 |
+| `heart_rate.py` (new) | Heart rate from the detections (§13.5) | SRS-024, SRS-025, SRS-026 |
+| `quality.py` (new) | Signal quality index per window (§13.6) | SRS-027, SRS-028 |
+| `pipeline.py` | `PipelineResult` gains the detections, the heart-rate events and the quality windows; new `detect_marked` (§13.3, §13.8) | SRS-006, SRS-010, SRS-015, SRS-022, SRS-024, SRS-027, SRS-033 |
+| `synthetic.py` | The event inputs (§13.9) | SRS-033 |
+| `golden.py` | Format version 2 (§13.8) | SRS-015, SRS-033 |
+| `data/records.py` | `load_record(..., annotator=None)` and `load_signal`, for records without an annotation file (§13.7.1) | SRS-002 (unchanged behaviour with an annotator) |
+| `evaluation/noise_stress.py` | Noise records, noisy stretches (§13.7.1) | SRS-014, SRS-029 |
+| `evaluation/start_of_stream.py` (new) | Segments of SRS-023 and their scoring (§13.7.2) | SRS-023 |
+| `evaluation/signal_quality.py` (new) | Window summaries, the criteria of SRS-029, the figures of SRS-030 (§13.7.3) | SRS-029, SRS-030 |
+| `evaluation/run.py` | `ValidationResults` gains the quality and start-of-stream results; `RecordEvaluation` keeps its false negatives and false positives (§13.7.4) | SRS-023, SRS-029, SRS-030 |
+| `evaluation/report.py` | Two new sections of the full report (§13.7.5) | SRS-030 |
+
+Scripts: `validate.py` and `export_golden.py` keep their options; their output grows. No new script. No new runtime dependency: everything below uses the standard library, NumPy and SciPy, already in `soup.md`.
+
+**Pipeline.** `run_pipeline` (§8.7) stays the single definition of the chain and computes everything the real-time library outputs:
+
+```python
+@dataclass(frozen=True)
+class PipelineResult:
+    ...                                      # the fields of §8.7, unchanged (beats = detections.indices)
+    detections: Detections                   # §13.3
+    heart_rate: tuple[HeartRateEvent, ...]   # §13.5
+    quality: QualityWindows                  # §13.6
+```
+
+After the conditioning: `trace = _trace(mains_mv, fs)`; `heart_rate = track_heart_rate(trace.detections.indices, trace.detections.startup, fs, n_samples, reported_at=trace.detections.reported_at)`; `quality = assess_quality(input_mv, trace)`. `detect_beats` and `detect_marked` stop after the trace (§13.3), so that the evaluation of detection does not pay for the rest.
+
+**Citations.** `heart_rate.py` and `quality.py` cite SRS-024 to SRS-026 and SRS-027, SRS-028 respectively; `qrs.trace_qrs` cites SRS-022. These requirements belong to both `dsp` and `libs/sinus-dsp` (`srs.md` v0.8): the traceability matrix counts any verifying test, so a Python requirement test alone shows them verified. The milestone verification and the release review check that each of them also has a C++ requirement test.
+
+### 13.2 Amplitude bound of the input (SRS-003; OP-063)
+
+**Module.** `sinus_dsp.input_checks`.
+
+```python
+MAX_ABS_SAMPLE_MV: Final = 1000.0
+
+def validate_fs(fs_hz: float) -> float: ...                 # checks 1 and 2 below; returns float(fs_hz)
+def validate_input(signal_mv: npt.ArrayLike, fs_hz: float) -> FloatArray: ...
+```
+
+`validate_input` checks, in this order, and raises `InvalidInputError` at the first failure (§8.5, with one new check):
+1. `fs_hz` is a real number (not `bool`) and finite;
+2. `125.0 ≤ fs_hz ≤ 1000.0`;
+3. the signal converts to a one-dimensional array of integer or floating-point kind;
+4. the signal is not empty;
+5. every sample is finite; the message gives the number of non-finite samples and the index of the first;
+6. **new:** every sample has `abs(sample) ≤ 1000.0`, compared on the float64 copy; the message gives the number of samples beyond the bound, the index of the first and its value (`repr`);
+7. the duration is at least 10 s.
+
+`validate_fs` performs checks 1 and 2 alone, with the same messages; `validate_input` calls it first. It is also used by the functions of §13.5 that take a sampling frequency without a signal.
+
+**Behaviour.** The comparison is exact in binary64: `1000.0` is accepted; `math.nextafter(1000.0, math.inf)` (1000.0000000000001) and its negative are rejected, the values of the SRS-003 verification. An integer input is converted to float64 first (check 3), so a large integer is rejected by check 6. Check 6 comes after check 5 so that a NaN, whose comparisons are all false, is reported as non-finite.
+
+**Consequences.**
+- Every function that calls `validate_input` (§8.5 "Where it is called", `golden_vector` through `run_pipeline`, and the functions of §13.3 and §13.6) rejects such an input. The MIT-BIH Arrhythmia Database lies within ±5.12 mV and the noise records of the Noise Stress Test Database within ±5 mV (largest magnitude 4.85 mV, in `bw`), so no result changes; the source digest changes, so both reports are regenerated (§8.11).
+- With every sample within 1000 mV, no filter or detection value of an accepted input can overflow: the integrated signal stays below about 10¹³ (mV/s)² at 1000 Hz, and its sums over 2 s below about 10¹⁷. `NonFiniteOutputError` and the `OverflowError` of the threshold initialisation reported with OP-063 cannot occur any more (§8.2).
+- The real-time library rejects the same samples (SRS-018). In binary32 the bound is the same number; the smallest binary32 value above it, `1000.00006103515625`, is the one of the SRS-018 verification.
+
+**Verification notes.** QA updates the SRS-003 tests (rejected: one sample equal to `math.nextafter(1000.0, math.inf)`, one equal to its negative; accepted: a 10 s input at 360 Hz with samples equal to 1000.0 and −1000.0), for the filters of SRS-004 and SRS-005 and the detection of SRS-006. Tests that used inputs above 1000 mV to provoke non-finite filter outputs change: `NonFiniteOutputError` is exercised by rendering a hand-built `GoldenVector` with a non-finite value (§8.12, developer's unit tests). OP-063 can be closed when these tests are merged and SRS-003 is verified again.
+
+### 13.3 Detection trace: marks, report sample and path (SRS-022; used by SRS-021, SRS-024, SRS-026, SRS-027)
+
+**Module.** `sinus_dsp.qrs`; `sinus_dsp.pipeline`.
+
+**Purpose.** The detector of §8.7 is causal and decides sample by sample, so the sample at which the real-time library reports each detection is defined by the same procedure: it is the sample `n` of §8.7.3 at which the index is appended to the output. The trace records, for every detection, its index, its mark, that sample and the rule that found it. The heart rate (§13.5) needs the report sample, because "no recent beat" (SRS-026) is counted from the detections reported so far; the signal quality index (§13.6) needs it, because a window uses the detections reported by its own report sample.
+
+**Interface.**
+
+```python
+# qrs.py
+PATH_NORMAL: Final = "normal"            # classified at its confirmation (§8.7.3, step 1 of the procedure)
+PATH_SEARCH_BACK: Final = "search_back"  # accepted by search-back (§8.7.3, step 3 of the procedure)
+PATH_LEARNING: Final = "learning"        # classified during an initialisation (§8.7.3)
+DETECTION_PATHS: Final = (PATH_NORMAL, PATH_SEARCH_BACK, PATH_LEARNING)
+
+@dataclass(frozen=True)
+class Detections:
+    indices: IndexArray           # fiducial points f, strictly increasing (= detect_qrs)
+    startup: BoolArray            # True: mark "start-up" (SRS-022); False: "reliable"
+    reported_at: IndexArray       # sample n at which each detection is reported; non-decreasing;
+                                  # indices[i] <= reported_at[i] < n_samples
+    peaks: IndexArray             # m, the peak of the integrated signal of each detection
+    paths: tuple[str, ...]        # one of DETECTION_PATHS per detection
+    initialisations: IndexArray   # sample of every initialisation, increasing; the first is L - 1
+
+@dataclass(frozen=True)
+class QrsTrace:
+    fs_hz: float
+    samples: DetectorSamples
+    signals: QrsSignals
+    detections: Detections
+
+def trace_qrs(conditioned_mv: npt.ArrayLike, fs_hz: float) -> QrsTrace: ...   # SRS-006, SRS-022
+def detect_qrs(conditioned_mv: npt.ArrayLike, fs_hz: float) -> IndexArray: ... # trace_qrs(...).detections.indices
+
+# pipeline.py
+def detect_marked(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Detections: ...
+```
+
+`trace_qrs` validates its input (§13.2) and runs the private `_trace(x, fs_hz) -> QrsTrace`, which is the procedure of §8.7.3 unchanged, with the bookkeeping below. `_detect` is removed; `pipeline` imports `_trace` instead (the one allowed private import of §8.1). `detect_marked` checks the input and the mains setting once, conditions the signal (§8.6) and returns `_trace(mains_mv, fs).detections`; it computes no heart rate and no quality window. `detect_beats` keeps its result and is computed as `detect_marked(...).indices`, so that the evaluation does not compute what it does not use.
+
+**Bookkeeping in `_trace`** (no decision changes):
+- The procedure keeps the current sample `n` and a current path, `PATH_NORMAL` by default. Search-back (step 3) sets it to `PATH_SEARCH_BACK` for its own acceptance; an initialisation (at `n = L − 1` or at a re-learning) sets it to `PATH_LEARNING` while it classifies the stored peaks again; both restore `PATH_NORMAL`.
+- An initialisation at sample `n` appends `n` to `initialisations` before it classifies any peak (when `init_n = n` is set, §8.7.3).
+- Each time a peak `p` is accepted as a QRS (the one place where `p.f` is appended to the output), the trace appends: `p.f` to `indices`; its mark (below); `n` to `reported_at`; `p.m` to `peaks`; the current path to `paths`.
+
+**The mark** (SRS-022). With `i = init_n` at the moment of the acceptance (the latest initialisation) and `L` the learning samples, the detection is **start-up** if `max(0, i − L + 1) ≤ p.f ≤ i`, and **reliable** otherwise.
+- This is the stretch of `L` samples from which that initialisation learned its levels (§8.7.3, "Initialisation at sample n"): `[0, L − 1]` for the first one (the start-up period of SRS-022), `[i − L + 1, i]` for a re-learning at `i`. `L = round(2 · fs_hz)` samples (720 at 360 Hz, 500 at 250 Hz): the 2 s of SRS-022.
+- **Only the latest initialisation matters.** A detection accepted before a re-learning at `i` has `p.m ≤ last.m ≤ i − G` (re-learning needs `G` samples without a QRS), so `p.f < i − L + 1` because `G > L`. A detection accepted after an initialisation at `i₂` comes from a peak classified at `i₂` (`p.m ≥ i₂ − L + 1`) or confirmed after `i₂` (`p.m ≥ i₂ − P`), so `p.f ≥ i₂ − L − N − 1 − D`, while every earlier initialisation `i₁` satisfies `i₁ ≤ i₂ − G`. A detection can therefore lie only in the stretch of the latest initialisation at its acceptance, and the mark never changes after the detection is reported.
+- A detection whose peak `m` lies just after the learning stretch can have its index inside it (`f` is up to `N + 1 + D` samples before `m`): it is marked start-up, because SRS-022 states the rule on the index.
+- The mark changes no detection and no index (SRS-022): `indices` equals the output of §8.7 exactly.
+
+**Edge cases.** A flat input gives no detection, the initialisation at `L − 1` and a re-learning every `G` samples. Detections reported at the first initialisation share the sample `L − 1`, so `reported_at` is non-decreasing, not strictly increasing. A re-learning stretch that lies in a flat stretch contains no detection, so no start-up mark follows it: the detections after the signal returns are marked reliable. On the waveform of §7.2, after flat stretches of 9 s and 20 s at 60, 75 and 120 bpm, every following beat was detected at +8 ms with no false detection (prototype on synthetic signals). That case is covered by the heart rate, which stays withheld until 4 new intervals exist (SRS-026), as the rationale of SRS-022 states.
+
+**Verification notes.**
+- Developer's unit tests: `trace_qrs(...).detections.indices` equals the output of the Milestone 1 detector on the synthetic set of §7.2 and on noise (the per-sample procedure is unchanged); `initialisations` starts with `L − 1`; each path occurs on the event inputs of §13.9 as documented there; `reported_at[i] ≥ indices[i]`; the start-up rule on hand-placed detections around a learning stretch, including an index inside the stretch whose peak lies after it.
+- QA (SRS-022, reference part): on the synthetic ECGs of SRS-006 at 40, 75 and 180 bpm (360 Hz and 250 Hz), the detections with index at most `L − 1` are start-up and the others reliable, and `indices` equals `detect_beats` on the same input. For the stretch from which detection learns its levels again, the input to use is the event input `artefact` of §13.9 (its re-learning stretch contains beats). A flat stretch followed by the ECG gives a re-learning stretch without detections (edge cases above), so on such an input the check finds no start-up detection after the first 2 s.
+
+### 13.4 Delays of the detection rules (SRS-021; OP-049)
+
+The delay of a detection is `reported_at − index` samples (`srs.md`, "delay": from the sample at its index to its report, in samples given). With the parameters of §8.7 in samples (`N` window, `P` peak timeout, `D` band delay, `R` refractory, `L` learning, `G` re-learning), the bounds by path are:
+
+| Path | Bound (samples) | Why | 125 Hz | 250 Hz | 360 Hz | 1000 Hz |
+|---|---|---|---|---|---|---|
+| Normal thresholds | `N + P + D + 2` | Confirmed at most `P + 1` samples after `m`; `f ≥ m − N − 1 − D` | 38 (0.304 s) | 73 (0.292 s) | 103 (0.286 s) | 283 (0.283 s) |
+| First initialisation | `L − 1` | Reported at `L − 1`; `f ≥ 0` | 249 (1.992 s) | 499 (1.996 s) | 719 (1.997 s) | 1999 (1.999 s) |
+| Re-learning | `L + N + D` | Reported at the re-learning sample `n`; `m ≥ n − L + 1` | 274 (2.192 s) | 547 (2.188 s) | 787 (2.186 s) | 2186 (2.186 s) |
+| Search-back | `G + N + D + 1 − R` | Search-back fires at the latest at `last.m + G` (in the same sample as the re-learning, before it); the candidate was classified after the last QRS, so `c.m ≥ last.m + R` and `c.f ≥ c.m − N − 1 − D` | 1000 (8.000 s) | 1998 (7.992 s) | 2876 (7.989 s) | 7987 (7.987 s) |
+
+(At 125 Hz, with the conversions of §8.2: N = 19, P = 12, D = 5, R = 25, L = 250, G = 1000.)
+
+**Documented maximum** (SRS-021). Every detection is reported at most **`G + N + D + 1 − R` samples** after the sample at its index: 2876 samples (7.989 s) at 360 Hz, 1998 samples (7.992 s) at 250 Hz, and **at most 8.01 s at any sampling frequency from 125 Hz to 1000 Hz** (the expression is 7.986 s · fs_hz + 1 sample, plus at most 1.5 samples of rounding). The bound is set by search-back, whose candidate has no age limit (OP-056 (a), unchanged in Milestone 2); the rationale of SRS-021 calls it "about 8 s".
+
+**Regular rhythm after the start-up period.** For a noise-free regular rhythm from 30 to 200 bpm, every detection after the first 2 s is found by the normal thresholds, so its delay is at most `N + P + D + 2` samples: at most 0.31 s at every accepted sampling frequency, within the 0.35 s of SRS-021. On the 30 inputs of SRS-006 and SRS-010 (60 s each, prototype), every detection after 2 s was found on the normal path, with a largest delay of 0.172 s at 360 Hz and 0.212 s at 250 Hz (200 bpm).
+
+**Verification notes.** The delays of the real-time library are verified on the library (SRS-021, QA). The inputs that make detection report a beat found during its learning period, by search-back and after a re-learning are the event inputs of §13.9: every input has beats in its first 2 s; `small-beat` gives a search-back detection at both rates (delay 0.62 s) and `artefact` a search-back detection 5.8 s late at 250 Hz; `artefact` gives detections after a re-learning at both rates. QA can check on the reference trace (`Detections.paths`) that each input exercises its path, then check the delays of the library against the bound above.
+
+### 13.5 Heart rate (SRS-024, SRS-025, SRS-026)
+
+**Module.** `sinus_dsp.heart_rate`.
+
+**Requirements on the estimator.** SRS-024 asks for 2 bpm on a regular rhythm from 30 to 200 bpm and the new rate from the fifth interval after a change; SRS-025 asks for 5 bpm with one missed or one added detection; SRS-026 fixes the first estimate at the fourth interval and the range 30–200 bpm. Two consequences shape the design:
+- **Averaging is needed for 2 bpm.** One interval rounded to the sample changes the rate by up to HR² / (60 · fs) bpm: 1.85 bpm at 200 bpm and 360 Hz, but 2.67 bpm at 250 Hz and 5.3 bpm at 125 Hz. The mean of k consecutive intervals of rounded positions is the span between the first and the last detection divided by k, so its error is below 1/k sample.
+- **Robustness is needed for 5 bpm, with at most five intervals.** A plain mean fails SRS-025 (one missed beat moves a mean of four intervals at 75 bpm to 60 bpm). An added detection splits one interval into two short ones, so the estimator must tolerate two adjacent outliers among four or five intervals. And to reach the new rate at the fifth interval, the window can hold no more than five intervals.
+
+**Estimator** (`estimate_intervals`), from the last up to six intervals of the stream (oldest first, at least four), in samples:
+1. `w` = the last `min(5, len)` intervals. `M` = the third smallest value of `w` (the middle of five; the upper middle of four). `M` is one of the intervals, an integer.
+2. The **outliers** of `w` are the intervals `v` with `100 · v < 92 · M` or `100 · v > 116 · M`. These are the limits of P&T's RR AVERAGE2 (92% and 116%; Pan and Tompkins 1985), around `M` instead of a running average, so that they hold from the first estimate. They are wide enough for rounding: one sample is at most 2.7% of the shortest interval in range (37.5 samples at 125 Hz and 200 bpm).
+3. **Robust estimate** if `w` has no outlier, one outlier, or two outliers that are adjacent in `w`: the patterns of a missed detection (one interval about twice as long), of an added detection (two adjacent short intervals, or one of them at either end of the window) and of an isolated premature beat with its compensatory pause (a short interval followed by a long one). Then `k` = the number of non-outliers of `w` and `S` = their sum.
+4. **Mean estimate** otherwise (three or more outliers, or two that are not adjacent: an irregular rhythm): `k` = the number of intervals given (up to six) and `S` = their sum. Six intervals hold a whole number of cycles of bigeminy and trigeminy, so these rhythms read as their mean rate.
+5. The rate is `60.0 * fs_hz * k / S` bpm, computed in float64 in this order. It is **in range** if `ceil(300 · k · fs_hz / 1000) ≤ S ≤ floor(2000 · k · fs_hz / 1000)` (mean interval from 300 ms to 2000 ms, i.e. 200 to 30 bpm, both included), computed as in §8.2 ("at least" with `ceil`, "at most" with `floor`; exact for every integer `fs_hz`). The status therefore never depends on the rounding of the rate.
+
+All decisions use integers only; the real-time library makes the same decisions and computes only the rate in binary32.
+
+**Interface.**
+
+```python
+STATUS_VALID: Final = "valid"
+STATUS_NOT_ENOUGH_BEATS: Final = "not_enough_beats"
+STATUS_NO_RECENT_BEAT: Final = "no_recent_beat"
+STATUS_OUT_OF_RANGE: Final = "out_of_range"
+HEART_RATE_STATUSES: Final = (STATUS_VALID, STATUS_NOT_ENOUGH_BEATS, STATUS_NO_RECENT_BEAT,
+                              STATUS_OUT_OF_RANGE)
+MIN_INTERVALS: Final = 4            # SRS-026
+ROBUST_WINDOW: Final = 5            # intervals
+MEAN_WINDOW: Final = 6              # intervals
+INLIER_LOW_PERCENT: Final = 92
+INLIER_HIGH_PERCENT: Final = 116
+MIN_INTERVAL_MS: Final = 300        # 200 bpm
+MAX_INTERVAL_MS: Final = 2000       # 30 bpm
+NO_RECENT_BEAT_MS: Final = 3000     # SRS-026
+METHOD_ROBUST: Final = "robust"
+METHOD_MEAN: Final = "mean"
+
+@dataclass(frozen=True)
+class IntervalEstimate:
+    n_intervals: int        # k
+    span_samples: int       # S, the sum of the k intervals used
+    method: str             # METHOD_ROBUST or METHOD_MEAN
+
+@dataclass(frozen=True)
+class HeartRateEvent:
+    sample: int             # stream sample at which it is reported
+    beat_index: int | None  # index of the reliable detection it is reported at; None for a change of
+                            # status at no detection
+    status: str             # one of HEART_RATE_STATUSES
+    bpm: float | None       # the rate for STATUS_VALID and STATUS_OUT_OF_RANGE; None otherwise
+
+def no_recent_beat_samples(fs_hz: float) -> int: ...      # ceil(3000 * fs_hz / 1000): 1080 at 360 Hz
+def estimate_intervals(intervals: Sequence[int]) -> IntervalEstimate: ...
+def interval_rate_bpm(estimate: IntervalEstimate, fs_hz: float) -> float: ...
+def interval_in_range(estimate: IntervalEstimate, fs_hz: float) -> bool: ...
+def track_heart_rate(indices: npt.ArrayLike, startup: npt.ArrayLike, fs_hz: float, n_samples: int, *,
+                     reported_at: npt.ArrayLike | None = None) -> tuple[HeartRateEvent, ...]: ...
+```
+
+**`track_heart_rate`** (SRS-024 to SRS-026) processes the stream sample by sample, `n` from 0 to `n_samples − 1`, as the library does. `reported_at` gives the sample at which each detection is reported (§13.3); `None` means that each detection is reported at its own index, which is how a test gives a sequence of detections directly. State: up to six intervals; the number of intervals since the last reset (`count`); the reset sample `reset_at`, initially −1; the previous detection (its index and mark); the last reliable detection reported (`last`); the last reliable detection for which "no recent beat" has fired; the current status, initially `not_enough_beats`. No event is reported at sample 0: the initial status is part of the definition.
+
+At sample `n`:
+1. For each detection reported at `n`, in order:
+   - **start-up**: it becomes the previous detection; no event (SRS-024: the heart rate is reported at reliable detections, and start-up detections never enter it).
+   - **reliable**: if the previous detection exists, is reliable and its index is greater than `reset_at`, the interval between the two indices is added (the oldest dropped beyond six) and `count` increases. It becomes the previous detection and `last`. Then:
+     - if `count < 4`: status `no_recent_beat` if `reset_at ≥ 0` (a "no recent beat" has started since the stream began), otherwise `not_enough_beats`; no rate;
+     - otherwise: `estimate_intervals` on the last `min(6, count)` intervals; status `valid` if in range, otherwise `out_of_range`; the rate in both cases.
+
+     An event `(n, index, status, rate)` is reported, whatever the status (SRS-024: at each reliable detection).
+2. **No recent beat.** If `last` exists, "no recent beat" has not fired for it yet, and `n − last.index ≥ no_recent_beat_samples(fs_hz)`: it fires for `last`; `reset_at = n`; the intervals are cleared and `count = 0`; if the status is not already `no_recent_beat`, it becomes so and the event `(n, None, no_recent_beat, None)` is reported (SRS-024: at each change of validity).
+
+**Readings of SRS-026** that this procedure makes exact:
+- "The last detection marked reliable reported until then" is `last` after step 1 of sample `n`: a detection reported at `n` counts at `n`. With the detector's report delay (§13.4, up to about 0.29 s on the normal path), a stretch without detections a little shorter than 3 s (from about 2.7 s) also gives "no recent beat", because the next detection is reported only after the 3 s have passed: this is what the statement says. A sequence given with `reported_at=None` reproduces the verification of SRS-026 literally (a stretch shorter than 3 s gives none).
+- "4 intervals whose detections all come after that sample": both detections of an interval have an index greater than `reset_at`. A detection with an earlier index reported later (for example by search-back) does not count.
+- When "not enough beats" and "no recent beat" both hold, the status is `no_recent_beat`. Every rule that ends "no recent beat" (four new intervals) also ends "not enough beats".
+- If "no recent beat" fires again while it holds (a new gap after fewer than four new intervals), `reset_at` moves to the new sample and no event is reported (the status does not change).
+
+**Input checks** (design behaviours, developer's unit tests): `fs_hz` through `validate_fs`; `n_samples` an `int` (not `bool`), at least 1; `indices` a one-dimensional integer array, strictly increasing, within `[0, n_samples)`; `startup` a one-dimensional boolean array of the same length; `reported_at` (when given) a one-dimensional integer array of the same length, non-decreasing, with `indices[i] ≤ reported_at[i] < n_samples`. Otherwise `InvalidInputError`. `estimate_intervals` takes four to six positive integers, otherwise `InvalidInputError`.
+
+**Results on synthetic sequences** (prototype; positions rounded to the sample):
+- Regular rhythms at 30, 40, 75, 120, 150, 180, 197 and 200 bpm, at 125, 250, 360 and 1000 Hz: largest error 0.72 bpm (125 Hz, 180 bpm); first valid rate with the fourth interval.
+- One missed detection at any position: largest error 1.82 bpm; one added detection in the middle of an interval or 200 ms after a detection (rates up to 150 bpm): 1.01 bpm.
+- Changes 40↔180, 75↔120, 75↔150, 30↔200 and 75↔80 bpm: largest error 0.29 bpm from the fifth interval of the new rhythm.
+- 29 and 201 bpm: `out_of_range`; 30 and 200 bpm: `valid`. Gaps of 3.1 s and 3.5 s at 30 and 75 bpm: `no_recent_beat` 3 s after the last detection, next valid rate at the fourth new interval; a gap of 2.9 s: none.
+
+**Irregular rhythms** (not specified by `srs.md`; a property of this design, not verified). Ventricular bigeminy and trigeminy at an underlying 75 bpm (couplings 0.5 to 0.67 of the interval): 75 to 83 bpm. Random intervals from 0.5 s to 1.1 s (mean 75.8 bpm): 56 to 115 bpm, following the last five or six intervals. An estimator that keeps only the middle cluster (steps 1 to 3 without step 4) alternates between 54 and 122 bpm in bigeminy, which is why step 4 exists.
+
+**Alternatives considered.** A plain mean fails SRS-025. A median alone meets SRS-024 to SRS-026 but alternates in bigeminy (above). Correcting the intervals (merging two short ones, splitting a doubled one) before averaging handles bigeminy but merges intervals wrongly in trigeminy at some couplings and needs more rules. A Kalman filter on the intervals, planned in v0.1 of this document, still needs a gating rule for missed and added detections, and its process noise would be a parameter to tune; it brings nothing for these criteria.
+
+**Verification notes.** QA (reference part of SRS-024 to SRS-026) calls `track_heart_rate` with sequences built as in `srs.md` (reported at their own index unless a test needs a delay), at 360 Hz and 250 Hz, and checks the events: statuses as the strings above, rates within the bounds, the first valid rate at the fourth interval, "no recent beat" at the first sample at least `no_recent_beat_samples(fs_hz)` after the last detection. "A sequence that begins with detections marked start-up gives the same heart rates as the sequence of its reliable detections alone" holds because start-up detections produce no event and no interval. Developer's unit tests: `estimate_intervals` on each pattern of step 3 and step 4 (including the outlier at either end of the window and two non-adjacent outliers), the integer range bounds at 125, 250, 360 and 1000 Hz, the input checks, a reliable detection reported after a reset with an earlier index.
+
+### 13.6 Signal quality index (SRS-027, SRS-028)
+
+**Module.** `sinus_dsp.quality`.
+
+**What the index measures.** The index estimates, in each window, how far the QRS complexes found by detection stand above everything else, in the signal that detection itself uses: the squared derivative `s = d²` of the detection band (§8.7.1). Each detection `p` defines a **zone**, the `N` samples `[p.m − N + 1, p.m]` whose mean is the integrated value `y[p.m]` of its peak (§8.7.1, step 4). Over a window:
+- `S` = the mean of `s` inside the zones of its detections (the mean QRS power, in (mV/s)²);
+- `B` = the mean of `s` outside them (the power of everything else: P and T waves, noise, interference, missed QRS complexes);
+- `ρ = B / S`, an inverse signal-to-noise ratio in the detection domain; the index is `S / (S + K · B) = 1 / (1 + K · ρ)`, with `K = 16`.
+
+Properties that follow from the definition:
+- It does not depend on the heart rate (both are means per sample), nor on the amplitude of the signal (both scale alike).
+- It does not depend on the rhythm: an ectopic beat is one more zone, so bigeminy and trigeminy are not penalised (synthetic bigeminy at 75 bpm: ρ = 0.012, as a normal rhythm).
+- False detections move it towards "not usable": their zones hold noise, which lowers `S`. Missed QRS complexes do too: their energy falls outside the zones and raises `B`.
+- Zones are disjoint: consecutive detections are at least `R > N` samples apart (§8.7.3, refractory period), so `S` and `B` share no sample.
+
+Two gates set the index to 0 whatever `ρ`:
+- **Held input** (SRS-028): the input stays at one value for at least 5 s inside the window. The test is on the input samples as given, by exact equality of consecutive samples, so a saturated or disconnected acquisition is caught however the conditioning responds to it.
+- **Implausible number of detections**: fewer than 4 or more than 34 detections with an index in the window. A regular rhythm from 30 to 200 bpm gives 5 to 34 in a window of 10 s; 4 allows one missed beat at 30 bpm. A flat line, or a signal without beats, gives none.
+
+**Parameters.**
+
+| Parameter | Value | In samples | 250 Hz | 360 Hz |
+|---|---|---|---|---|
+| Block `H` (window spacing) | 1 s | `round_samples_ms(1000, fs_hz)` | 250 | 360 |
+| Window `W` | 10 blocks | `10 · H` | 2500 | 3600 |
+| Held stretch | 5 blocks | `5 · H` | 1250 | 1800 |
+| Report delay `Δ` | 0.5 s (at most, SRS-027) | `floor_samples_ms(500, fs_hz)` | 125 | 180 |
+| Zone | the detector's `N` | §8.7 | 38 | 54 |
+| Detections per window | 4 to 34 | — | — | — |
+| `K` (`BACKGROUND_WEIGHT`) | 16 | — | — | — |
+| Threshold (`USABLE_THRESHOLD`) | 0.5 (usable when the index is at or above it) | — | — | — |
+
+At an integer sampling frequency the window is exactly 10 s and the spacing exactly 1 s (SRS-027); at another frequency both are a whole number of blocks of `round(fs_hz)` samples, which keeps every window aligned on blocks.
+
+**The threshold, fixed before any run on the reference databases.** The mark is usable when `ρ ≤ 1/16`. It is justified without the reference databases, in two ways:
+- **From the detector.** Pan–Tompkins accept a peak as a QRS when its integrated value exceeds the first threshold, a quarter of the way from the noise level to the signal level (§8.7.3). Over 10 s, the largest 150 ms average of the power of Gaussian noise limited to the detection band (about 10 Hz wide, so about three degrees of freedom per average) is about 4 times its mean. A background whose mean power reaches 1/16 of the QRS power therefore produces noise peaks near the first threshold: the point where false detections begin.
+- **On synthetic signals** (prototype; the waveform of §7.2 with Gaussian noise added at the signal-to-noise ratios of the noise stress test, defined as by the WFDB program `nst`: QRS peak-to-peak amplitude squared over 8, divided by the noise power; noise white, limited to 15 Hz, or limited to 5 Hz; 75 and 150 bpm; 300 s per level, from 14 dB to −2 dB in steps of 1 dB): every clean window has `ρ ≤ 0.029` (index ≥ 0.69, at 200 bpm); no window with a detection error has `ρ` below 0.0495, and windows with an error and `ρ < 1/16` occur only with noise limited to 5 Hz at 5 to 7 dB (single errors). At 18 dB and above every window was usable for the three noises; wherever detection made errors on more than a few windows (0 dB and below for all three, 6 dB for the noise limited to 15 Hz), none was.
+
+No parameter of this section was chosen from results on the MIT-BIH Arrhythmia Database or the Noise Stress Test Database. A change after the evaluation of SRS-029 has been seen is reported as tuned on the evaluation data (`sdp.md` §6).
+
+**Known sensitivities** (from the same prototype, synthetic morphologies): energy of P and T waves in the detection band counts as background. A tall, peaked T wave (0.9 mV, about 100 ms wide) is not usable from 75 bpm; a wide QRS complex (σ 20 ms) or an rSR' pattern reaches the threshold only near 200 bpm. Electrode motion noise is concentrated at low frequencies and is impulsive; how the index behaves on it is what SRS-029 measures.
+
+**Interface.**
+
+```python
+BLOCK_MS: Final = 1000
+WINDOW_BLOCKS: Final = 10
+HELD_BLOCKS: Final = 5
+REPORT_DELAY_MS: Final = 500
+MIN_DETECTIONS: Final = 4
+MAX_DETECTIONS: Final = 34
+BACKGROUND_WEIGHT: Final = 16.0
+USABLE_THRESHOLD: Final = 0.5
+
+@dataclass(frozen=True)
+class QualitySamples:
+    block: int               # H
+    window: int              # W = WINDOW_BLOCKS * H
+    held: int                # HELD_BLOCKS * H
+    report_delay: int        # floor(500 * fs_hz / 1000)
+    zone: int                # N of the detector
+
+@dataclass(frozen=True)
+class QualityWindows:
+    first: IndexArray            # first sample of each window, k * H
+    last: IndexArray             # first + W - 1
+    reported_at: IndexArray      # last + report_delay
+    index: FloatArray            # signal quality index, in [0, 1]
+    usable: BoolArray            # index >= USABLE_THRESHOLD
+    held: BoolArray              # gate: held input (diagnostic)
+    n_detections: IndexArray     # detections with an index in the window, reported by reported_at
+    signal_power: FloatArray     # S, (mV/s)^2; NaN when no zone lies in the window
+    background_power: FloatArray # B, (mV/s)^2; NaN when no zone lies in the window
+
+def quality_samples(fs_hz: float) -> QualitySamples: ...
+def assess_quality(input_mv: npt.ArrayLike, trace: QrsTrace) -> QualityWindows: ...       # SRS-027, SRS-028
+def quality_windows(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> QualityWindows: ...  # run_pipeline(...).quality
+```
+
+`QrsTrace` (§13.3) carries `fs_hz`, so that `assess_quality` needs no other argument. `assess_quality` validates `input_mv` with `validate_input(input_mv, trace.fs_hz)` and requires its length to equal that of the trace's signals (`InvalidInputError` otherwise). `run_pipeline` calls it with its validated input and the trace of the conditioned signal.
+
+**Computation** (`n` samples; every sum with `math.fsum`, §8.2):
+1. `s = d * d` from `trace.signals.derivative_mv_per_s`.
+2. **Held run.** `h[0] = 1`; `h[k] = h[k − 1] + 1` if `input[k] == input[k − 1]`, else 1 (exact float64 equality).
+3. **Blocks.** Block `j` covers `[j · H, (j + 1) · H − 1]`, for every `j` whose last sample is below `n`. For each: `E_t(j) = fsum(s over the block)`; `hmax(j)` = the largest `h` in the block; `hend(j)` = `h` at its last sample.
+4. **Zone parts.** For each detection (index `f`, peak `m`, `reported_at`): its zone `[max(0, m − N + 1), m]`, split at block boundaries into at most two parts (`N < H` at every sampling frequency); for each part inside a complete block, the block, `fsum` of `s` over the part, and its number of samples.
+5. **Windows** `k = 0, 1, …`, with `first = k · H`, `last = first + W − 1`, `reported_at = last + Δ`, as long as `reported_at ≤ n − 1` (a window whose report sample lies beyond the end of the stream is never reported, as in the library). For each:
+   - `held` if `max(hend(k + 4), hmax(k + 5), …, hmax(k + 9)) ≥ 5 · H`: a run of `5 · H` equal samples lies inside the window exactly when one ends at a sample from `first + 5 · H − 1` to `last`;
+   - `n_detections` = the detections with `first ≤ f ≤ last` and `reported_at ≤` the window's `reported_at`;
+   - `E_t = fsum(E_t(k), …, E_t(k + 9))`; over the zone parts in blocks `k` to `k + 9` of the detections reported by the window's `reported_at`: `E_z = fsum` of their sums and `n_z` the sum of their sample counts;
+   - if `n_z > 0`: `S = E_z / n_z` and `B = max(0.0, E_t − E_z) / (W − n_z)`; otherwise both NaN;
+   - `index = 0.0` if `held`, or `n_detections < 4`, or `n_detections > 34`, or `n_z = 0`; otherwise `S / (S + 16.0 * B)`;
+   - `usable = index >= 0.5`.
+
+A window uses the detections reported by its own report sample, as the library can. With `Δ ≥ N + P + D + 2` at every sampling frequency (62 against 38 samples at 125 Hz, 180 against 103 at 360 Hz), every detection found by the normal thresholds whose index or zone lies in the window is included; a detection reported later (search-back, re-learning) is not, and its energy counts as background. The mark is decided on the reported index, so a window is usable exactly when its reported index is at or above the threshold (SRS-027).
+
+**Results of the prototype on the cases of SRS-028** (synthetic, 360 Hz and 250 Hz): every window from 2 s of the ECGs of SRS-006 and SRS-010 at 30, 40, 75, 180 and 200 bpm usable (index 0.68 to 0.98, the lowest at 200 bpm); flat inputs at 0 mV and 1 mV: no detection, index 0; white Gaussian noise of RMS 0.01, 0.1 and 1 mV: 21 to 31 detections per window, `ρ` 0.39 to 0.49, index about 0.12, all not usable; an ECG held at 2 mV from 20 s to 40 s: not usable exactly for the windows that start from 15 s to 35 s, those with at least 5 s of the held stretch.
+
+**Edge cases.** A stream shorter than `W + Δ` samples has no window. The first windows contain the start-up period and the settling of the notch (§8.6): SRS-028 does not require them to be usable. An input of very small amplitude whose integrated signal stays below `MIN_INTEGRATED` (§8.7.2) gives no detection and index 0.
+
+**Verification notes.**
+- QA (reference part of SRS-027, SRS-028) uses `quality_windows` on synthetic inputs built with the waveform of §7.2 (any heart rate), on flat inputs and on white Gaussian noise; the windows, their sample indices, report samples (`last + Δ`, within 0.5 s) and marks as above. The guarantees on clean ECGs hold for the waveform of §7.2; another waveform with sharper P or T waves can have a higher `ρ` (known sensitivities), so QA's own generator, if used, must follow §7.2.
+- Developer's unit tests: the held gate at a run of exactly `5 · H` and `5 · H − 1` samples at each position in the window; the count gates at 3, 4, 34 and 35 detections; zone parts across a block boundary; a detection reported after the window's report sample left out; `S` equal to the mean of the zones' integrated values; the index of hand-built `S` and `B`.
+
+### 13.7 Evaluation and report (SRS-023, SRS-029, SRS-030)
+
+#### 13.7.1 Records without annotations, noise records and noisy stretches
+
+**Records without an annotation file.** The three noise records of the Noise Stress Test Database (`bw`, `em`, `ma`) have no annotation file (`ANNOTATORS` lists `atr` for the ECG records only), so `load_record` cannot read them as it is.
+
+```python
+# data/records.py
+def load_record(record_path: Path, channel: int = 0, annotator: str | None = "atr") -> Record: ...
+def load_signal(record_path: Path, channel: int = 0) -> Record: ...   # load_record(record_path, channel, None)
+```
+
+With `annotator=None` no annotation file is read: `beat_samples` is an empty `int64` array, `beat_symbols` and `other_annotations` are empty. Everything else (channel and units checks, signal in mV) is as in §8.4. The headers of the noise records give an ADC gain of 0 and no units; wfdb reads the gain as 200 adu/mV (the WFDB default for an uncalibrated signal) and the units as mV, so the signals load in mV (checked: 650000 samples at 360 Hz, two signals `noise1` and `noise2`, first stored signal used, largest magnitude 4.85 mV).
+
+**Noisy stretches.**
+
+```python
+# evaluation/noise_stress.py
+NOISE_RECORDS: Final = ("bw", "em", "ma")
+NOISE_FREE_S: Final = 300        # no noise added in the first 5 min
+NOISE_PERIOD_S: Final = 240      # a noisy stretch starts every 4 min
+NOISY_STRETCH_S: Final = 120     # and lasts 2 min
+
+def noisy_stretches(n_samples: int, fs_hz: float) -> tuple[tuple[int, int], ...]: ...
+```
+
+Stretch `i` (`i = 0, 1, …`) starts at `round_samples(300 + 240 · i, fs_hz)` and ends at `min(round_samples(420 + 240 · i, fs_hz) − 1, n_samples − 1)`, both included, for every `i` whose start is below `n_samples`. For the records of the database (650000 samples at 360 Hz): seven stretches, `[108000, 151199]`, `[194400, 237599]`, …, `[540000, 583199]` and `[626400, 649999]`, i.e. 5:00–7:00, 9:00–11:00, …, 25:00–27:00 and 29:00 to the end.
+
+Checked against the documentation of the database and the data:
+- the database page (version 1.0.0): "Noise was added beginning after the first 5 minutes of each record, during two-minute segments alternating with two-minute clean segments";
+- the manual of the WFDB program `nst`, which made the records: its standard protocol is "a five-minute noise-free learning period, followed by two-minute periods of noisy and noise-free signals alternately until the end of the clean record";
+- the stored samples of records 118e24, 118e00 and 119e_6 minus those of records 118 and 119 of the MIT-BIH Arrhythmia Database: the difference changes only inside the seven stretches above and is a constant between them (`nst` recomputes an offset at each change of gain).
+
+#### 13.7.2 Start of real recordings (SRS-023)
+
+**Module.** `sinus_dsp.evaluation.start_of_stream`.
+
+```python
+SEGMENT_S: Final = 60
+SEGMENT_STARTS_S: Final = tuple(range(0, 1800, 60))   # 0:00, 1:00, ..., 29:00: 30 starts
+MarkedDetector = Callable[[FloatArray, float, int], Detections]   # (signal_mv, fs_hz, mains_hz)
+
+@dataclass(frozen=True)
+class StartOfStreamRecord:
+    record: str
+    signal_name: str
+    n_segments: int
+    counts: RecordCounts            # summed over the segments of the record
+
+@dataclass(frozen=True)
+class StartOfStreamResults:
+    segment_s: int                             # SEGMENT_S
+    starts_s: tuple[int, ...]                  # the starts used, in s from the record start
+    records: tuple[StartOfStreamRecord, ...]   # sorted by record name
+    statistics: AggregateStatistics            # aggregate_statistics of the per-record counts (§8.9)
+
+def evaluate_segment(record: Record, start_sample: int, settings: EvaluationSettings,
+                     detector: MarkedDetector = detect_marked) -> MatchResult: ...
+def evaluate_start_of_stream(database_dir: Path, records: Sequence[str], settings: EvaluationSettings, *,
+                             detector: MarkedDetector = detect_marked,
+                             loader: RecordLoader = load_record,
+                             starts_s: Sequence[int] = SEGMENT_STARTS_S) -> StartOfStreamResults: ...
+```
+
+The start sample of a segment is `round_samples(t, record.fs_hz)` for each `t` of `starts_s`. `starts_s` must be non-empty, of distinct non-negative integers in increasing order (`InvalidInputError` otherwise); it is a parameter so that fixture records can be short, and `run_validation` always passes `SEGMENT_STARTS_S`, the starts of SRS-023.
+
+**`evaluate_segment(record, s0, settings, detector)`**, with `n_seg = round_samples(60, record.fs_hz)` (21600 at 360 Hz) and `L = detector_samples(record.fs_hz).learning`:
+1. If `s0 + n_seg > record.n_samples`, `InvalidInputError` naming the record and the start (all 48 records hold 650000 samples, so the last segment, 29:00 to 30:00, fits).
+2. The segment `record.signal_mv[s0 : s0 + n_seg]` is processed on its own, from its first sample: `detector(segment, record.fs_hz, settings.mains_hz)`. Only the detections marked reliable are kept.
+3. Reference beats: those of the record with `s0 ≤ sample < s0 + n_seg`, minus `s0`. Episodes: `vf_episodes(record.other_annotations, record.n_samples)` (§8.8.1) on the whole record, each one that overlaps the segment clipped to it and shifted by `−s0`, so that an episode that begins before the segment and ends inside it is still excluded.
+4. `match_beats(reference, reliable, window_samples=match_window_samples(fs), start_sample=L, vf=clipped episodes)` (§8.8): the rules of SRS-008 with the start-up period `[0, L − 1]` in place of the first 5 minutes.
+
+A reference beat inside a re-learning stretch whose only nearby detection is marked start-up is a false negative: only reliable detections are scored (SRS-023).
+
+**`evaluate_start_of_stream`** checks the names as `evaluate_records` does (§8.10), loads each record once with `loader(path, settings.channel)`, evaluates its 30 segments in order, sums their counts per record, and returns the records sorted by name with `aggregate_statistics` of the per-record counts: the gross values are over all the segments, the averages over the records (SRS-011). The targets use `meets_target` with FN for Se and FP for +P (§8.10). Cost: 1440 segments of 60 s, 24 h of ECG, about the time of the Milestone 1 evaluation.
+
+#### 13.7.3 Signal quality on the reference databases (SRS-029, SRS-030)
+
+**Module.** `sinus_dsp.evaluation.signal_quality`.
+
+```python
+QualityFunction = Callable[[FloatArray, float, int], QualityWindows]   # (signal_mv, fs_hz, mains_hz)
+
+CLEAN_MIN_USABLE_PERCENT: Final = 95       # records 118 and 119 from 5:00
+HIGH_SNR_MIN_USABLE_PERCENT: Final = 90    # 24 dB and 18 dB
+LOW_SNR_MAX_USABLE_PERCENT: Final = 20     # 6, 0 and -6 dB
+NOISE_MAX_USABLE_PERCENT: Final = 10       # bw, em, ma
+HIGH_SNRS_DB: Final = (24, 18)
+LOW_SNRS_DB: Final = (6, 0, -6)
+
+@dataclass(frozen=True)
+class WindowSummary:
+    n_windows: int
+    n_usable: int
+    median_index: float | None           # statistics.median of the indices; None without windows
+
+@dataclass(frozen=True)
+class RecordQuality:                     # one record of the MIT-BIH Arrhythmia Database
+    record: str
+    from_start: WindowSummary            # windows whose first sample is at or after 5:00
+    fn_in_not_usable: int                # false negatives (§8.8) inside a window marked not usable
+    fp_in_not_usable: int                # false positives (§8.8) inside a window marked not usable
+
+@dataclass(frozen=True)
+class QualityResults:
+    records: tuple[RecordQuality, ...]                       # the records of the full report, sorted
+    by_snr: tuple[tuple[int, WindowSummary], ...]            # 24, 18, 12, 6, 0, -6 dB
+    clean: WindowSummary                                     # records 118 and 119, from 5:00, together
+    noise_records: tuple[tuple[str, WindowSummary], ...]     # bw, em, ma
+    criteria: tuple[tuple[str, bool], ...]                   # (criterion, passed), in QUALITY_CRITERIA order
+
+QUALITY_CRITERIA: Final = ("median_non_increasing", "median_lower_at_lowest_snr", "clean_usable",
+                           "usable_24", "usable_18", "usable_6", "usable_0", "usable_-6",
+                           "noise_bw", "noise_em", "noise_ma")
+
+def summarize_windows(windows: QualityWindows, selected: BoolArray) -> WindowSummary: ...
+def windows_within(windows: QualityWindows, first_sample: int, last_sample: int) -> BoolArray: ...
+def count_in_not_usable(samples: Sequence[int], windows: QualityWindows) -> int: ...
+def quality_criteria(by_snr, clean, noise_records) -> tuple[tuple[str, bool], ...]: ...
+```
+
+**Selections** (SRS-029, SRS-030):
+- **Records of the MIT-BIH Arrhythmia Database**: the windows whose first sample is at or after `learning_period_samples(fs)` (5:00, §8.8.1). `fn_in_not_usable` and `fp_in_not_usable` count the samples of `false_negatives` and `false_positives` of the record's evaluation (§8.10) that lie in at least one window marked not usable, whatever its start (`first ≤ sample ≤ last`); each is counted once.
+- **Noise stress records**: the windows that lie entirely in one stretch of `noisy_stretches` (`first ≥ start` and `last ≤ end`). At 360 Hz each record has 722 such windows (111 in each of the six stretches of 2 min, 56 in the last one, whose last windows are reported before the end of the record); the two records of an SNR are summarised together.
+- **Records 118 and 119** (no added noise): their windows from 5:00, the two records together.
+- **Noise records**: every window.
+
+`summarize_windows` counts the selected windows and the usable ones, and takes `statistics.median` of their float64 indices (the mean of the two middle values for an even count).
+
+**Criteria** (SRS-029), each `True` only if every summary it uses has at least one window; percentages are compared on integers:
+- `median_non_increasing`: median at 24 ≥ 18 ≥ 12 ≥ 6 ≥ 0 ≥ −6 dB (comparisons of the float64 medians);
+- `median_lower_at_lowest_snr`: median at −6 dB < median at 24 dB;
+- `clean_usable`: `100 · n_usable ≥ 95 · n_windows` for records 118 and 119 together;
+- `usable_24`, `usable_18`: `100 · n_usable ≥ 90 · n_windows` at each SNR **separately**;
+- `usable_6`, `usable_0`, `usable_-6`: `100 · n_usable ≤ 20 · n_windows` at each SNR **separately**;
+- `noise_bw`, `noise_em`, `noise_ma`: `100 · n_usable ≤ 10 · n_windows` for each noise record **separately**.
+
+Separate criteria imply the criteria on the pooled windows, so they are the stricter reading of SRS-029; the pooled reading of "records 118 and 119" follows its wording ("the windows of records 118 and 119").
+
+#### 13.7.4 Changes to the evaluation run
+
+```python
+# evaluation/run.py
+@dataclass(frozen=True)
+class RecordEvaluation:
+    ...                                       # the fields of §8.10, unchanged, then:
+    false_negatives: tuple[int, ...] = ()     # MatchResult.false_negatives (§8.8)
+    false_positives: tuple[int, ...] = ()     # MatchResult.false_positives
+
+@dataclass(frozen=True)
+class ValidationResults:
+    ...                                       # the fields of §8.10, unchanged, then:
+    quality: QualityResults | None = None     # None in the subset report
+    start_of_stream: StartOfStreamResults | None = None
+
+def run_validation(data_root: Path, *, mitdb: Database = MITDB, nstdb: Database = NSTDB,
+                   settings: EvaluationSettings = DEFAULT_SETTINGS,
+                   detector: Detector = detect_beats, loader: RecordLoader = load_record,
+                   marked_detector: MarkedDetector = detect_marked,
+                   quality: QualityFunction = quality_windows,
+                   noise_loader: RecordLoader = load_signal,
+                   fetch: FetchFunction | None = fetch_https) -> ValidationResults: ...
+```
+
+The new fields have defaults and come last, so every existing construction stays valid. `write_validation_report` gains the same three keyword arguments and passes them on. `run_subset` (§8.11) is unchanged: the subset report holds the items of SRS-012 only (SRS-016), so its results have `quality=None` and `start_of_stream=None`, and the stored subset report changes only in its row `Software`.
+
+**Run** (§8.10, with steps 4 and 5 new; the software identity becomes step 6):
+1. to 3. as in §8.10; `evaluate_record` fills `false_negatives` and `false_positives`.
+4. **Start of stream**: `evaluate_start_of_stream(data_root / mitdb.slug, <record names of step 2>, settings, detector=marked_detector, loader=loader)`.
+5. **Signal quality**: for each record of step 2, `loader` then `quality(signal, fs, settings.mains_hz)`, giving its `RecordQuality` with the false negatives and false positives of step 2; for each noise stress record, `loader` then `quality`, selected by `noisy_stretches`, two records per SNR; records 118 and 119 from the windows of step 5 for the MIT-BIH Arrhythmia Database; for each name of `NOISE_RECORDS`, `noise_loader(data_root / nstdb.slug / name, settings.channel)` then `quality`. Then `quality_criteria`. Records are loaded again rather than kept, so that memory stays that of one record.
+6. Software identity (§8.14).
+
+The injected functions keep QA's tests free of real detection: a fake `marked_detector` returns known detections and marks, a fake `quality` known windows. `evaluate_noise_stress` (§8.10) is unchanged.
+
+#### 13.7.5 Report sections 8 and 9 (full report only)
+
+`render_full_report` raises `InvalidInputError` if `results.quality` or `results.start_of_stream` is `None`; `render_subset_report` raises it if either is not `None` (design behaviours, §8.2). The two sections follow section 7 (noise stress test), in this order, in the format of §8.10 (blocks, tables, cell rule, `not defined`). The text contains no requirement ID (§8.10). Additional value formats:
+- an index (`median_index`) with four decimals, `f"{value:.4f}"`;
+- a share of windows in percent with two decimals, from integer counts: `(100 * n_usable) / n_windows`, formatted `.2f`; `not defined` without windows;
+- a threshold of a criterion as `≥ ` or `≤ ` followed by the percentage with two decimals (e.g. `≥ 95.00`), like the targets of section 3.
+
+8. **Signal quality index.** The heading `## Signal quality index`, then:
+   - a table with the columns `Item` and `Value` and the rows:
+     - `Window length`: `10 s` (`WINDOW_BLOCKS · BLOCK_MS / 1000` as an integer, then ` s`);
+     - `Window spacing`: `1 s` (`BLOCK_MS / 1000`);
+     - `Usable threshold`: `0.50` (`f"{USABLE_THRESHOLD:.2f}"`);
+     - `Noisy stretches`: `from 5:00 to the end of each noise stress record, 2 min with added noise alternating with 2 min without, starting with noise` (5:00 from `NOISE_FREE_S`, 2 min from `NOISY_STRETCH_S`);
+   - the paragraph `Noise stress records: the windows that lie entirely in a stretch with added noise. Records of the <title of results.mitdb.database>: the windows that start at or after 5:00. Noise records: every window.`;
+   - the heading `### Noise stress records`, then a table with the columns `Windows of`, `Windows`, `Median index` and `Usable (%)`, the last three right-aligned. Its rows: one per SNR in decreasing order, labelled `<snr> dB` (e.g. `-6 dB`), for the two records at that SNR; then `records 118 and 119, no added noise, from 5:00`; then `noise record bw`, `noise record em` and `noise record ma`;
+   - the heading `### Records of the <title of results.mitdb.database>`, then a table with the columns `Record`, `Windows from 5:00`, `Usable (%)`, `FN in not usable windows` and `FP in not usable windows`, all but the first right-aligned: one row per record, sorted by name, then the row `Total` with the summed windows, the share from the summed counts, and the summed FN and FP. Then the paragraph `FN and FP are those of the results per record. Each one that lies in at least one window marked not usable is counted once. No threshold applies to these figures.`;
+   - the heading `### Criteria`, then a table with the columns `Criterion`, `Value`, `Required` and `Result`, one row per criterion in the order of `QUALITY_CRITERIA`:
+
+     | Criterion | Value | Required |
+     |---|---|---|
+     | `Median index from 24 dB to -6 dB` | the six medians, separated by `, ` | `non-increasing` |
+     | `Median index at -6 dB and at 24 dB` | the two medians, separated by `, ` | `lower at -6 dB` |
+     | `Usable windows, records 118 and 119 from 5:00 (%)` | the share | `≥ 95.00` |
+     | `Usable windows at 24 dB (%)`, `… at 18 dB (%)` | the share | `≥ 90.00` |
+     | `Usable windows at 6 dB (%)`, `… at 0 dB (%)`, `… at -6 dB (%)` | the share | `≤ 20.00` |
+     | `Usable windows, noise record bw (%)`, `… em (%)`, `… ma (%)` | the share | `≤ 10.00` |
+
+     (`…` stands for the beginning of the label above it; each label is written out in full.) `Result` is `pass` or `fail`.
+9. **Start of stream.** The heading `## Start of stream`, then:
+   - a table with the columns `Item` and `Value` and the rows:
+     - `Segments`: `<segment_s> s each, processed on their own, starting at <starts>`, where `<starts>` are the values of `start_of_stream.starts_s` written `m:ss` (minutes without leading zero, two-digit seconds) and joined by `, `; for SRS-023: `60 s each, processed on their own, starting at 0:00, 1:00, 2:00, …, 29:00` (all 30 written out);
+     - `Segments per record`: the number of starts;
+     - `Start-up period`: `first 2 s of each segment, not scored` (2 from `LEARNING_S` of §8.7);
+     - `Detections scored`: `marked reliable`;
+     - `Matching`: `EC57 beat by beat, pairing rules of the WFDB comparator bxb; match window 150 ms; start-up period not scored; ventricular flutter and fibrillation episodes not scored`;
+   - the heading `### Results per record`, then a table with the columns `Record`, `Signal`, `Segments`, `TP`, `FN`, `FP`, `Se (%)` and `+P (%)`, all but the first two right-aligned, with the rows `Gross` and `Average` as in section 4 (empty cells as there; `Segments` summed in `Gross`, empty in `Average`), then the paragraph of section 4 on the averages, with the values of `start_of_stream.statistics`;
+   - the heading `### Targets`, then the table of section 3 (`Statistic`, `Value (%)`, `Target (%)`, `Result`) for the gross values of `start_of_stream.statistics`.
+
+**Verification notes.**
+- QA (SRS-030): fixture databases as in §8.10 (MIT-BIH fixture with records 118 and 119; noise stress fixture with the 12 names and the three noise records, the noise records without annotation files), a fake `marked_detector` and a fake `quality` with known output. Noisy stretches start at 5:00, so noise stress fixture records need at least about 7 min (a low fixture rate such as 125 Hz keeps them small). `run_validation` always evaluates the 30 starts of SRS-023, so fixture records for the full run hold at least 30 min; the content of the start-of-stream section can also be checked with `evaluate_start_of_stream(..., starts_s=…)` on short records and `render_full_report` on hand-built results. Each listed item is present with the expected values; a criterion or target that is not met reads `fail`; the sections are absent from the subset report. The sentences, labels and columns above are the documented format and may be compared literally.
+- Test engineer (SRS-023, SRS-029, `needs_data` and `needs_nstdb`): `run_validation(data_root, fetch=None)` on the full local databases; the targets of section 9 and the criteria of section 8 from the results; the full report regenerated with `validate.py` for the milestone verification report. The `needs_nstdb` marker (`dsp/tests/conftest.py`, §8.11) also requires the `.hea` and `.dat` files of `bw`, `em` and `ma`.
+- Developer's unit tests (the list continues below): `noisy_stretches` at 360 Hz on 650000 samples (the seven stretches above) and on a short record; `load_signal` on a fixture without annotation file; `evaluate_segment` with an episode that begins before the segment, with a start-up detection matching a reference beat (a false negative) and with a segment that does not fit; `windows_within`; `count_in_not_usable` with a sample on the first and on the last sample of a window; each criterion at its boundary (95, 90, 20, 10 percent exactly) and without windows.
+
+### 13.8 Golden-vector format, version 2 (SRS-015, SRS-033)
+
+Version 2 keeps every rule of §7.3 (UTF-8, line feeds, no space, tab, carriage return or empty line, number syntax, integer bound, "the line named", the reader rules) and adds the outputs of SRS-033. The writer writes version 2 only; the Python and C++ readers accept version 2 only (`format_version` is `2`). The statement of SRS-015 is unchanged: version 2 holds every item it lists.
+
+**Header.** The keys of §7.3 in their order, `format_version=2`, then two more keys at the end: `n_heart_rates` and `n_quality_windows` (integers, the row counts of the two new sections).
+
+**Sections**, always in this order: `[coefficients]`, `[signals]`, `[beats]`, `[reference_beats]`, `[heart_rates]`, `[quality_windows]`, `[end]`.
+- `[coefficients]`, `[signals]`, `[reference_beats]`: as in §7.3.
+- `[beats]`: columns `sample_index,mark,reported_at`. One row per detection, in order: its index (SRS-006); `startup` or `reliable` (SRS-022); the sample at which it is reported (§13.3).
+- `[heart_rates]`: columns `sample_index,beat_index,status,heart_rate_bpm`. One row per heart-rate event of §13.5, in order: the sample at which it is reported; the index of its reliable detection, or an empty field for a change of status at no detection; the status (`valid`, `not_enough_beats`, `no_recent_beat` or `out_of_range`); the rate in bpm for `valid` and `out_of_range`, an empty field otherwise.
+- `[quality_windows]`: columns `first_sample,last_sample,reported_at,quality_index,usable`. One row per window of §13.6, in order: its first and last samples; the sample at which it is reported; its index; `usable` or `not_usable`.
+
+For example (values invented):
+
+```
+[beats]
+sample_index,mark,reported_at
+183,startup,719
+903,reliable,1006
+[reference_beats]
+sample_index
+180
+900
+[heart_rates]
+sample_index,beat_index,status,heart_rate_bpm
+1006,903,not_enough_beats,
+1983,,no_recent_beat,
+[quality_windows]
+first_sample,last_sample,reported_at,quality_index,usable
+0,3599,3779,0.8999536381148839,usable
+[end]
+```
+
+**Field rules.** An empty field is allowed only in `beat_index` and `heart_rate_bpm`, as stated above; the column lines are exactly those above. A token field (`mark`, `status`, `usable`) holds one of the listed words.
+
+**Reader rules added to §7.3** (each named at the line where the text breaks it, as there):
+- `[beats]`: the indices strictly increasing (as in version 1); `reported_at` an integer, non-decreasing from row to row, with `sample_index ≤ reported_at < n_samples`;
+- `[heart_rates]`: `sample_index` non-decreasing and below `n_samples`; a non-empty `beat_index` equal to the `sample_index` of a row of `[beats]` marked `reliable` whose `reported_at` equals this row's `sample_index`; the rows with a `beat_index` name the reliable detections of `[beats]` once each and in their order; `heart_rate_bpm` present exactly for `valid` and `out_of_range`, then a float of the syntax of §7.3, finite and greater than 0;
+- `[quality_windows]`: `first_sample` strictly increasing; `first_sample ≤ last_sample ≤ reported_at < n_samples`; `quality_index` a float from 0 to 1, both included; `usable` exactly when `quality_index ≥ 0.5` (`USABLE_THRESHOLD`, a constant of both implementations).
+
+A rule that relates two sections (a `beat_index` and the rows of `[beats]`) names the line of `[heart_rates]` where it fails.
+
+**Interface changes** (`sinus_dsp.golden`):
+
+```python
+FORMAT_VERSION: Final = 2
+
+@dataclass(frozen=True)
+class GoldenVector:
+    ...                                    # the fields of §8.12, unchanged, then:
+    beat_startup: BoolArray                # mark of each detection, True for start-up
+    beat_reported_at: IndexArray           # sample at which each detection is reported
+    heart_rates: tuple[HeartRateEvent, ...]
+    window_first: IndexArray
+    window_last: IndexArray
+    window_reported_at: IndexArray
+    window_index: FloatArray
+    window_usable: BoolArray
+```
+
+`golden_vector` takes the new fields from `run_pipeline` (§13.1: `PipelineResult.detections`, `.heart_rate`, `.quality`). `render_golden_vector` and `parse_golden_vector` write and read them with the rules above, and `render_golden_vector` rejects with `InvalidInputError` any vector that would break them, as in §8.12. Every text that it returns is accepted by `parse_golden_vector`, which gives back an equal vector.
+
+**Size.** The new sections add a few kilobytes per file; the eight event inputs of §13.9 add about 6 MB. The set is about 22 MB (§7.5), still not stored in the repository.
+
+**Verification notes.**
+- QA (SRS-033, and SRS-015 moved to version 2): the export run on the synthetic and event sets and on a fixture record; each file contains each listed item; the values read back equal the outputs of `run_pipeline` on the same input (detections and marks, report samples, heart-rate events, windows); the set contains a detection marked start-up after a re-learning (`artefact`), a heart rate withheld for each reason (`not_enough_beats` in every file, `no_recent_beat` in `artefact` and `held`, `out_of_range` in `rate-change`) and a window marked not usable (`artefact`, `held`), at both sampling frequencies.
+- Developer's unit tests: one rejected text per new reader rule, with its line; the empty fields accepted only where allowed; a `beat_index` naming a start-up detection, a missing reliable detection and a wrong `reported_at` each rejected; the round trip render → parse; a version 1 file rejected for its version.
+
+### 13.9 Synthetic event inputs (SRS-033; used by SRS-021, SRS-022)
+
+**Purpose.** The synthetic ECGs of §7.2 are clean regular rhythms, on which detection never re-learns, the heart rate is withheld only at the start, and every window is usable. Eight more inputs, four events at 250 Hz and 360 Hz, exercise the other marks, paths, reasons and windows. They are built from the waveform of §7.2 and written to golden vectors like the other synthetic inputs.
+
+**Interface** (`sinus_dsp.synthetic`):
+
+```python
+SYNTHETIC_EVENTS: Final = ("artefact", "small-beat", "held", "rate-change")
+
+def synthetic_event_ecg(fs_hz: float, event: str) -> SyntheticEcg: ...
+def synthetic_event_set() -> tuple[SyntheticEcg, ...]: ...   # 8 inputs: fs (250, 360), then the events in order
+```
+
+For an event input, `SyntheticEcg.variant` holds the event name, `heart_rate_bpm` the rate of its first beats (75), and `mains_hz` is 50 (no interference is added, as for `clean`). `input_id` is `syn-fs<fs>-event-<event>`, e.g. `syn-fs360-event-artefact`. Arguments are checked as for `synthetic_ecg` (§8.12): `fs_hz` 250 or 360, `event` one of `SYNTHETIC_EVENTS`; otherwise `InvalidInputError`.
+
+**Construction** (float64, deterministic; `fs` the sampling frequency as an integer):
+- Each input is a list of beats `(t_ms, rr_s, scale)`: the time of the R-wave centre in whole milliseconds, the interval of its rhythm in s, and an amplitude scale. Beat positions are computed on integers: `r = (t_ms · fs + 500) // 1000` (round half up, §8.2).
+- Each beat is the waveform of §7.2 (five Gaussian waves) with `s = √(rr_s / 1 s)` and every amplitude multiplied by `scale`; the signal is evaluated as in §7.2 (beats in increasing time, waves P, Q, R, S, T), on `n = duration_s · fs` samples.
+- The reference beats are the positions `r` of all the beats, scaled ones included.
+
+| Event | Duration | Beats | Then | `input_parameters` |
+|---|---|---|---|---|
+| `artefact` | 40 s | `t_ms = 500 + 800·k`, k = 0 … 48, `rr_s` 0.8; beat k = 12 (10100 ms) with scale 20.0, the others 1.0 | — | `duration_s=40;event=artefact;heart_rate_bpm=75;scaled_beat_ms=10100;scale=20.0;mains_hz=50` |
+| `small-beat` | 40 s | as `artefact`, with scale 0.4 for beat 12 | — | `duration_s=40;event=small-beat;heart_rate_bpm=75;scaled_beat_ms=10100;scale=0.4;mains_hz=50` |
+| `held` | 40 s | as `artefact`, all with scale 1.0 | every sample from `n0 = (15000 · fs + 500) // 1000` to `n1 − 1`, with `n1 = (21000 · fs + 500) // 1000`, set to the sample at `n0` | `duration_s=40;event=held;heart_rate_bpm=75;held_from_ms=15000;held_ms=6000;mains_hz=50` |
+| `rate-change` | 44 s | `t_ms = 500 + 800·k`, k = 0 … 14, `rr_s` 0.8; then `11700 + 2400·j`, j = 1 … 8, `rr_s` 2.4 (25 bpm); then `30900 + 800·j`, j = 1 … 15, `rr_s` 0.8 | — | `duration_s=44;event=rate-change;heart_rates_bpm=75/25/75;changes_ms=11700/30900;mains_hz=50` |
+
+**What each input produces** (reference, prototype of this design; at both sampling frequencies unless stated):
+
+| Event | Detection | Heart rate | Signal quality |
+|---|---|---|---|
+| `artefact` | The ×20 beat is detected and raises the signal levels so far that the next beats are missed; re-learning at 18.2 s; the beats of its learning stretch are detected and marked start-up (three), the later ones reliable. At 250 Hz, also one detection by search-back, reported 5.8 s after its index | `not_enough_beats`, `valid`, `no_recent_beat` from 13.1 s, `valid` again from 22.3 s | Windows starting at 0 s and at 11 to 13 s not usable |
+| `small-beat` | The ×0.4 beat is below the first thresholds and is found by search-back, reported 0.62 s after its index | `not_enough_beats`, then `valid` throughout | All usable |
+| `held` | No detection in the held stretch | `no_recent_beat` from 17.9 s, `valid` again from 24.7 s | Windows starting at 10 to 16 s (at least 5 s held) not usable |
+| `rate-change` | Every beat detected | `out_of_range` from 19.1 s (25 bpm), `valid` again from 33.5 s | All usable |
+
+Every input also has detections in its first 2 s, marked start-up and reported at the end of the learning period. With the synthetic ECGs of §7.2, the set therefore contains every mark, path, status and a window not usable, at both sampling frequencies (SRS-033). These figures describe the design and are checked by the developer's unit tests; QA's tests of SRS-033 check the content of the files (§13.8), and QA's tests of SRS-021 and SRS-022 use these inputs on the library (§13.3, §13.4).
+
+### 13.10 Wording of `docs/validation/README.md` (OP-069)
+
+`docs/validation/` holds the two generated validation reports and, from the Milestone 1 release, the milestone verification reports, written by hand (`sdp.md` §6). The first paragraph of the section "Data sources" given in §8.15 says "both reports" for the MIT-BIH Arrhythmia Database, which now reads as if it covered all the reports of the folder. It becomes:
+
+```markdown
+The validation reports contain information from the [MIT-BIH Arrhythmia Database, version 1.0.0](https://physionet.org/content/mitdb/1.0.0/) (both validation reports) and the [MIT-BIH Noise Stress Test Database, version 1.0.0](https://physionet.org/content/nstdb/1.0.0/) (`qrs-ec57-report.md`), which are made available by PhysioNet under the [Open Data Commons Attribution License v1.0](https://opendatacommons.org/licenses/by/1-0/). Each validation report states the licence of each database it uses, in the row `Database licence`. The milestone verification reports quote results of the validation reports.
+```
+
+The citations that follow are unchanged. §8.15 gives this text from v0.3; it is the part of OP-069 that concerns this document (the wording of `sdp.md` §6 is the other).
+
+### 13.11 Implementation order, module dependencies and verification
+
+**Groups** (one pull request into `develop` per group, each with QA's tests of its requirements, §8.2 "Requirement citations"):
+
+| # | Group | Modules and scripts | Requirements | Design | Depends on |
+|---|---|---|---|---|---|
+| 1 | Amplitude bound | `input_checks` | SRS-003 (change, verified again) | §13.2 | — |
+| 2 | Detection trace | `_types`, `qrs`, `pipeline` (`detect_marked`, `PipelineResult.detections`) | SRS-022 (reference) | §13.3, §13.4 | — |
+| 3 | Heart rate | `heart_rate`, `pipeline` (`PipelineResult.heart_rate`) | SRS-024, SRS-025, SRS-026 (reference) | §13.5 | 2 |
+| 4 | Signal quality index | `quality`, `pipeline` (`PipelineResult.quality`) | SRS-027, SRS-028 (reference) | §13.6 | 2 |
+| 5 | Golden vectors version 2 | `synthetic`, `golden`, `scripts/export_golden.py` | SRS-033; SRS-015 (tests moved to version 2) | §13.8, §13.9 | 2, 3, 4 |
+| 6 | Evaluation and report | `data.records`, `evaluation.noise_stress`, `evaluation.start_of_stream`, `evaluation.signal_quality`, `evaluation.run`, `evaluation.report`, `docs/validation/README.md`, §8.15 text | SRS-030 (QA); SRS-023, SRS-029 (test engineer) | §13.7, §13.10 | 2, 4 |
+
+Groups 1 and 2 are independent; 3 and 4 can proceed in parallel. Every group changes the package, so each ends by regenerating both validation reports and running `software_check.py` (§8.11, §8.14); until group 6, only the row `Software` changes. Group 6 adds sections 8 and 9 to the full report: its first run on the real databases is the evaluation of SRS-023 and SRS-029, made with the parameters of §13.6 as approved, and is run by the test engineer for the milestone.
+
+**Module dependencies** (additions to §8.13; an arrow points from a module to a module it imports):
+
+```mermaid
+flowchart BT
+  checks["input_checks"]
+  qrs["qrs"] --> checks
+  hr["heart_rate"] --> checks
+  quality["quality"] --> qrs
+  pipeline["pipeline"] --> hr
+  pipeline --> quality
+  golden["golden"] --> pipeline
+  start["evaluation.start_of_stream"] --> pipeline
+  sq["evaluation.signal_quality"] --> quality
+  sq --> noise["evaluation.noise_stress"]
+  report["evaluation.report"] --> sq
+  report --> start
+  run["evaluation.run"] -.-> start
+  run -.-> sq
+```
+
+- `evaluation.start_of_stream` and `evaluation.signal_quality` import `evaluation.run` (its types and `meets_target`), as `evaluation.noise_stress` does; `evaluation.run` imports them inside `run_validation`, like `evaluate_noise_stress` (§8.13). These two are the only new imports inside a function; the unit test that imports each module first in a new interpreter covers them.
+- `heart_rate` takes arrays (§13.5) and imports no other module of the package than `input_checks`, `errors` and `_types`.
+- `golden` also imports `heart_rate` and `quality` for their types and constants.
+
+**Verification by role.**
+- QA, requirement tests in `dsp/tests/requirements/`: SRS-003 (updated), SRS-022, SRS-024 to SRS-028 (reference parts), SRS-030, SRS-033, SRS-015 (version 2). The C++ parts of SRS-022 and SRS-024 to SRS-028 are tested on the library when it exists.
+- Test engineer, system tests in `dsp/tests/system/` (`needs_data`, `needs_nstdb`): SRS-023, SRS-029, and the full report for the milestone verification report.
+- The listing of every false negative and false positive of the Milestone 1 evaluation with its detection path, the age of the search-back candidate and the preceding interval (OP-056) uses `Detections.paths` and `reported_at`; it changes no code and no result.
