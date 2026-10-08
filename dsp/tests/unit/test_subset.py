@@ -215,6 +215,7 @@ def test_imports_inside_functions_are_only_those_of_the_design() -> None:
                 elif isinstance(node, ast.Import):
                     found.append((path.name, function.name, node.names[0].name))
     assert sorted(found) == [
+        ("quality.py", "quality_windows", "sinus_dsp.pipeline"),
         ("run.py", "run_validation", "sinus_dsp.evaluation.noise_stress"),
         ("run.py", "write_validation_report", "sinus_dsp.evaluation.report"),
     ]
