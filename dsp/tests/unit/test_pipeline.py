@@ -57,6 +57,7 @@ def test_result_fields_and_types(synthetic_ecg: Any) -> None:
         "mains_mv",
         "beats",
         "detections",
+        "heart_rate",
     ]
     assert type(result.fs_hz) is float
     assert type(result.mains_hz) is int

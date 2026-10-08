@@ -16,6 +16,7 @@ import numpy.typing as npt
 
 from sinus_dsp._types import FloatArray, IndexArray
 from sinus_dsp.filters import apply_sos, baseline_sos, mains_sos
+from sinus_dsp.heart_rate import HeartRateEvent, track_heart_rate
 from sinus_dsp.input_checks import validate_input, validate_mains
 from sinus_dsp.qrs import Detections, _trace
 
@@ -39,6 +40,7 @@ class PipelineResult:
     mains_mv: FloatArray
     beats: IndexArray
     detections: Detections
+    heart_rate: tuple[HeartRateEvent, ...]
 
 
 @dataclass(frozen=True)
@@ -81,7 +83,8 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
     the coefficients and the output of each conditioning stage in the order of
     :data:`STAGES`, and the beats, which a golden-vector file states. SRS-022: the result
     also holds the detections with their marks (:class:`~sinus_dsp.qrs.Detections`), whose
-    indices are the beats.
+    indices are the beats. SRS-024, SRS-025, SRS-026: and the heart rate events of those
+    detections (:func:`~sinus_dsp.heart_rate.track_heart_rate`).
 
     The input and the mains setting are checked once, before any other computation; then the
     baseline filter, the mains filter and the detection on the mains output run in this
@@ -102,6 +105,13 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
     """
     conditioned = _condition(signal_mv, fs_hz, mains_hz)
     detections = _trace(conditioned.mains_mv, conditioned.fs_hz).detections
+    heart_rate = track_heart_rate(
+        detections.indices,
+        detections.startup,
+        conditioned.fs_hz,
+        conditioned.input_mv.size,
+        reported_at=detections.reported_at,
+    )
     return PipelineResult(
         fs_hz=conditioned.fs_hz,
         mains_hz=conditioned.mains_hz,
@@ -111,6 +121,7 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
         mains_mv=conditioned.mains_mv,
         beats=detections.indices,
         detections=detections,
+        heart_rate=heart_rate,
     )
 
 
