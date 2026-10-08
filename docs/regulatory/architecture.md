@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.4.1, 2026-10-08. Status: approved by the project owner up to v0.4 (the dates are in the revision history); v0.4.1 is editorial._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.4.2, 2026-10-09. Status: approved by the project owner up to v0.4.2 (the dates are in the revision history); v0.4.1 is editorial._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;
@@ -46,6 +46,7 @@ The full text of each earlier entry is in the version history of the repository.
 | 0.3 | 2026-10-07 | Milestone 2 detailed design of `dsp`, new §13, for `srs.md` v0.8: the 1000 mV bound of SRS-003 (OP-063); detection trace with start-up marks and report sample (SRS-022); delays and the maximum of SRS-021 (OP-049); heart rate (SRS-024 to SRS-026); signal quality index and its threshold (SRS-027, SRS-028); evaluation and report sections (SRS-023, SRS-029, SRS-030); golden-vector format version 2 and event inputs (SRS-033); `docs/validation/README.md` wording (OP-069); §2, §3, §5.2, §7.2, §7.3, §8.2 aligned. Approved on 2026-10-07 |
 | 0.4 | 2026-10-08 | Milestone 2 detailed design of `libs/sinus-dsp`, new §14, for `srs.md` v0.8.1: layout, build and tools; arithmetic (ADR 0008, OP-057); interfaces; configuration and invalid samples (SRS-017, SRS-018); conditioning (SRS-019); streaming detection (SRS-020 to SRS-022); heart rate (SRS-024 to SRS-026); signal quality (SRS-027, SRS-028); restart and fixed memory, limit 64 KiB (SRS-031, SRS-032, OP-049); equivalence tolerances (SRS-034, OP-005); equivalence check, results and CI jobs (SRS-035, SRS-037, OP-067); ESP32-S3 build in the emulator (SRS-036); C interface for the whole databases (SRS-038); identity (OP-062); SBOM (OP-046); tests; implementation order. New §13.12: traceability rules for Milestone 2 (ADR 0006, OP-066). §13.5, §13.8 and corrections in §4.2, §5, §7, §8.2, §8.14, §8.16, §9, §11, §13.1. Approved by the project owner on 2026-10-08, with ADRs 0006, 0007 and 0008 |
 | 0.4.1 | 2026-10-08 | Editorial, no design change: the detailed designs moved to one file per milestone with unchanged section numbers, [`architecture-m1.md`](architecture-m1.md) (§8) and [`architecture-m2.md`](architecture-m2.md) (§13, §14); revision history shortened |
+| 0.4.2 | 2026-10-09 | §13.1 module dependencies: `quality.quality_windows` imports `pipeline` inside the function, because `pipeline` imports `quality`; found while implementing §13.6. Approved by the project owner on 2026-10-09 |
 
 ## 1. System context
 
