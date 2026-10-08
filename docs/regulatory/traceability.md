@@ -29,9 +29,9 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 | SRS-021 | Delay of streaming detection | M2 | Requirement | — | **none** | OP-056 |
 | SRS-022 | Start-up mark of detections | M2 | Requirement | `dsp/sinus_dsp/pipeline.py:131`<br>`dsp/sinus_dsp/pipeline.py:32`<br>`dsp/sinus_dsp/pipeline.py:5`<br>`dsp/sinus_dsp/pipeline.py:84`<br>`dsp/sinus_dsp/qrs.py:13`<br>`dsp/sinus_dsp/qrs.py:245`<br>`dsp/sinus_dsp/qrs.py:258`<br>`dsp/sinus_dsp/qrs.py:315`<br>`dsp/sinus_dsp/qrs.py:398`<br>`dsp/sinus_dsp/qrs.py:442`<br>`dsp/sinus_dsp/qrs.py:48`<br>`dsp/sinus_dsp/qrs.py:81` | `dsp/tests/requirements/test_srs_022_startup_mark.py::test_artefact_input_makes_detection_learn_its_levels_again`<br>`dsp/tests/requirements/test_srs_022_startup_mark.py::test_artefact_input_marks_the_learning_stretches_only`<br>`dsp/tests/requirements/test_srs_022_startup_mark.py::test_artefact_marks_do_not_change_the_detections`<br>`dsp/tests/requirements/test_srs_022_startup_mark.py::test_first_two_seconds_are_startup_and_others_reliable`<br>`dsp/tests/requirements/test_srs_022_startup_mark.py::test_flat_input_has_no_detection_and_no_mark`<br>`dsp/tests/requirements/test_srs_022_startup_mark.py::test_marks_do_not_change_the_detections`<br>`dsp/tests/requirements/test_srs_022_startup_mark.py::test_trace_marks_follow_the_first_initialisation` | — |
 | SRS-023 | Detection at the start of real recordings | M2 | System | — | **none** | — |
-| SRS-024 | Heart rate from detections | M2 | Requirement | `dsp/sinus_dsp/heart_rate.py:181`<br>`dsp/sinus_dsp/heart_rate.py:3`<br>`dsp/sinus_dsp/heart_rate.py:67`<br>`dsp/sinus_dsp/heart_rate.py:97`<br>`dsp/sinus_dsp/pipeline.py:86` | **none** | OP-071, OP-073 |
-| SRS-025 | Heart rate with an isolated missed or extra detection | M2 | Requirement | `dsp/sinus_dsp/heart_rate.py:181`<br>`dsp/sinus_dsp/heart_rate.py:5`<br>`dsp/sinus_dsp/heart_rate.py:97`<br>`dsp/sinus_dsp/pipeline.py:86` | **none** | OP-073 |
-| SRS-026 | Withheld heart rate | M2 | Requirement | `dsp/sinus_dsp/heart_rate.py:146`<br>`dsp/sinus_dsp/heart_rate.py:181`<br>`dsp/sinus_dsp/heart_rate.py:38`<br>`dsp/sinus_dsp/heart_rate.py:47`<br>`dsp/sinus_dsp/heart_rate.py:50`<br>`dsp/sinus_dsp/heart_rate.py:6`<br>`dsp/sinus_dsp/heart_rate.py:85`<br>`dsp/sinus_dsp/pipeline.py:86` | **none** | OP-071 |
+| SRS-024 | Heart rate from detections | M2 | Requirement | `dsp/sinus_dsp/heart_rate.py:181`<br>`dsp/sinus_dsp/heart_rate.py:3`<br>`dsp/sinus_dsp/heart_rate.py:67`<br>`dsp/sinus_dsp/heart_rate.py:97`<br>`dsp/sinus_dsp/pipeline.py:86` | `dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_change_of_rhythm_is_valid_from_the_fifth_interval`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_no_interval_spans_a_startup_detection`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_one_event_per_reliable_detection_at_its_sample`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_only_startup_detections_give_no_event`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_pipeline_heart_rate_on_a_synthetic_ecg`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_regular_rhythm_in_range_always_valid`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_regular_rhythm_valid_rates_within_2_bpm`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_startup_detections_are_left_out`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_valid_rates_follow_a_change_of_rhythm` | OP-071, OP-073 |
+| SRS-025 | Heart rate with an isolated missed or extra detection | M2 | Requirement | `dsp/sinus_dsp/heart_rate.py:181`<br>`dsp/sinus_dsp/heart_rate.py:5`<br>`dsp/sinus_dsp/heart_rate.py:97`<br>`dsp/sinus_dsp/pipeline.py:86` | `dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_extra_detection_200_ms_after_a_detection_within_5_bpm`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_extra_detection_200_ms_before_a_detection_within_5_bpm`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_extra_detection_in_the_middle_within_5_bpm`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_missed_detection_early_within_5_bpm`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_missed_detection_within_5_bpm` | OP-073 |
+| SRS-026 | Withheld heart rate | M2 | Requirement | `dsp/sinus_dsp/heart_rate.py:146`<br>`dsp/sinus_dsp/heart_rate.py:181`<br>`dsp/sinus_dsp/heart_rate.py:38`<br>`dsp/sinus_dsp/heart_rate.py:47`<br>`dsp/sinus_dsp/heart_rate.py:50`<br>`dsp/sinus_dsp/heart_rate.py:6`<br>`dsp/sinus_dsp/heart_rate.py:85`<br>`dsp/sinus_dsp/pipeline.py:86` | `dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_events_at_each_change_of_reason`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_first_valid_rate_comes_with_the_fourth_interval`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_gap_longer_than_3_s_gives_no_recent_beat`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_gap_shorter_than_3_s_gives_none`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_limit_rates_are_not_out_of_range`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_no_event_at_the_start_without_detections`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_no_recent_beat_after_the_second_detection`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_no_recent_beat_after_the_third_detection`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_no_recent_beat_at_the_first_sample_3_s_after`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_out_of_range_then_back_to_valid`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_pipeline_flat_stretch_gives_no_recent_beat`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_pipeline_heart_rate_on_a_synthetic_ecg`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_rates_outside_the_range_are_out_of_range`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_second_stretch_before_four_new_intervals_adds_no_event`<br>`dsp/tests/requirements/test_srs_024_026_heart_rate.py::test_startup_detection_does_not_restart_the_no_recent_beat_timer` | OP-071 |
 | SRS-027 | Signal quality index per window | M2 | Requirement | — | **none** | OP-072 |
 | SRS-028 | Signal quality index on defined signals | M2 | Requirement | — | **none** | — |
 | SRS-029 | Signal quality index on the noise stress records | M2 | System | — | **none** | OP-031 |
@@ -51,7 +51,7 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 |---|---|---|---|---|---|
 | M0 | Foundations | Released | 0 | 0 | pass |
 | M1 | Python reference | Released | 16 | 16 | pass |
-| M2 | Portable C++ DSP library | In progress | 22 | 1 | **fail** |
+| M2 | Portable C++ DSP library | In progress | 22 | 4 | **fail** |
 | M3 | Qt desktop application with replay | Planned | 0 | 0 | not applied |
 | M4 | Hardware, firmware and integration | Planned | 0 | 0 | not applied |
 | M5 | Backend and interoperability | Planned | 0 | 0 | not applied |
@@ -67,9 +67,6 @@ Outcome of `--release-gate` on milestones M0, M1, M2: **fail**
 - SRS-020 (M2, In progress): no verifying test
 - SRS-021 (M2, In progress): no verifying test
 - SRS-023 (M2, In progress): no verifying test
-- SRS-024 (M2, In progress): no verifying test
-- SRS-025 (M2, In progress): no verifying test
-- SRS-026 (M2, In progress): no verifying test
 - SRS-027 (M2, In progress): no verifying test
 - SRS-028 (M2, In progress): no verifying test
 - SRS-029 (M2, In progress): no verifying test
@@ -94,8 +91,8 @@ Outcome of `--release-gate` on milestones M0, M1, M2: **fail**
 
 ## Gaps
 
-- Requirements without tests: SRS-017, SRS-018, SRS-019, SRS-020, SRS-021, SRS-023, SRS-024, SRS-025, SRS-026, SRS-027, SRS-028, SRS-029, SRS-030, SRS-031, SRS-032, SRS-033, SRS-034, SRS-035, SRS-036, SRS-037, SRS-038
-- Implemented requirements without tests: SRS-024, SRS-025, SRS-026
+- Requirements without tests: SRS-017, SRS-018, SRS-019, SRS-020, SRS-021, SRS-023, SRS-027, SRS-028, SRS-029, SRS-030, SRS-031, SRS-032, SRS-033, SRS-034, SRS-035, SRS-036, SRS-037, SRS-038
+- Implemented requirements without tests: none
 - Unknown IDs referenced in code/tests: none
 - Open points citing undefined IDs: none
 - Open points still open: 47 (see `open-points.md`)
