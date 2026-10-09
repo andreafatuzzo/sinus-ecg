@@ -33,6 +33,23 @@ if(SINUS_DSP_REQUIREMENT_SOURCES)
                        DISCOVERY_MODE PRE_TEST)
 endif()
 
+# SRS-032 (QA): counts every dynamic memory request, so it replaces operator new and delete and is
+# its own executable (architecture-m2.md 14.10). On Linux without sanitizers it also wraps malloc,
+# calloc, realloc and free.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/requirements/alloc/test_srs_032_fixed_memory.cpp")
+  add_executable(sinus_dsp_requirement_alloc_tests
+    requirements/alloc/test_srs_032_fixed_memory.cpp)
+  target_link_libraries(sinus_dsp_requirement_alloc_tests PRIVATE sinus::dsp GTest::gtest_main)
+  sinus_dsp_apply_test_flags(sinus_dsp_requirement_alloc_tests)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CXX_FLAGS MATCHES "sanitize")
+    target_compile_definitions(sinus_dsp_requirement_alloc_tests PRIVATE SINUS_QA_WRAP_MALLOC)
+    target_link_options(sinus_dsp_requirement_alloc_tests PRIVATE
+      -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free)
+  endif()
+  gtest_discover_tests(sinus_dsp_requirement_alloc_tests PROPERTIES LABELS requirement
+                       DISCOVERY_MODE PRE_TEST)
+endif()
+
 # No allocation and no exception anywhere in the library (architecture-m2.md 14.17).
 find_program(SINUS_DSP_NM NAMES llvm-nm nm REQUIRED)
 add_test(NAME no_heap_symbols
