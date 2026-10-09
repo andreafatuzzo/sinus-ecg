@@ -37,6 +37,13 @@ from sinus_dsp.evaluation.run import (
     RecordEvaluation,
     ValidationResults,
 )
+from sinus_dsp.evaluation.signal_quality import (
+    QualityResults,
+    RecordQuality,
+    WindowSummary,
+    build_quality_results,
+)
+from sinus_dsp.evaluation.start_of_stream import StartOfStreamRecord, StartOfStreamResults
 from sinus_dsp.version import SoftwareIdentity
 
 # Fixture licences: one per database, neither that of the real databases, so that each row
@@ -131,6 +138,43 @@ def noise_stress(
     return NoiseStressResults(NSTDB_VERIFICATION, noisy, by_snr, clean)
 
 
+def summary(n_windows: int, n_usable: int, median: float | None) -> WindowSummary:
+    return WindowSummary(n_windows=n_windows, n_usable=n_usable, median_index=median)
+
+
+def quality_results() -> QualityResults:
+    """Signal quality results by hand: 6 dB just fails (21 %), em fails, ma has no window."""
+    return build_quality_results(
+        [
+            RecordQuality("118", summary(120, 100, 0.8), 1, 0),
+            RecordQuality("100", summary(80, 70, 0.7), 3, 4),
+        ],
+        [
+            (24, summary(100, 100, 0.9)),
+            (18, summary(100, 95, 0.8125)),
+            (12, summary(100, 50, 0.7)),
+            (6, summary(100, 21, 0.5)),
+            (0, summary(100, 10, 0.3)),
+            (-6, summary(100, 5, 0.25)),
+        ],
+        summary(200, 198, 0.91234),
+        [("bw", summary(50, 5, 0.2)), ("em", summary(50, 6, 0.21)), ("ma", summary(0, 0, None))],
+    )
+
+
+def start_of_stream_results() -> StartOfStreamResults:
+    records = (
+        StartOfStreamRecord("100", "MLII", 3, RecordCounts("100", 90, 10, 0)),
+        StartOfStreamRecord("118", "MLII", 3, RecordCounts("118", 200, 1, 0)),
+    )
+    return StartOfStreamResults(
+        segment_s=60,
+        starts_s=(0, 60, 120),
+        records=records,
+        statistics=aggregate_statistics([entry.counts for entry in records]),
+    )
+
+
 def full_results(
     records: tuple[RecordEvaluation, ...] = RECORDS,
     settings: EvaluationSettings = DEFAULT_SETTINGS,
@@ -142,11 +186,15 @@ def full_results(
         records=records,
         noise_stress=noise_stress(records),
         subset=False,
+        quality=quality_results(),
+        start_of_stream=start_of_stream_results(),
     )
 
 
 def subset_results(records: tuple[RecordEvaluation, ...] = RECORDS) -> ValidationResults:
-    return dataclasses.replace(full_results(records), noise_stress=None, subset=True)
+    return dataclasses.replace(
+        full_results(records), noise_stress=None, quality=None, start_of_stream=None, subset=True
+    )
 
 
 # The full report of RECORDS, checked by hand: Se of 100 = 79300 / 800 = 99.125 is written
@@ -296,6 +344,104 @@ EXPECTED_FULL_REPORT = (
     .replace("{B}", "b" * 64)
 )
 
+# Sections 8 and 9 of the full report of ``full_results``, checked by hand (architecture
+# §13.7.5): 21 of 100 windows is 21.00 % (above the 20 % limit); records 100 and 118 give
+# 70 + 100 = 170 usable windows of 200 (85.00 %), sorted by name whatever the order given; the
+# median 0.91234 is written with four decimals; start of stream: gross Se 290 / 301 = 96.35,
+# +P 290 / 290 = 100.00, average Se (90.00 + 99.50) / 2 = 94.75 (99.5025 rounds to 99.50).
+EXPECTED_QUALITY_AND_START = "\n".join(
+    [
+        "## Signal quality index",
+        "",
+        "| Item | Value |",
+        "|---|---|",
+        "| Window length | 10 s |",
+        "| Window spacing | 1 s |",
+        "| Usable threshold | 0.50 |",
+        "| Noisy stretches | from 5:00 to the end of each noise stress record, 2 min with added "
+        "noise alternating with 2 min without, starting with noise |",
+        "",
+        "Noise stress records: the windows that lie entirely in a stretch with added noise. "
+        "Records of the Fixture Arrhythmia Database: the windows that start at or after 5:00. "
+        "Noise records: every window.",
+        "",
+        "### Noise stress records",
+        "",
+        "| Windows of | Windows | Median index | Usable (%) |",
+        "|---|---:|---:|---:|",
+        "| 24 dB | 100 | 0.9000 | 100.00 |",
+        "| 18 dB | 100 | 0.8125 | 95.00 |",
+        "| 12 dB | 100 | 0.7000 | 50.00 |",
+        "| 6 dB | 100 | 0.5000 | 21.00 |",
+        "| 0 dB | 100 | 0.3000 | 10.00 |",
+        "| -6 dB | 100 | 0.2500 | 5.00 |",
+        "| records 118 and 119, no added noise, from 5:00 | 200 | 0.9123 | 99.00 |",
+        "| noise record bw | 50 | 0.2000 | 10.00 |",
+        "| noise record em | 50 | 0.2100 | 12.00 |",
+        "| noise record ma | 0 | not defined | not defined |",
+        "",
+        "### Records of the Fixture Arrhythmia Database",
+        "",
+        "| Record | Windows from 5:00 | Usable (%) | FN in not usable windows "
+        "| FP in not usable windows |",
+        "|---|---:|---:|---:|---:|",
+        "| 100 | 80 | 87.50 | 3 | 4 |",
+        "| 118 | 120 | 83.33 | 1 | 0 |",
+        "| Total | 200 | 85.00 | 4 | 4 |",
+        "",
+        "FN and FP are those of the results per record. Each one that lies in at least one "
+        "window marked not usable is counted once. No threshold applies to these figures.",
+        "",
+        "### Criteria",
+        "",
+        "| Criterion | Value | Required | Result |",
+        "|---|---|---|---|",
+        "| Median index from 24 dB to -6 dB | 0.9000, 0.8125, 0.7000, 0.5000, 0.3000, 0.2500 "
+        "| non-increasing | pass |",
+        "| Median index at -6 dB and at 24 dB | 0.2500, 0.9000 | lower at -6 dB | pass |",
+        "| Usable windows, records 118 and 119 from 5:00 (%) | 99.00 | ≥ 95.00 | pass |",
+        "| Usable windows at 24 dB (%) | 100.00 | ≥ 90.00 | pass |",
+        "| Usable windows at 18 dB (%) | 95.00 | ≥ 90.00 | pass |",
+        "| Usable windows at 6 dB (%) | 21.00 | ≤ 20.00 | fail |",
+        "| Usable windows at 0 dB (%) | 10.00 | ≤ 20.00 | pass |",
+        "| Usable windows at -6 dB (%) | 5.00 | ≤ 20.00 | pass |",
+        "| Usable windows, noise record bw (%) | 10.00 | ≤ 10.00 | pass |",
+        "| Usable windows, noise record em (%) | 12.00 | ≤ 10.00 | fail |",
+        "| Usable windows, noise record ma (%) | not defined | ≤ 10.00 | fail |",
+        "",
+        "## Start of stream",
+        "",
+        "| Item | Value |",
+        "|---|---|",
+        "| Segments | 60 s each, processed on their own, starting at 0:00, 1:00, 2:00 |",
+        "| Segments per record | 3 |",
+        "| Start-up period | first 2 s of each segment, not scored |",
+        "| Detections scored | marked reliable |",
+        "| Matching | EC57 beat by beat, pairing rules of the WFDB comparator bxb; match window "
+        "150 ms; start-up period not scored; ventricular flutter and fibrillation episodes "
+        "not scored |",
+        "",
+        "### Results per record",
+        "",
+        "| Record | Signal | Segments | TP | FN | FP | Se (%) | +P (%) |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+        "| 100 | MLII | 3 | 90 | 10 | 0 | 90.00 | 100.00 |",
+        "| 118 | MLII | 3 | 200 | 1 | 0 | 99.50 | 100.00 |",
+        "| Gross |  | 6 | 290 | 11 | 0 | 96.35 | 100.00 |",
+        "| Average |  |  |  |  |  | 94.75 | 100.00 |",
+        "",
+        "The averages are the means of the defined per-record values: Se is defined for 2 of 2 "
+        "records, +P for 2 of 2 records.",
+        "",
+        "### Targets",
+        "",
+        "| Statistic | Value (%) | Target (%) | Result |",
+        "|---|---:|---|---|",
+        "| Gross Se | 96.35 | ≥ 99.50 | fail |",
+        "| Gross +P | 100.00 | ≥ 99.50 | pass |",
+    ]
+)
+
 STATEMENT = (
     "Technical evaluation only. Sinus is not a medical device; "
     "these results are not a clinical validation."
@@ -322,7 +468,41 @@ def line_after(text: str, start: str) -> list[str]:
 
 
 def test_full_report_as_checked_by_hand() -> None:
-    assert render_full_report(full_results()) == EXPECTED_FULL_REPORT
+    assert render_full_report(full_results()) == (
+        EXPECTED_FULL_REPORT + "\n" + EXPECTED_QUALITY_AND_START + "\n"
+    )
+
+
+def test_sections_8_and_9_follow_the_noise_stress_test_and_are_deterministic() -> None:
+    first = render_full_report(full_results())
+    assert first == render_full_report(full_results())
+    assert first.index("## Noise stress test") < first.index("## Signal quality index")
+    assert first.index("## Signal quality index") < first.index("## Start of stream")
+    assert first.endswith("| Gross +P | 100.00 | ≥ 99.50 | pass |\n")
+    assert "SRS-" not in first
+
+
+def test_the_other_sections_do_not_change_with_sections_8_and_9() -> None:
+    text = render_full_report(full_results())
+    assert text.startswith(EXPECTED_FULL_REPORT + "\n## Signal quality index")
+
+
+def test_subset_report_is_the_same_with_or_without_the_new_fields_set_to_none() -> None:
+    assert "Signal quality" not in render_subset_report(subset_results())
+    assert "Start of stream" not in render_subset_report(subset_results())
+
+
+def test_share_without_windows_and_median_without_windows_are_not_defined() -> None:
+    text = render_full_report(full_results())
+    assert "| noise record ma | 0 | not defined | not defined |" in text
+
+
+def test_start_of_stream_starts_are_written_m_ss() -> None:
+    stream = dataclasses.replace(start_of_stream_results(), starts_s=(0, 60, 600, 1740))
+    results = dataclasses.replace(full_results(), start_of_stream=stream)
+    text = render_full_report(results)
+    assert "starting at 0:00, 1:00, 10:00, 29:00 |" in text
+    assert "| Segments per record | 4 |" in text
 
 
 def test_full_report_sections_in_order() -> None:
@@ -337,6 +517,13 @@ def test_full_report_sections_in_order() -> None:
         "## Noise stress test",
         "### Results per record",
         "### Results per SNR",
+        "## Signal quality index",
+        "### Noise stress records",
+        "### Records of the Fixture Arrhythmia Database",
+        "### Criteria",
+        "## Start of stream",
+        "### Results per record",
+        "### Targets",
     ]
 
 
@@ -365,7 +552,9 @@ def test_text_format(render: object) -> None:
 def test_report_does_not_depend_on_the_order_of_the_records() -> None:
     shuffled = list(RECORDS)
     random.Random(3).shuffle(shuffled)
-    assert render_full_report(full_results(tuple(shuffled))) == EXPECTED_FULL_REPORT
+    assert render_full_report(full_results(tuple(shuffled))) == (
+        EXPECTED_FULL_REPORT + "\n" + EXPECTED_QUALITY_AND_START + "\n"
+    )
     assert render_full_report(full_results()) == render_full_report(full_results())
 
 
@@ -373,7 +562,9 @@ def test_snr_rows_in_decreasing_order_whatever_the_order_given() -> None:
     results = dataclasses.replace(
         full_results(), noise_stress=noise_stress(snr_order=(-6, 0, 24, 6, 18, 12))
     )
-    assert render_full_report(results) == EXPECTED_FULL_REPORT
+    assert render_full_report(results) == (
+        EXPECTED_FULL_REPORT + "\n" + EXPECTED_QUALITY_AND_START + "\n"
+    )
 
 
 def test_targets_pass_at_99_50_percent() -> None:
@@ -593,7 +784,11 @@ def test_licence_rows_of_the_real_databases() -> None:
         "| Database | MIT-BIH Noise Stress Test Database, version 1.0.0 |",
         REAL_LICENCE_LINE,
     ]
-    subset = render_subset_report(dataclasses.replace(results, noise_stress=None, subset=True))
+    subset = render_subset_report(
+        dataclasses.replace(
+            results, noise_stress=None, quality=None, start_of_stream=None, subset=True
+        )
+    )
     assert section_2(subset)[4:6] == [
         "| Database | MIT-BIH Arrhythmia Database, version 1.0.0 |",
         REAL_LICENCE_LINE,
@@ -861,6 +1056,10 @@ def test_full_report_needs_the_whole_evaluation() -> None:
         render_full_report(dataclasses.replace(full_results(), noise_stress=None))
     with pytest.raises(InvalidInputError):
         render_full_report(dataclasses.replace(full_results(), subset=True))
+    with pytest.raises(InvalidInputError, match="the signal quality and the start of stream"):
+        render_full_report(dataclasses.replace(full_results(), quality=None))
+    with pytest.raises(InvalidInputError, match="the signal quality and the start of stream"):
+        render_full_report(dataclasses.replace(full_results(), start_of_stream=None))
 
 
 def test_subset_report_needs_a_subset() -> None:
@@ -877,7 +1076,15 @@ def test_subset_report_refuses_results_with_a_noise_stress_test() -> None:
         InvalidInputError,
         match=(
             "^the subset report needs the results of a subset of the records, without the "
-            "noise stress test$"
+            "noise stress test, the signal quality and the start of stream$"
         ),
     ):
         render_subset_report(results)
+
+
+def test_subset_report_refuses_results_with_sections_8_or_9() -> None:
+    with_quality = dataclasses.replace(subset_results(), quality=quality_results())
+    with_stream = dataclasses.replace(subset_results(), start_of_stream=start_of_stream_results())
+    for results in (with_quality, with_stream):
+        with pytest.raises(InvalidInputError, match="the signal quality and the start of stream"):
+            render_subset_report(results)

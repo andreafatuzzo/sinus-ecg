@@ -100,6 +100,7 @@ def fixture_run(
     tmp_path: Path,
     write_fixture_databases: Callable[[Path], tuple[Database, Database]],
     fake_detector: Detector,
+    stub_new_run_steps: list[str],
 ) -> tuple[Path, Database, Database]:
     """The script bound to the fixture databases, written under ``tmp_path / "data"``."""
     root = tmp_path / "data"

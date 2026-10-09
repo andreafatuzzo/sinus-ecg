@@ -32,7 +32,7 @@ from sinus_dsp.data.physionet import (
     fetch_https,
     verify_database,
 )
-from sinus_dsp.data.records import Annotation, Record, load_record
+from sinus_dsp.data.records import Annotation, Record, load_record, load_signal
 from sinus_dsp.errors import InvalidInputError, MalformedFileError
 from sinus_dsp.evaluation.matching import (
     Episode,
@@ -42,11 +42,14 @@ from sinus_dsp.evaluation.matching import (
     vf_episodes,
 )
 from sinus_dsp.evaluation.metrics import RecordCounts
-from sinus_dsp.pipeline import detect_beats
+from sinus_dsp.pipeline import detect_beats, detect_marked
+from sinus_dsp.quality import quality_windows
 from sinus_dsp.version import SoftwareIdentity, software_identity
 
 if TYPE_CHECKING:
     from sinus_dsp.evaluation.noise_stress import NoiseStressResults
+    from sinus_dsp.evaluation.signal_quality import QualityFunction, QualityResults
+    from sinus_dsp.evaluation.start_of_stream import MarkedDetector, StartOfStreamResults
 
 #: (signal_mv, fs_hz, mains_hz) -> sample indices of the detected beats.
 Detector = Callable[[FloatArray, float, int], IndexArray]
@@ -109,6 +112,8 @@ class RecordEvaluation:
         reference_excluded: Reference beats at or after 5:00 inside an episode.
         detections_excluded: Detections at or after 5:00 inside an episode and not paired.
         flutter_waves_outside_vf: ``!`` annotations from 5:00 outside every episode.
+        false_negatives: Samples of the reference beats without a match (SRS-030).
+        false_positives: Samples of the detections without a match (SRS-030).
     """
 
     record: str
@@ -121,6 +126,8 @@ class RecordEvaluation:
     reference_excluded: int
     detections_excluded: int
     flutter_waves_outside_vf: int
+    false_negatives: tuple[int, ...] = ()
+    false_positives: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -139,6 +146,8 @@ class ValidationResults:
         records: Evaluation of each record, sorted by record name.
         noise_stress: Results of the noise stress test, or ``None`` in the subset report.
         subset: Whether the results cover a subset of the records.
+        quality: Signal quality results (SRS-029, SRS-030), or ``None`` in the subset report.
+        start_of_stream: Start-of-stream results (SRS-023), or ``None`` in the subset report.
     """
 
     software: SoftwareIdentity
@@ -147,6 +156,8 @@ class ValidationResults:
     records: tuple[RecordEvaluation, ...]
     noise_stress: NoiseStressResults | None
     subset: bool
+    quality: QualityResults | None = None
+    start_of_stream: StartOfStreamResults | None = None
 
 
 def read_record_list(database_dir: Path) -> tuple[str, ...]:
@@ -292,6 +303,8 @@ def evaluate_record(
         flutter_waves_outside_vf=_flutter_waves_outside(
             record.other_annotations, episodes, start, n_samples - 1
         ),
+        false_negatives=result.false_negatives,
+        false_positives=result.false_positives,
     )
 
 
@@ -369,6 +382,9 @@ def run_validation(
     settings: EvaluationSettings = DEFAULT_SETTINGS,
     detector: Detector = detect_beats,
     loader: RecordLoader = load_record,
+    marked_detector: MarkedDetector = detect_marked,
+    quality: QualityFunction = quality_windows,
+    noise_loader: RecordLoader = load_signal,
     fetch: FetchFunction | None = fetch_https,
 ) -> ValidationResults:
     """Verify the two databases, then evaluate every record and the noise stress records.
@@ -386,7 +402,13 @@ def run_validation(
        evaluated in the order of their names.
     3. The noise stress records are evaluated, and compared with records 118 and 119 of
        step 2.
-    4. The identity of the running software is taken once, with
+    4. SRS-023: the segments of 60 s of the records of step 2 are evaluated
+       (:func:`~sinus_dsp.evaluation.start_of_stream.evaluate_start_of_stream`).
+    5. SRS-029, SRS-030: the signal quality of the records of step 2, of the noise stress
+       records and of the three noise records is evaluated
+       (:func:`~sinus_dsp.evaluation.signal_quality.evaluate_quality`); records are loaded
+       again, so that one record is in memory at a time.
+    6. The identity of the running software is taken once, with
        :func:`~sinus_dsp.version.software_identity`.
 
     Args:
@@ -396,6 +418,9 @@ def run_validation(
         settings: Settings of the detection.
         detector: Detection function.
         loader: Function that loads a record.
+        marked_detector: Detection function with marks, for the start of stream.
+        quality: Signal quality function.
+        noise_loader: Function that loads a record without annotation file.
         fetch: Function that fetches a URL, or ``None`` to verify only.
 
     Returns:
@@ -411,6 +436,8 @@ def run_validation(
     """
     # Called here, not imported at the top: noise_stress imports this module.
     from sinus_dsp.evaluation.noise_stress import evaluate_noise_stress
+    from sinus_dsp.evaluation.signal_quality import evaluate_quality
+    from sinus_dsp.evaluation.start_of_stream import evaluate_start_of_stream
 
     root = Path(data_root)
     if fetch is None:
@@ -432,6 +459,22 @@ def run_validation(
         detector=detector,
         loader=loader,
     )
+    start_of_stream = evaluate_start_of_stream(
+        mitdb_dir,
+        [record.record for record in records],
+        settings,
+        detector=marked_detector,
+        loader=loader,
+    )
+    signal_quality = evaluate_quality(
+        mitdb_dir,
+        root / nstdb.slug,
+        records,
+        settings,
+        quality=quality,
+        loader=loader,
+        noise_loader=noise_loader,
+    )
     return ValidationResults(
         software=software_identity(),
         settings=settings,
@@ -439,6 +482,8 @@ def run_validation(
         records=records,
         noise_stress=noise_stress,
         subset=False,
+        quality=signal_quality,
+        start_of_stream=start_of_stream,
     )
 
 
@@ -451,6 +496,9 @@ def write_validation_report(
     settings: EvaluationSettings = DEFAULT_SETTINGS,
     detector: Detector = detect_beats,
     loader: RecordLoader = load_record,
+    marked_detector: MarkedDetector = detect_marked,
+    quality: QualityFunction = quality_windows,
+    noise_loader: RecordLoader = load_signal,
     fetch: FetchFunction | None = fetch_https,
 ) -> None:
     """Run the validation and write the full report.
@@ -473,6 +521,9 @@ def write_validation_report(
         settings: Settings of the detection.
         detector: Detection function.
         loader: Function that loads a record.
+        marked_detector: Detection function with marks, for the start of stream.
+        quality: Signal quality function.
+        noise_loader: Function that loads a record without annotation file.
         fetch: Function that fetches a URL, or ``None`` to verify only.
 
     Raises:
@@ -491,6 +542,9 @@ def write_validation_report(
         settings=settings,
         detector=detector,
         loader=loader,
+        marked_detector=marked_detector,
+        quality=quality,
+        noise_loader=noise_loader,
         fetch=fetch,
     )
     write_atomically(Path(output_path), render_full_report(results).encode("utf-8"))

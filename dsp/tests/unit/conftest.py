@@ -256,6 +256,42 @@ def write_fixture_databases() -> Callable[[Path], tuple[Database, Database]]:
     return _write_fixture_databases
 
 
+@pytest.fixture
+def stub_new_run_steps(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Replace the start-of-stream and signal-quality steps of ``run_validation`` by stubs.
+
+    The 20 Hz fixture records are far shorter than the 60 s segments of the start of stream
+    and the noisy stretches of the quality evaluation. The stubs return fixed, valid results
+    and the list records the steps that ran, in order.
+    """
+    from sinus_dsp.evaluation import signal_quality, start_of_stream
+    from sinus_dsp.evaluation.metrics import RecordCounts, aggregate_statistics
+
+    calls: list[str] = []
+    counts = RecordCounts("100", 3, 1, 0)
+
+    def stub_start(*args: object, **kwargs: object) -> start_of_stream.StartOfStreamResults:
+        calls.append("start_of_stream")
+        record = start_of_stream.StartOfStreamRecord("100", "MLII", 30, counts)
+        return start_of_stream.StartOfStreamResults(
+            60, start_of_stream.SEGMENT_STARTS_S, (record,), aggregate_statistics([counts])
+        )
+
+    def stub_quality(*args: object, **kwargs: object) -> signal_quality.QualityResults:
+        calls.append("signal_quality")
+        window = signal_quality.WindowSummary(10, 9, 0.75)
+        return signal_quality.build_quality_results(
+            [signal_quality.RecordQuality("100", window, 1, 0)],
+            [(snr, window) for snr in (24, 18, 12, 6, 0, -6)],
+            window,
+            [(name, window) for name in ("bw", "em", "ma")],
+        )
+
+    monkeypatch.setattr(start_of_stream, "evaluate_start_of_stream", stub_start)
+    monkeypatch.setattr(signal_quality, "evaluate_quality", stub_quality)
+    return calls
+
+
 #: Files of the fixture subset database that are not records: name -> content.
 SUBSET_EXTRA_FILES = {
     "100.xws": b"waveform settings\n",

@@ -13,6 +13,7 @@ from __future__ import annotations
 import statistics
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final
 
 import numpy as np
@@ -20,6 +21,14 @@ import numpy as np
 from sinus_dsp._types import BoolArray, FloatArray
 from sinus_dsp.errors import InvalidInputError
 from sinus_dsp.evaluation.matching import learning_period_samples
+from sinus_dsp.evaluation.noise_stress import (
+    CLEAN_RECORDS,
+    NOISE_RECORDS,
+    NOISE_STRESS_RECORDS,
+    noisy_stretches,
+    snr_db,
+)
+from sinus_dsp.evaluation.run import EvaluationSettings, RecordEvaluation, RecordLoader
 from sinus_dsp.quality import QualityWindows
 
 #: (signal_mv, fs_hz, mains_hz) -> the windows of the signal quality index.
@@ -250,6 +259,66 @@ def quality_criteria(
     for name in _NOISE_NAMES:
         result.append((f"noise_{name}", at_most(noise.get(name), NOISE_MAX_USABLE_PERCENT)))
     return tuple(result)
+
+
+def evaluate_quality(
+    mitdb_dir: Path,
+    nstdb_dir: Path,
+    evaluations: Sequence[RecordEvaluation],
+    settings: EvaluationSettings,
+    *,
+    quality: QualityFunction,
+    loader: RecordLoader,
+    noise_loader: RecordLoader,
+) -> QualityResults:
+    """Run the signal quality index on the reference records and judge the criteria.
+
+    SRS-029, SRS-030 (architecture §13.7.4, step 5): every record of ``evaluations`` is loaded
+    again with ``loader`` (one record in memory at a time) and gets its
+    :class:`RecordQuality`, with the false negatives and false positives of its evaluation;
+    records 118 and 119 also give the windows from 5:00 for the clean summary. Each noise
+    stress record gives the windows that lie entirely in a noisy stretch, pooled per SNR. Each
+    record of ``NOISE_RECORDS`` is loaded with ``noise_loader`` and summarised over all its
+    windows.
+    """
+    records: list[RecordQuality] = []
+    clean_parts: list[tuple[QualityWindows, BoolArray]] = []
+    for evaluation in sorted(evaluations, key=lambda entry: entry.record):
+        record = loader(Path(mitdb_dir) / evaluation.record, settings.channel)
+        windows = quality(record.signal_mv, record.fs_hz, settings.mains_hz)
+        records.append(
+            record_quality(
+                evaluation.record,
+                windows,
+                record.fs_hz,
+                evaluation.false_negatives,
+                evaluation.false_positives,
+            )
+        )
+        if evaluation.record in CLEAN_RECORDS:
+            start = learning_period_samples(record.fs_hz)
+            clean_parts.append((windows, windows_from(windows, start)))
+
+    snr_parts: dict[int, list[tuple[QualityWindows, BoolArray]]] = {}
+    for name in NOISE_STRESS_RECORDS:
+        record = loader(Path(nstdb_dir) / name, settings.channel)
+        windows = quality(record.signal_mv, record.fs_hz, settings.mains_hz)
+        selected = np.zeros(windows.index.shape, dtype=np.bool_)
+        for first, last in noisy_stretches(record.n_samples, record.fs_hz):
+            selected |= windows_within(windows, first, last)
+        snr_parts.setdefault(snr_db(name), []).append((windows, selected))
+    by_snr = [
+        (level, summarize_pooled(snr_parts[level])) for level in sorted(snr_parts, reverse=True)
+    ]
+
+    noise_records: list[tuple[str, WindowSummary]] = []
+    for name in NOISE_RECORDS:
+        record = noise_loader(Path(nstdb_dir) / name, settings.channel)
+        windows = quality(record.signal_mv, record.fs_hz, settings.mains_hz)
+        everything = np.ones(windows.index.shape, dtype=np.bool_)
+        noise_records.append((name, summarize_windows(windows, everything)))
+
+    return build_quality_results(records, by_snr, summarize_pooled(clean_parts), noise_records)
 
 
 def build_quality_results(
