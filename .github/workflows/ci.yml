@@ -28,6 +28,9 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      # Python tests of the C++ items use the configuration of dsp (architecture-m2.md 13.12)
+      - run: uv run ruff check --config pyproject.toml ../libs
+      - run: uv run ruff format --check --config pyproject.toml ../libs
       - run: uv run mypy
       - run: uv run pytest
       # Matrix up to date, requirement and milestone fields, test tag placement and verification
@@ -92,3 +95,75 @@ jobs:
           echo "${OSV_SCANNER_SHA256}  ${scanner}" | sha256sum --check --strict
           chmod +x "${scanner}"
           "${scanner}" scan source --config=osv-scanner.toml -L "${RUNNER_TEMP}/sbom-dsp.cdx.json"
+
+  # Portable C++ library (architecture-m2.md 14.2, 14.18 group C1). The equivalence step, the
+  # SBOM and the ESP32-S3 job come with the groups that bring them. The compilers are those of
+  # the runner image (GCC 14 and Clang 18); the development tools are pinned by
+  # libs/sinus-dsp/tools/uv.lock.
+  libs:
+    needs: dsp
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: libs/sinus-dsp
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: libs/sinus-dsp/tools/uv.lock
+      - run: uv sync --locked --project tools
+      - name: clang-format
+        run: >-
+          uv run --project tools clang-format --dry-run --Werror
+          $(find include src tests -name '*.cpp' -o -name '*.hpp' -o -name '*.cc' -o -name '*.h')
+      - name: GCC 14, preset release
+        env:
+          CXX: g++-14
+        run: |
+          uv run --project tools cmake --fresh --preset release
+          uv run --project tools cmake --build --preset release
+          uv run --project tools ctest --preset release
+      - name: GCC 14, preset asan-ubsan
+        env:
+          CXX: g++-14
+        run: |
+          uv run --project tools cmake --fresh --preset asan-ubsan
+          uv run --project tools cmake --build --preset asan-ubsan
+          uv run --project tools ctest --preset asan-ubsan
+      - name: Clang 18, preset release
+        env:
+          CXX: clang++-18
+        run: |
+          uv run --project tools cmake --fresh --preset release
+          uv run --project tools cmake --build --preset release
+          uv run --project tools ctest --preset release
+      - name: Clang 18, preset asan-ubsan
+        env:
+          CXX: clang++-18
+        run: |
+          uv run --project tools cmake --fresh --preset asan-ubsan
+          uv run --project tools cmake --build --preset asan-ubsan
+          uv run --project tools ctest --preset asan-ubsan
+      - name: clang-tidy (GCC build, preset tidy)
+        env:
+          CXX: g++-14
+        run: |
+          uv run --project tools cmake --fresh --preset tidy
+          uv run --project tools cmake --build --preset tidy
+      - name: Coverage (GCC, preset coverage)
+        env:
+          CXX: g++-14
+        run: |
+          uv run --project tools cmake --fresh --preset coverage
+          uv run --project tools cmake --build --preset coverage
+          uv run --project tools ctest --preset coverage
+          uv run --project tools gcovr --root . --filter 'include/' --filter 'src/' --filter 'build/coverage/generated/' --gcov-executable gcov-14 --print-summary --txt "${RUNNER_TEMP}/coverage-libs.txt" build/coverage
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: coverage-libs
+          path: ${{ runner.temp }}/coverage-libs.txt
+          if-no-files-found: warn
