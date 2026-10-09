@@ -3,9 +3,13 @@
 The segments, the reference beats and the episodes are rebuilt here from the requirement text
 and the database files, not taken from ``evaluate_start_of_stream``: the first stored signal of
 each record is read with wfdb, the 30 segments of 60 s are cut at 0:00, 1:00, ... 29:00, each
-is processed on its own by the reference (``detect_marked``, mains 60 Hz, SRS-007), only the
-detections marked reliable are kept, and they are scored with the documented matching of
-SRS-008 (``match_beats``) with the start-up period of the first 2 s in place of 5 minutes.
+is processed on its own by the reference (``detect_marked``, mains 60 Hz, SRS-007) together
+with its continuation on the record, the 2876 samples of the maximum delay of a detection at
+360 Hz (architecture-m2 13.4, row "Search-back": G + N + D + 1 - R), or to the end of the
+record if that comes first. Only the detections marked reliable whose index lies in the
+segment are kept (the continuation is not scored), and they are scored with the documented
+matching of SRS-008 (``match_beats``) with the start-up period of the first 2 s in place of
+5 minutes.
 The reference beats and the flutter and fibrillation episodes are counted here from the
 annotation file and clipped to each segment. The gross values are compared with the targets
 exactly, and with the figures of the generated validation report, section "Start of stream".
@@ -44,6 +48,7 @@ MAINS_HZ = 60  # SRS-007
 FS = 360
 SEGMENT = 60 * FS  # SRS-023: segments of 60 s
 STARTS_S = tuple(range(0, 30 * 60, 60))  # 0:00 and every whole minute to 29:00
+CONTINUATION = 2876  # SRS-023 / SRS-021: maximum delay of a detection at 360 Hz
 STARTUP = 2 * FS  # SRS-022: the first 2 s of the segment
 MATCH_WINDOW = 54  # SRS-008: 150 ms at 360 Hz
 TARGET = Fraction(995, 1000)
@@ -56,6 +61,7 @@ class Counts:
     fn: int = 0
     fp: int = 0
     n_segments: int = 0
+    short_continuations: int = 0
     detections_startup: int = 0
     detections_reliable: int = 0
 
@@ -103,8 +109,11 @@ def outcome() -> Outcome:
             s0 = start_s * FS
             s1 = s0 + SEGMENT  # exclusive
             assert s1 <= n_samples
-            detections = detect_marked(signal[s0:s1], float(FS), MAINS_HZ)
-            reliable = detections.indices[~detections.startup]
+            cont = min(CONTINUATION, n_samples - s1)
+            detections = detect_marked(signal[s0 : s1 + cont], float(FS), MAINS_HZ)
+            in_segment = detections.indices < SEGMENT
+            reliable = detections.indices[~detections.startup & in_segment]
+            counts.short_continuations += int(cont < CONTINUATION)
             reference = beats[(beats >= s0) & (beats < s1)] - s0
             clipped = tuple(
                 Episode(max(a, s0) - s0, min(b, s1 - 1) - s0)
@@ -122,7 +131,7 @@ def outcome() -> Outcome:
             counts.fn += m.fn
             counts.fp += m.fp
             counts.n_segments += 1
-            counts.detections_startup += int(detections.startup.sum())
+            counts.detections_startup += int((detections.startup & in_segment).sum())
             counts.detections_reliable += len(reliable)
             result.false_negatives += [(name, start_s, int(x)) for x in m.false_negatives]
             result.false_positives += [(name, start_s, int(x)) for x in m.false_positives]
@@ -149,6 +158,17 @@ def test_segments_are_the_1440_of_the_requirement(outcome: Outcome) -> None:
     assert sum(c.detections_startup for c in outcome.counts.values()) > 0
     tp, _, fp = _gross(outcome)
     assert sum(c.detections_reliable for c in outcome.counts.values()) >= tp + fp - 1
+
+
+@pytest.mark.requirement("SRS-023")
+@pytest.mark.needs_data
+def test_continuation_and_short_continuations(outcome: Outcome) -> None:
+    # Only the last segment (29:00 to 30:00) of each record is followed by fewer than 2876
+    # samples (650000 - 649... = 2000 left): 48 in all.
+    assert all(c.short_continuations == 1 for c in outcome.counts.values())
+    text = REPORT.read_text(encoding="utf-8").split("## Start of stream", 1)[1]
+    assert re.search(r"\| Continuation after each segment \| 2876 samples", text)
+    assert re.search(r"\| Segments with a shorter continuation \| 48 \|", text)
 
 
 @pytest.mark.requirement("SRS-023")
