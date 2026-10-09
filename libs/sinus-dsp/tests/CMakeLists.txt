@@ -13,12 +13,25 @@ include(GoogleTest)
 
 # Developer's unit tests: label "unit". The requirement and system tests (QA, test engineer)
 # are added by the groups that bring them.
-add_executable(sinus_dsp_unit_tests unit/test_identity.cpp unit/test_arithmetic.cpp)
+add_executable(sinus_dsp_unit_tests
+  unit/test_identity.cpp unit/test_arithmetic.cpp unit/test_config.cpp unit/test_biquad.cpp
+  unit/test_conditioner.cpp unit/test_chain.cpp)
 target_link_libraries(sinus_dsp_unit_tests PRIVATE sinus::dsp GTest::gtest_main)
 target_compile_definitions(sinus_dsp_unit_tests PRIVATE
   SINUS_DSP_TEST_VERSION="${SINUS_DSP_VERSION_TEXT}")
 sinus_dsp_apply_test_flags(sinus_dsp_unit_tests)
 gtest_discover_tests(sinus_dsp_unit_tests PROPERTIES LABELS unit DISCOVERY_MODE PRE_TEST)
+
+# Requirement tests (QA): every requirements/*.cpp goes into one executable, label "requirement".
+file(GLOB SINUS_DSP_REQUIREMENT_SOURCES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/requirements/*.cpp")
+if(SINUS_DSP_REQUIREMENT_SOURCES)
+  add_executable(sinus_dsp_requirement_tests ${SINUS_DSP_REQUIREMENT_SOURCES})
+  target_link_libraries(sinus_dsp_requirement_tests PRIVATE sinus::dsp GTest::gtest_main)
+  sinus_dsp_apply_test_flags(sinus_dsp_requirement_tests)
+  gtest_discover_tests(sinus_dsp_requirement_tests PROPERTIES LABELS requirement
+                       DISCOVERY_MODE PRE_TEST)
+endif()
 
 # No allocation and no exception anywhere in the library (architecture-m2.md 14.17).
 find_program(SINUS_DSP_NM NAMES llvm-nm nm REQUIRED)

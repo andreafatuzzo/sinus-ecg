@@ -49,8 +49,34 @@ if(SINUS_DSP_TIDY)
   # The tools project of tools/ puts the pinned clang-tidy first on PATH (uv run).
   find_program(SINUS_DSP_CLANG_TIDY NAMES clang-tidy REQUIRED)
   # -Wno-unknown-warning-option: the GCC-only warnings of Flags.cmake are unknown to clang-tidy.
-  set_target_properties(sinus_dsp PROPERTIES CXX_CLANG_TIDY
-    "${SINUS_DSP_CLANG_TIDY};--config-file=${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy;--extra-arg=-Wno-unknown-warning-option")
+  set(_tidy_command "${SINUS_DSP_CLANG_TIDY};--config-file=${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy"
+      "--extra-arg=-Wno-unknown-warning-option")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # The pinned clang-tidy is not the compiler's own tool: on Windows it assumes the MSVC target
+    # and finds neither the standard library nor the headers of the MinGW compiler. It is given
+    # the target and the compiler's include directories (not its resource directory, which
+    # belongs to the compiler's version).
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpmachine OUTPUT_VARIABLE _tidy_target
+                    OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(_tidy_target)
+      list(APPEND _tidy_command "--extra-arg=--target=${_tidy_target}")
+    endif()
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} -std=c++17 -E -v -x c++ -
+                    INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/VERSION"
+                    OUTPUT_QUIET ERROR_VARIABLE _tidy_search)
+    string(REPLACE "\r" "" _tidy_search "${_tidy_search}")
+    string(REGEX REPLACE "^.*#include <[.][.][.]> search starts here:\n" "" _tidy_search
+           "${_tidy_search}")
+    string(REGEX REPLACE "\nEnd of search list[.].*$" "" _tidy_search "${_tidy_search}")
+    string(REPLACE "\n" ";" _tidy_search "${_tidy_search}")
+    foreach(_dir IN LISTS _tidy_search)
+      string(STRIP "${_dir}" _dir)
+      if(_dir AND NOT _dir MATCHES "/lib/clang/")
+        list(APPEND _tidy_command "--extra-arg=-isystem${_dir}")
+      endif()
+    endforeach()
+  endif()
+  set_target_properties(sinus_dsp PROPERTIES CXX_CLANG_TIDY "${_tidy_command}")
 endif()
 
 if(SINUS_DSP_BUILD_TESTS)
