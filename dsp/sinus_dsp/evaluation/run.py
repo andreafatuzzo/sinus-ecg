@@ -324,7 +324,7 @@ def evaluate_records(
             name is invalid or given twice (before any record is loaded), or if the
             evaluation of a record rejects its input.
     """
-    names = _checked_names(records)
+    names = checked_record_names(records)
     directory = Path(database_dir)
     return tuple(
         evaluate_record(loader(directory / name, settings.channel), settings, detector)
@@ -496,7 +496,7 @@ def write_validation_report(
     write_atomically(Path(output_path), render_full_report(results).encode("utf-8"))
 
 
-def _checked_names(records: Sequence[str]) -> tuple[str, ...]:
+def checked_record_names(records: Sequence[str]) -> tuple[str, ...]:
     """Check the names of the records to evaluate and return them in their order."""
     if isinstance(records, str):
         raise InvalidInputError(f"records is a string, not a sequence of record names: {records!r}")
