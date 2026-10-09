@@ -245,8 +245,12 @@ def _start(
     starts: Sequence[int] = SEGMENT_STARTS_S,
     segment_s: int = 60,
     signals: dict[str, str] | None = None,
+    continuation: dict[str, int] | None = None,
+    short: dict[str, int] | None = None,
 ) -> StartOfStreamResults:
     signals = signals or {}
+    continuation = continuation or {}
+    short = short or {}
     return StartOfStreamResults(
         segment_s=segment_s,
         starts_s=tuple(starts),
@@ -256,6 +260,8 @@ def _start(
                 signal_name=signals.get(c.record, "MLII"),
                 n_segments=len(starts),
                 counts=c,
+                continuation_samples=continuation.get(c.record, 2876),
+                short_continuations=short.get(c.record, 0),
             )
             for c in counts
         ),
@@ -272,6 +278,20 @@ START_COUNTS_FAIL = (
     _record_counts("100", 2000, 5, 21),
     _record_counts("118", 1990, 10, 0),
     _record_counts("207", 0, 0, 0),
+)
+
+
+METHOD_CORRECTION = (
+    "Method correction. In the first run of this evaluation, each segment was processed only up "
+    "to its last sample. Detection reports a beat a fraction of a second after it, so the beats "
+    "at the end of each segment were never reported and were counted as false negatives; the "
+    "analysis of the false negatives of that run showed it. From this version, detection "
+    "continues on the record after each segment for the longest delay of a detection, and only "
+    "the reference beats and detections whose index lies in the segment are scored. The "
+    "detection algorithm is unchanged."
+)
+CONTINUATION_TEXT = (
+    "{} samples, the longest delay of a detection, or to the end of the record when it comes first"
 )
 
 
@@ -816,7 +836,8 @@ def test_start_section_states_the_segments_and_the_start_up_period(
     Expected: a table `Item`/`Value` with `Segments` = `60 s each, processed on their own,
     starting at 0:00, 1:00, 2:00, ..., 29:00` (all 30 written out), `Segments per record` =
     30, `Start-up period` = `first 2 s of each segment, not scored`, `Detections scored` =
-    `marked reliable` and `Matching` with the literal sentence.
+    `marked reliable, with the index in the segment`, `Reference beats scored` = `in the
+    segment` and `Matching` with the literal sentence.
     """
     _, start = _sections(
         _text(_results(_standard_quality(), _start(START_COUNTS_PASS))), parse_report
@@ -835,8 +856,80 @@ def test_start_section_states_the_segments_and_the_start_up_period(
         "Start-up period",
         "first 2 s of each segment, not scored",
     )
-    assert table.row("Detections scored") == ("Detections scored", "marked reliable")
+    assert table.row("Detections scored") == (
+        "Detections scored",
+        "marked reliable, with the index in the segment",
+    )
+    assert table.row("Reference beats scored") == ("Reference beats scored", "in the segment")
     assert table.row("Matching") == ("Matching", MATCHING_TEXT)
+
+
+@pytest.mark.requirement("SRS-030")
+def test_start_section_states_the_continuation_and_the_shorter_ones(
+    parse_report: Callable[[str], Any],
+) -> None:
+    """The rows on the continuation after each segment and on the segments with a shorter one.
+
+    Input: records with `continuation_samples` 2876 and `short_continuations` 1, 0 and 2.
+    Expected: `Continuation after each segment` = `2876 samples, the longest delay of a
+    detection, or to the end of the record when it comes first`; `Segments with a shorter
+    continuation` = 3 (the sum over the records); the rows lie between `Start-up period` and
+    `Detections scored`.
+    """
+    results = _start(START_COUNTS_PASS, short={"100": 1, "118": 0, "207": 2})
+    _, start = _sections(_text(_results(_standard_quality(), results)), parse_report)
+    table = start.section("Start of stream").tables()[0]
+
+    assert table.row("Continuation after each segment") == (
+        "Continuation after each segment",
+        CONTINUATION_TEXT.format(2876),
+    )
+    assert table.row("Segments with a shorter continuation") == (
+        "Segments with a shorter continuation",
+        "3",
+    )
+    labels = table.first_cells()
+    assert labels.index("Start-up period") < labels.index("Continuation after each segment")
+    assert labels.index("Segments with a shorter continuation") < labels.index("Detections scored")
+
+
+@pytest.mark.requirement("SRS-030")
+def test_start_section_lists_the_distinct_continuations_in_increasing_order(
+    parse_report: Callable[[str], Any],
+) -> None:
+    """Distinct values of `continuation_samples`, increasing, joined by `, `.
+
+    Input: records at 360 Hz (2876), 250 Hz (1998) and again 360 Hz (2876), none shorter.
+    Expected: `1998, 2876 samples, ...`, and `0` segments with a shorter continuation.
+    """
+    results = _start(START_COUNTS_PASS, continuation={"100": 2876, "118": 1998, "207": 2876})
+    _, start = _sections(_text(_results(_standard_quality(), results)), parse_report)
+    table = start.section("Start of stream").tables()[0]
+
+    assert table.row("Continuation after each segment")[1] == CONTINUATION_TEXT.format("1998, 2876")
+    assert table.row("Segments with a shorter continuation")[1] == "0"
+
+
+@pytest.mark.requirement("SRS-030")
+def test_start_section_states_the_method_correction(
+    parse_report: Callable[[str], Any],
+) -> None:
+    """The constant paragraph on the method correction.
+
+    Input: any results with a start of stream.
+    Expected: the paragraph `Method correction. ...` of the design, word for word, once, in
+    the start-of-stream section before `Results per record`, and not in section 8.
+    """
+    quality, start = _sections(
+        _text(_results(_standard_quality(), _start(START_COUNTS_PASS))), parse_report
+    )
+    text = _flat(start.section("Start of stream").text)
+
+    assert METHOD_CORRECTION in text
+    assert _flat(start.text).count(METHOD_CORRECTION) == 1
+    assert METHOD_CORRECTION not in _flat(quality.text)
+    full = _flat(start.text)
+    assert full.index(METHOD_CORRECTION) < full.index("Results per record")
 
 
 @pytest.mark.requirement("SRS-030")
@@ -1383,6 +1476,9 @@ def test_run_start_of_stream_counts_and_targets(
     assert expected["118"] == (406, 0, 0)
     assert items.row("Segments per record")[1] == "30"
     assert items.row("Segments")[1].endswith("28:00, 29:00")
+    # 360 Hz records of exactly 30:00 after padding: only the last segment has no samples left
+    assert items.row("Continuation after each segment")[1] == CONTINUATION_TEXT.format(2876)
+    assert items.row("Segments with a shorter continuation")[1] == "3"
     assert table.first_cells() == ["100", "118", "119", "Gross", "Average"]
     for name, (tp, fn, fp) in expected.items():
         assert table.row(name)[2:6] == ("30", str(tp), str(fn), str(fp)), name
