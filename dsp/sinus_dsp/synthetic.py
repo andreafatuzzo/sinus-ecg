@@ -30,6 +30,8 @@ SYNTHETIC_HEART_RATES_BPM: Final = (40, 75, 180)
 #: The variants of the set: no interference, then baseline wander and mains interference at
 #: 50 Hz and at 60 Hz.
 SYNTHETIC_VARIANTS: Final = ("clean", "bw-mains50", "bw-mains60")
+#: The events of the event inputs (architecture §13.9).
+SYNTHETIC_EVENTS: Final = ("artefact", "small-beat", "held", "rate-change")
 
 # Baseline wander and mains interference of the interference variants (SRS-010).
 _BASELINE_WANDER_HZ: Final = 0.3
@@ -185,6 +187,103 @@ def synthetic_set() -> tuple[SyntheticEcg, ...]:
         for fs_hz in SYNTHETIC_FS_HZ
         for heart_rate_bpm in SYNTHETIC_HEART_RATES_BPM
         for variant in SYNTHETIC_VARIANTS
+    )
+
+
+def synthetic_event_ecg(fs_hz: float, event: str) -> SyntheticEcg:
+    """Generate one synthetic event input (architecture §13.9).
+
+    SRS-033: an ECG built from the waveform of :func:`synthetic_ecg` with one event that makes
+    the detection re-learn (``artefact``), find a beat by search-back (``small-beat``), hold
+    the input (``held``) or change the rate (``rate-change``). The beats are lists of
+    ``(t_ms, rr_s, scale)``; their positions are computed on integers,
+    ``r = (t_ms * fs + 500) // 1000``, and the reference beats are all of them.
+
+    Args:
+        fs_hz: Sampling frequency, 250 or 360 Hz (an ``int`` or a ``float``, not a ``bool``).
+        event: One of :data:`SYNTHETIC_EVENTS`.
+
+    Returns:
+        The input, with ``variant`` the event name, ``heart_rate_bpm`` 75 and ``mains_hz`` 50.
+
+    Raises:
+        InvalidInputError: If an argument is not one of the values of the set.
+    """
+    if (
+        isinstance(fs_hz, bool)
+        or not isinstance(fs_hz, int | float)
+        or fs_hz not in SYNTHETIC_FS_HZ
+    ):
+        raise InvalidInputError(f"fs_hz is not one of 250 Hz and 360 Hz: {fs_hz!r}")
+    if not isinstance(event, str) or event not in SYNTHETIC_EVENTS:
+        raise InvalidInputError(f"event is not one of {', '.join(SYNTHETIC_EVENTS)}: {event!r}")
+
+    fs = int(fs_hz)
+    regular = [(500 + 800 * k, 0.8, 1.0) for k in range(49)]
+    duration_s = 40
+    parameters = f"duration_s=40;event={event};heart_rate_bpm=75;"
+    held_from_ms = 15000
+    held_ms = 6000
+    if event == "artefact":
+        regular[12] = (regular[12][0], 0.8, 20.0)
+        beats = regular
+        parameters += "scaled_beat_ms=10100;scale=20.0;mains_hz=50"
+    elif event == "small-beat":
+        regular[12] = (regular[12][0], 0.8, 0.4)
+        beats = regular
+        parameters += "scaled_beat_ms=10100;scale=0.4;mains_hz=50"
+    elif event == "held":
+        beats = regular
+        parameters += f"held_from_ms={held_from_ms};held_ms={held_ms};mains_hz=50"
+    else:
+        duration_s = 44
+        beats = (
+            [(500 + 800 * k, 0.8, 1.0) for k in range(15)]
+            + [(11700 + 2400 * j, 2.4, 1.0) for j in range(1, 9)]
+            + [(30900 + 800 * j, 0.8, 1.0) for j in range(1, 16)]
+        )
+        parameters = (
+            "duration_s=44;event=rate-change;heart_rates_bpm=75/25/75;"
+            "changes_ms=11700/30900;mains_hz=50"
+        )
+
+    n_samples = duration_s * fs
+    t = np.arange(n_samples) / float(fs_hz)
+    r_peaks = np.array([(t_ms * fs + 500) // 1000 for t_ms, _rr, _scale in beats], dtype=np.int64)
+    signal: FloatArray = np.zeros(n_samples, dtype=np.float64)
+    for r_k, (_t_ms, rr_s, beat_scale) in zip(r_peaks.tolist(), beats, strict=True):
+        scale = math.sqrt(rr_s)
+        for offset_ms, amplitude_mv, width_ms, scaled in _WAVES:
+            centre_s = r_k / float(fs_hz) + (offset_ms * scale if scaled else offset_ms) / 1000.0
+            sigma_s = (width_ms * scale if scaled else width_ms) / 1000.0
+            signal = signal + (amplitude_mv * beat_scale) * np.exp(
+                -((t - centre_s) ** 2) / (2.0 * sigma_s**2)
+            )
+    if event == "held":
+        first = (held_from_ms * fs + 500) // 1000
+        end = ((held_from_ms + held_ms) * fs + 500) // 1000
+        signal[first:end] = signal[first]
+
+    return SyntheticEcg(
+        input_id=f"syn-fs{fs}-event-{event}",
+        fs_hz=float(fs_hz),
+        heart_rate_bpm=75,
+        variant=event,
+        mains_hz=50,
+        parameters=parameters,
+        signal_mv=signal,
+        r_peaks=r_peaks,
+    )
+
+
+def synthetic_event_set() -> tuple[SyntheticEcg, ...]:
+    """Return the 8 synthetic event inputs: by sampling frequency, then event (§13.9).
+
+    SRS-033: the inputs that exercise the marks, paths, statuses and windows that the clean
+    rhythms of :func:`synthetic_set` do not.
+    """
+    return tuple(
+        synthetic_event_ecg(fs_hz, event) for fs_hz in SYNTHETIC_FS_HZ for event in SYNTHETIC_EVENTS
     )
 
 

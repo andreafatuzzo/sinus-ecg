@@ -1,9 +1,10 @@
 """Write the golden vectors of the reference (architecture §7.5, §8.12).
 
-SRS-015: this single command writes one golden-vector file for each input of the set: the 18
-synthetic ECGs, and the first 60 s of records 100, 105, 108, 119, 203 and 207 of the MIT-BIH
-Arrhythmia Database where the files of these records are available in the data folder and
-verified against the pinned checksum list. It never downloads: obtain the records first with
+SRS-015, SRS-033: this single command writes one golden-vector file for each input of the set:
+the 18 synthetic ECGs, the 8 event inputs, and the first 60 s of records 100, 105, 108, 119, 203
+and 207 of the MIT-BIH Arrhythmia Database where the files of these records are available in the
+data folder and verified against the pinned checksum list. It never downloads: obtain the
+records first with
 scripts/download_data.py or the subset check. If they are missing or not verified, the record
 segments are skipped with the reason, and the synthetic files are still written. The files go
 to data/golden/, which git ignores; they are regenerated on demand and are not stored.
