@@ -54,12 +54,18 @@ class StartOfStreamRecord:
         signal_name: Name of the signal evaluated, e.g. ``MLII``.
         n_segments: Number of segments evaluated.
         counts: TP, FN and FP summed over the segments of the record.
+        continuation_samples: :func:`continuation_samples` at the sampling frequency of the
+            record (0 when not filled).
+        short_continuations: Number of segments whose continuation the end of the record
+            cuts short.
     """
 
     record: str
     signal_name: str
     n_segments: int
     counts: RecordCounts
+    continuation_samples: int = 0
+    short_continuations: int = 0
 
 
 @dataclass(frozen=True)
@@ -80,6 +86,18 @@ class StartOfStreamResults:
     statistics: AggregateStatistics
 
 
+def continuation_samples(fs_hz: float) -> int:
+    """Samples of input fed after a segment: the longest delay of a detection.
+
+    SRS-023: ``G + N + D + 1 - R`` (architecture §13.4), 2876 at 360 Hz and 1998 at 250 Hz.
+
+    Raises:
+        InvalidInputError: If ``fs_hz`` is not a positive finite number.
+    """
+    samples = detector_samples(fs_hz)
+    return samples.relearn_after + samples.window + samples.band_delay + 1 - samples.refractory
+
+
 def evaluate_segment(
     record: Record,
     start_sample: int,
@@ -89,7 +107,9 @@ def evaluate_segment(
     """Detect and score one segment of 60 s of a record, as a stream of its own.
 
     SRS-023: the segment ``start_sample … start_sample + n_seg - 1`` (``n_seg`` = 60 s) is
-    processed from its first sample; only the detections marked reliable are scored. The
+    processed from its first sample, followed by its continuation (the record's next
+    :func:`continuation_samples` samples, fewer at the record end); only the detections marked
+    reliable with an index in the segment are scored. The
     reference beats are those of the record inside the segment, shifted by ``start_sample``;
     the flutter and fibrillation episodes are those of the whole record, each one that
     overlaps the segment clipped to it. The start-up period is ``[0, L - 1]`` with ``L`` the
@@ -112,9 +132,12 @@ def evaluate_segment(
             f"does not fit in the record: {n_seg} samples needed, {record.n_samples} in all"
         )
     end_sample = start_sample + n_seg - 1
-    segment = np.array(record.signal_mv[start_sample : end_sample + 1], dtype=np.float64)
+    extra = min(continuation_samples(fs_hz), record.n_samples - (start_sample + n_seg))
+    segment = np.array(
+        record.signal_mv[start_sample : start_sample + n_seg + extra], dtype=np.float64
+    )
     detections = detector(segment, fs_hz, settings.mains_hz)
-    reliable = detections.indices[~detections.startup]
+    reliable = detections.indices[~detections.startup & (detections.indices < n_seg)]
 
     beats = record.beat_samples
     reference = beats[(beats >= start_sample) & (beats <= end_sample)] - start_sample
@@ -170,11 +193,14 @@ def evaluate_start_of_stream(
     results: list[StartOfStreamRecord] = []
     for name in sorted(names):
         record = loader(directory / name, settings.channel)
-        tp = fn = fp = 0
+        tp = fn = fp = short = 0
+        n_seg = round_samples(SEGMENT_S, record.fs_hz)
+        extra = continuation_samples(record.fs_hz)
         for start in starts:
-            result = evaluate_segment(
-                record, round_samples(start, record.fs_hz), settings, detector
-            )
+            first = round_samples(start, record.fs_hz)
+            if record.n_samples - (first + n_seg) < extra:
+                short += 1
+            result = evaluate_segment(record, first, settings, detector)
             tp += result.tp
             fn += result.fn
             fp += result.fp
@@ -184,6 +210,8 @@ def evaluate_start_of_stream(
                 signal_name=record.signal_name,
                 n_segments=len(starts),
                 counts=RecordCounts(record=record.name, tp=tp, fn=fn, fp=fp),
+                continuation_samples=extra,
+                short_continuations=short,
             )
         )
     return StartOfStreamResults(

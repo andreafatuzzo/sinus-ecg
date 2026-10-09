@@ -182,7 +182,9 @@ def test_start_of_stream_step(run: Run) -> None:
         "207": (1, 1, 29),
     }
     assert (stream.statistics.tp, stream.statistics.fn, stream.statistics.fp) == (4, 1, 116)
-    assert run.marked.calls == [(SEGMENT_SAMPLES, float(FS_HZ), 60)] * 120
+    assert (
+        run.marked.calls == [(SEGMENT_SAMPLES + 1000, float(FS_HZ), 60)] * 120
+    )  # segment + continuation
 
 
 def test_quality_step_per_snr_and_clean_and_noise_records(run: Run) -> None:

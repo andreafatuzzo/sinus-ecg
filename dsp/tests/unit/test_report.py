@@ -164,8 +164,8 @@ def quality_results() -> QualityResults:
 
 def start_of_stream_results() -> StartOfStreamResults:
     records = (
-        StartOfStreamRecord("100", "MLII", 3, RecordCounts("100", 90, 10, 0)),
-        StartOfStreamRecord("118", "MLII", 3, RecordCounts("118", 200, 1, 0)),
+        StartOfStreamRecord("100", "MLII", 3, RecordCounts("100", 90, 10, 0), 1998, 1),
+        StartOfStreamRecord("118", "MLII", 3, RecordCounts("118", 200, 1, 0), 2876, 2),
     )
     return StartOfStreamResults(
         segment_s=60,
@@ -416,10 +416,22 @@ EXPECTED_QUALITY_AND_START = "\n".join(
         "| Segments | 60 s each, processed on their own, starting at 0:00, 1:00, 2:00 |",
         "| Segments per record | 3 |",
         "| Start-up period | first 2 s of each segment, not scored |",
-        "| Detections scored | marked reliable |",
+        "| Continuation after each segment | 1998, 2876 samples, the longest delay of a "
+        "detection, or to the end of the record when it comes first |",
+        "| Segments with a shorter continuation | 3 |",
+        "| Detections scored | marked reliable, with the index in the segment |",
+        "| Reference beats scored | in the segment |",
         "| Matching | EC57 beat by beat, pairing rules of the WFDB comparator bxb; match window "
         "150 ms; start-up period not scored; ventricular flutter and fibrillation episodes "
         "not scored |",
+        "",
+        "Method correction. In the first run of this evaluation, each segment was processed "
+        "only up to its last sample. Detection reports a beat a fraction of a second after it, "
+        "so the beats at the end of each segment were never reported and were counted as false "
+        "negatives; the analysis of the false negatives of that run showed it. From this "
+        "version, detection continues on the record after each segment for the longest delay "
+        "of a detection, and only the reference beats and detections whose index lies in the "
+        "segment are scored. The detection algorithm is unchanged.",
         "",
         "### Results per record",
         "",

@@ -549,14 +549,38 @@ def _quality_criteria_blocks(quality: QualityResults, from_start: str) -> list[s
     ]
 
 
+_START_OF_STREAM_CORRECTION: Final = (
+    "Method correction. In the first run of this evaluation, each segment was processed only "
+    "up to its last sample. Detection reports a beat a fraction of a second after it, so the "
+    "beats at the end of each segment were never reported and were counted as false "
+    "negatives; the analysis of the false negatives of that run showed it. From this version, "
+    "detection continues on the record after each segment for the longest delay of a "
+    "detection, and only the reference beats and detections whose index lies in the segment "
+    "are scored. The detection algorithm is unchanged."
+)
+
+
 def _start_of_stream_section(stream: StartOfStreamResults) -> list[str]:
     """Section 9: the start of stream (SRS-023)."""
     starts = ", ".join(_minutes_seconds(start) for start in stream.starts_s)
+    continuation = ", ".join(
+        str(value) for value in sorted({entry.continuation_samples for entry in stream.records})
+    )
     rows = [
         ["Segments", f"{stream.segment_s} s each, processed on their own, starting at {starts}"],
         ["Segments per record", str(len(stream.starts_s))],
         ["Start-up period", f"first {LEARNING_S} s of each segment, not scored"],
-        ["Detections scored", "marked reliable"],
+        [
+            "Continuation after each segment",
+            f"{continuation} samples, the longest delay of a detection, "
+            "or to the end of the record when it comes first",
+        ],
+        [
+            "Segments with a shorter continuation",
+            str(sum(entry.short_continuations for entry in stream.records)),
+        ],
+        ["Detections scored", "marked reliable, with the index in the segment"],
+        ["Reference beats scored", "in the segment"],
         [
             "Matching",
             "EC57 beat by beat, pairing rules of the WFDB comparator bxb; "
@@ -605,6 +629,7 @@ def _start_of_stream_section(stream: StartOfStreamResults) -> list[str]:
     return [
         "## Start of stream",
         _table(["Item", "Value"], [_LEFT, _LEFT], rows),
+        _START_OF_STREAM_CORRECTION,
         "### Results per record",
         _table(
             ["Record", "Signal", "Segments", "TP", "FN", "FP", "Se (%)", "+P (%)"],

@@ -16,6 +16,7 @@ from sinus_dsp.evaluation.run import EvaluationSettings
 from sinus_dsp.evaluation.start_of_stream import (
     SEGMENT_S,
     SEGMENT_STARTS_S,
+    continuation_samples,
     evaluate_segment,
     evaluate_start_of_stream,
 )
@@ -24,6 +25,7 @@ from sinus_dsp.qrs import Detections
 FS = 360.0
 SEG = 21600
 L = 720
+CONT = 2876
 SETTINGS = EvaluationSettings()
 
 
@@ -78,13 +80,125 @@ def test_constants() -> None:
     assert len(SEGMENT_STARTS_S) == 30
 
 
+@pytest.mark.parametrize(
+    ("fs", "expected"), [(125.0, 1000), (250.0, 1998), (360.0, 2876), (1000.0, 7987)]
+)
+def test_continuation_samples_is_the_documented_maximum_delay(fs: float, expected: int) -> None:
+    assert continuation_samples(fs) == expected
+
+
+def test_continuation_samples_refuses_a_bad_rate() -> None:
+    with pytest.raises(InvalidInputError):
+        continuation_samples(0.0)
+
+
+def test_input_is_the_segment_plus_its_continuation() -> None:
+    record = make_record()
+    detector = Recorder(detections([]))
+    evaluate_segment(record, 0, SETTINGS, detector)
+    assert detector.calls[0][0].shape == (SEG + CONT,)
+
+
+def test_continuation_is_cut_at_the_record_end() -> None:
+    record = make_record(n_samples=2 * SEG + 100)
+    detector = Recorder(detections([]))
+    evaluate_segment(record, SEG, SETTINGS, detector)
+    assert detector.calls[0][0].shape == (SEG + 100,)
+    assert detector.calls[0][0][-1] == 2 * SEG + 99
+
+
+def test_segment_ending_at_the_last_sample_has_no_continuation() -> None:
+    record = make_record(n_samples=2 * SEG)
+    detector = Recorder(detections([]))
+    evaluate_segment(record, SEG, SETTINGS, detector)
+    assert detector.calls[0][0].shape == (SEG,)
+
+
+def test_detection_at_the_last_sample_is_scored_and_the_next_one_is_not() -> None:
+    record = make_record(beats=[SEG - 1])
+    inside = evaluate_segment(record, 0, SETTINGS, Recorder(detections([SEG - 1])))
+    assert (inside.tp, inside.fn, inside.fp) == (1, 0, 0)
+    # index n_seg lies in the continuation: neither a true nor a false positive
+    outside = evaluate_segment(record, 0, SETTINGS, Recorder(detections([SEG - 1, SEG])))
+    assert (outside.tp, outside.fn, outside.fp) == (1, 0, 0)
+    only = evaluate_segment(make_record(), 0, SETTINGS, Recorder(detections([SEG, SEG + 500])))
+    assert (only.tp, only.fn, only.fp) == (0, 0, 0)
+
+
+def test_beat_detected_only_in_the_continuation_window_is_a_true_positive() -> None:
+    # the detection index lies in the segment but is reported after its end: the fake returns
+    # it as the longer input allows
+    record = make_record(beats=[SEG - 50])
+    det = detections([SEG - 50])
+    det = Detections(
+        indices=det.indices,
+        startup=det.startup,
+        reported_at=det.indices + 1000,
+        peaks=det.peaks,
+        paths=det.paths,
+        initialisations=det.initialisations,
+    )
+    result = evaluate_segment(record, 0, SETTINGS, Recorder(det))
+    assert (result.tp, result.fn, result.fp) == (1, 0, 0)
+
+
+def test_startup_detection_in_the_segment_stays_unscored() -> None:
+    record = make_record(beats=[3000])
+    det = detections([3000, SEG + 10], [True, True])
+    result = evaluate_segment(record, 0, SETTINGS, Recorder(det))
+    assert (result.tp, result.fn, result.fp) == (0, 1, 0)
+
+
+def test_reference_beats_of_the_continuation_are_not_scored() -> None:
+    record = make_record(beats=[SEG + 100, SEG + 200])
+    result = evaluate_segment(record, 0, SETTINGS, Recorder(detections([])))
+    assert (result.tp, result.fn, result.fp) == (0, 0, 0)
+
+
+def test_record_fields_of_the_continuation(tmp_path: Path) -> None:
+    # 3 segments of 60 s in a record of 3 * SEG + 3000: only the last one has a full continuation
+    record = make_record("a", n_samples=3 * SEG + 1000)
+    result = evaluate_start_of_stream(
+        tmp_path,
+        ["a"],
+        SETTINGS,
+        detector=SegmentDetector([]),
+        loader=Loader({"a": record}),
+        starts_s=[0, 60, 120],
+    )
+    (entry,) = result.records
+    assert entry.continuation_samples == CONT
+    assert entry.short_continuations == 1  # the third segment has 1000 samples left
+
+
+def test_short_continuation_is_counted_only_when_below_the_full_length(tmp_path: Path) -> None:
+    record = make_record("a", n_samples=SEG + CONT)
+    result = evaluate_start_of_stream(
+        tmp_path,
+        ["a"],
+        SETTINGS,
+        detector=SegmentDetector([]),
+        loader=Loader({"a": record}),
+        starts_s=[0],
+    )
+    assert result.records[0].short_continuations == 0
+
+
+def test_record_defaults_of_the_new_fields() -> None:
+    from sinus_dsp.evaluation.metrics import RecordCounts
+    from sinus_dsp.evaluation.start_of_stream import StartOfStreamRecord
+
+    entry = StartOfStreamRecord("a", "MLII", 1, RecordCounts("a", 0, 0, 0))
+    assert (entry.continuation_samples, entry.short_continuations) == (0, 0)
+
+
 def test_segment_is_processed_on_its_own() -> None:
     record = make_record()
     detector = Recorder(detections([]))
     evaluate_segment(record, SEG, SETTINGS, detector)
     ((signal, fs, mains),) = detector.calls
-    assert signal.shape == (SEG,)
-    assert signal[0] == SEG and signal[-1] == 2 * SEG - 1
+    assert signal.shape == (SEG + CONT,)
+    assert signal[0] == SEG and signal[-1] == 2 * SEG + CONT - 1
     assert (fs, mains) == (FS, 60)
 
 
