@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace sinus_qa {
@@ -57,6 +58,102 @@ inline std::vector<float> synthetic_ecg(int fs, int hr, std::size_t n, int mains
     out[i] = static_cast<float>(x[i]);
   }
   return out;
+}
+
+// Position (sample) of every R-wave centre of synthetic_ecg(fs, hr, n, ...) inside [0, n).
+inline std::vector<std::int64_t> regular_r_positions(int fs, int hr, std::size_t n) {
+  std::vector<std::int64_t> r;
+  for (std::int64_t k = 0;; ++k) {
+    const std::int64_t p = (static_cast<std::int64_t>(hr) * (fs + 1) + 120 * k * fs) / (2 * hr);
+    if (p >= static_cast<std::int64_t>(n)) {
+      break;
+    }
+    r.push_back(p);
+  }
+  return r;
+}
+
+// One beat of an event input (architecture-m2.md 13.9): R centre in whole milliseconds, interval
+// of its rhythm in s, amplitude scale.
+struct Beat {
+  std::int64_t t_ms;
+  double rr_s;
+  double scale;
+};
+
+// The waveform of architecture.md 7.2 for each beat (s = sqrt(rr_s), amplitudes times scale),
+// R centre at r = (t_ms * fs + 500) / 1000, on n samples. Same waves as synthetic_ecg.
+inline std::vector<float> beats_ecg(int fs, std::size_t n, const std::vector<Beat>& beats) {
+  std::vector<double> x(n, 0.0);
+  for (const Beat& b : beats) {
+    const double s = std::sqrt(b.rr_s);
+    struct Wave {
+      double offset_s, amp, sigma_s;
+    };
+    const Wave waves[5] = {{-0.200 * s, 0.15, 0.025 * s},
+                           {-0.030, -0.10, 0.010},
+                           {0.0, 1.00, 0.010},
+                           {0.030, -0.20, 0.010},
+                           {0.280 * s, 0.30, 0.045 * s}};
+    const std::int64_t r = (b.t_ms * fs + 500) / 1000;
+    const std::int64_t lo = std::max<std::int64_t>(0, r - fs);
+    const std::int64_t hi = std::min<std::int64_t>(static_cast<std::int64_t>(n), r + fs);
+    for (std::int64_t i = lo; i < hi; ++i) {
+      const double t = static_cast<double>(i) / fs;
+      for (const Wave& w : waves) {
+        const double d = t - (static_cast<double>(r) / fs + w.offset_s);
+        x[static_cast<std::size_t>(i)] +=
+            b.scale * w.amp * std::exp(-d * d / (2.0 * w.sigma_s * w.sigma_s));
+      }
+    }
+  }
+  std::vector<float> out(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    out[i] = static_cast<float>(x[i]);
+  }
+  return out;
+}
+
+// The four event inputs of architecture-m2.md 13.9 ("artefact", "small-beat", "held",
+// "rate-change"), built from the table of that section; beats[] receives the beats.
+inline std::vector<float> event_ecg(int fs, const char* event, std::vector<Beat>* beats_out) {
+  const std::string name = event;
+  std::vector<Beat> beats;
+  std::size_t duration_s = 40;
+  if (name == "rate-change") {
+    duration_s = 44;
+    for (int k = 0; k <= 14; ++k) {
+      beats.push_back({500 + 800 * k, 0.8, 1.0});
+    }
+    for (int j = 1; j <= 8; ++j) {
+      beats.push_back({11700 + 2400 * j, 2.4, 1.0});
+    }
+    for (int j = 1; j <= 15; ++j) {
+      beats.push_back({30900 + 800 * j, 0.8, 1.0});
+    }
+  } else {
+    for (int k = 0; k <= 48; ++k) {
+      beats.push_back({500 + 800 * k, 0.8, 1.0});
+    }
+    if (name == "artefact") {
+      beats[12].scale = 20.0;
+    } else if (name == "small-beat") {
+      beats[12].scale = 0.4;
+    }
+  }
+  const std::size_t n = duration_s * static_cast<std::size_t>(fs);
+  std::vector<float> x = beats_ecg(fs, n, beats);
+  if (name == "held") {
+    const auto n0 = static_cast<std::size_t>((15000 * static_cast<std::int64_t>(fs) + 500) / 1000);
+    const auto n1 = static_cast<std::size_t>((21000 * static_cast<std::int64_t>(fs) + 500) / 1000);
+    for (std::size_t i = n0; i < n1; ++i) {
+      x[i] = x[n0];
+    }
+  }
+  if (beats_out != nullptr) {
+    *beats_out = beats;
+  }
+  return x;
 }
 
 // A sinusoid of the given amplitude (mV), phase 0, lasting at least `seconds`.

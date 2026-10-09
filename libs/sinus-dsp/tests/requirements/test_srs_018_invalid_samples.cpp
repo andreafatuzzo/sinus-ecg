@@ -48,13 +48,15 @@ SampleOutput poisoned() {
   SampleOutput out;
   out.baseline_mv = 7.0F;
   out.conditioned_mv = 7.0F;
+  out.detection_count = 5;
   return out;
 }
 
-// Extended with the detection, heart-rate and window fields when the chain gets them.
+// Extended with the heart-rate and window fields when the chain gets them.
 void expect_no_output(const SampleOutput& out) {
   EXPECT_EQ(out.baseline_mv, 0.0F);
   EXPECT_EQ(out.conditioned_mv, 0.0F);
+  EXPECT_EQ(out.detection_count, 0U);
 }
 
 Chain configured_chain(int mains) {

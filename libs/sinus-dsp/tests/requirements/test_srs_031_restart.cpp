@@ -1,13 +1,15 @@
-// Requirement tests of SRS-031: restart of the real-time library (signal conditioning part; the
-// detections, heart rates and windows are added with their components).
+// Requirement tests of SRS-031: restart of the real-time library (signal conditioning and
+// detection; the heart rates and windows are added with their components).
 // Each test states the part of the requirement it covers, its inputs and its expected result.
 
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
+#include "chain_run.hpp"
 #include "sinus/dsp/chain.hpp"
 #include "support.hpp"
 
@@ -20,8 +22,9 @@ using sinus::dsp::Status;
 
 constexpr int kFs = 360;
 
-// Every output field of the two samples is identical, bit for bit. Extended with the detection,
-// heart-rate and window fields when the chain gets them.
+// Every output field of the two samples is identical, bit for bit: the conditioned samples and
+// the detections (count, index, report sample, mark, path). Extended with the heart-rate and
+// window fields when the chain gets them.
 ::testing::AssertionResult identical(const SampleOutput& a, const SampleOutput& b) {
   if (!sinus_qa::same_bits(a.baseline_mv, b.baseline_mv)) {
     return ::testing::AssertionFailure() << "baseline " << a.baseline_mv << " vs " << b.baseline_mv;
@@ -29,6 +32,20 @@ constexpr int kFs = 360;
   if (!sinus_qa::same_bits(a.conditioned_mv, b.conditioned_mv)) {
     return ::testing::AssertionFailure()
            << "conditioned " << a.conditioned_mv << " vs " << b.conditioned_mv;
+  }
+  if (a.detection_count != b.detection_count) {
+    return ::testing::AssertionFailure()
+           << "detection count " << a.detection_count << " vs " << b.detection_count;
+  }
+  for (std::size_t j = 0; j < a.detection_count && j < a.detections.size(); ++j) {
+    const auto& x = a.detections[j];
+    const auto& y = b.detections[j];
+    if (x.index != y.index || x.reported_at != y.reported_at || x.mark != y.mark ||
+        x.path != y.path) {
+      return ::testing::AssertionFailure()
+             << "detection " << j << ": index " << x.index << " vs " << y.index << ", reported at "
+             << x.reported_at << " vs " << y.reported_at;
+    }
   }
   return ::testing::AssertionSuccess();
 }
@@ -200,6 +217,54 @@ TEST(Srs031Restart, ResetAtOtherSamplingFrequencies) {
       ASSERT_EQ(fresh.process(ecg[i], b), Status::kOk);
       ASSERT_TRUE(identical(a, b)) << "sample " << i;
     }
+  }
+}
+
+// Case: detections after a reset, and a history that would hide them.
+// Input: the event input artefact (a beat 20 times larger at 10.1 s, which raises the detection
+// levels so that the next beats are missed) for 13 s, a reset, then the regular 75 bpm ECG with
+// interference for 30 s; the same ECG to a newly configured chain.
+// Expected: the detections after the reset equal, one for one (index, report sample, mark, path),
+// those of the new chain, which has one for each beat; the first is reported at sample 719 and
+// all the detections of the first 2 s are marked start-up.
+// Verifies: SRS-031
+TEST(Srs031Restart, DetectionsAfterResetIgnoreTheHistory) {
+  const std::vector<float> history = sinus_qa::event_ecg(kFs, "artefact", nullptr);
+  const std::vector<float> ecg = sinus_qa::synthetic_ecg(kFs, 75, 30 * kFs, 50);
+  Chain chain;
+  ASSERT_EQ(chain.configure(Config{static_cast<double>(kFs), 50}), Status::kOk);
+  (void)sinus_qa::feed(chain, std::vector<float>(history.begin(), history.begin() + 13 * kFs));
+  chain.reset();
+  const std::vector<sinus_qa::Det> after = sinus_qa::feed(chain, ecg);
+  const std::vector<sinus_qa::Det> fresh = sinus_qa::run_chain(ecg, kFs, 50);
+  EXPECT_TRUE(after == fresh);
+  const std::vector<std::int64_t> r = sinus_qa::regular_r_positions(kFs, 75, ecg.size());
+  (void)sinus_qa::expect_one_per_beat(after, r, ecg.size(), kFs);
+  ASSERT_FALSE(after.empty());
+  EXPECT_EQ(after.front().reported_at, 719U);
+  EXPECT_EQ(after.front().mark, sinus::dsp::Mark::kStartUp);
+}
+
+// Case: reset between the samples of a stretch of detection in progress, with detections after.
+// Input: the interfered ECG at 180 bpm (fast: a detection about every 0.33 s), reset at 9.0 s + k x
+// 7 samples for k = 0 ... 9 (inside a beat's confirmation delay), 15 s more.
+// Expected: the detections after the reset equal those of a newly configured chain given the
+// samples after the reset, and there are some.
+// Verifies: SRS-031
+TEST(Srs031Restart, DetectionsAfterResetsInsideTheConfirmationDelay) {
+  const std::vector<float> ecg = sinus_qa::synthetic_ecg(kFs, 180, 25 * kFs, 60);
+  for (std::size_t k = 0; k <= 9; ++k) {
+    SCOPED_TRACE(k);
+    const std::size_t at = 9 * kFs + 7 * k;
+    Chain chain;
+    ASSERT_EQ(chain.configure(Config{static_cast<double>(kFs), 60}), Status::kOk);
+    (void)sinus_qa::feed(chain, std::vector<float>(ecg.begin(), ecg.begin() + at));
+    chain.reset();
+    const std::vector<sinus_qa::Det> after = sinus_qa::feed(chain, ecg, at);
+    const std::vector<sinus_qa::Det> fresh = sinus_qa::run_chain(
+        std::vector<float>(ecg.begin() + static_cast<std::ptrdiff_t>(at), ecg.end()), kFs, 60);
+    EXPECT_TRUE(after == fresh);
+    EXPECT_GE(after.size(), 20U);
   }
 }
 
