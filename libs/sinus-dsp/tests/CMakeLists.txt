@@ -15,8 +15,11 @@ include(GoogleTest)
 # are added by the groups that bring them.
 add_executable(sinus_dsp_unit_tests
   unit/test_identity.cpp unit/test_arithmetic.cpp unit/test_config.cpp unit/test_biquad.cpp
-  unit/test_conditioner.cpp unit/test_chain.cpp)
+  unit/test_conditioner.cpp unit/test_chain.cpp unit/test_detector_math.cpp
+  unit/test_qrs_detector.cpp)
 target_link_libraries(sinus_dsp_unit_tests PRIVATE sinus::dsp GTest::gtest_main)
+# The private helpers of src/ (compensated sum, search-back limit) are tested directly.
+target_include_directories(sinus_dsp_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(sinus_dsp_unit_tests PRIVATE
   SINUS_DSP_TEST_VERSION="${SINUS_DSP_VERSION_TEXT}")
 sinus_dsp_apply_test_flags(sinus_dsp_unit_tests)

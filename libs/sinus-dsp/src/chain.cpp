@@ -7,6 +7,7 @@
 #include "sinus/dsp/conditioner.hpp"
 #include "sinus/dsp/config.hpp"
 #include "sinus/dsp/limits.hpp"
+#include "sinus/dsp/qrs_detector.hpp"
 #include "sinus/dsp/status.hpp"
 
 namespace sinus::dsp {
@@ -23,6 +24,10 @@ Status Chain::configure(const Config& config) noexcept {
   if (conditioner_status != Status::kOk) {
     return conditioner_status;
   }
+  const Status detector_status = detector_.configure(config.sampling_frequency_hz);
+  if (detector_status != Status::kOk) {
+    return detector_status;
+  }
   config_ = config;
   configured_ = true;
   return Status::kOk;
@@ -33,6 +38,7 @@ void Chain::reset() noexcept {
     return;
   }
   conditioner_.reset();
+  detector_.reset();
   stopped_ = false;  // SRS-018, SRS-031
 }
 
@@ -53,8 +59,15 @@ Status Chain::process(float sample_mv, SampleOutput& out) noexcept {
   if (status != Status::kOk) {
     return status;
   }
+  DetectorStep step;
+  const Status detector_status = detector_.process(conditioned.conditioned_mv, step);  // SRS-020
+  if (detector_status != Status::kOk) {
+    return detector_status;
+  }
   out.baseline_mv = conditioned.baseline_mv;
   out.conditioned_mv = conditioned.conditioned_mv;
+  out.detection_count = step.count;
+  out.detections = step.detections;
   return Status::kOk;
 }
 

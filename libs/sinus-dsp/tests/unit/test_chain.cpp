@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "sinus/dsp/chain.hpp"
+#include "sinus/dsp/qrs_detector.hpp"
+#include "synthetic_beats.hpp"
 
 namespace {
 
@@ -28,6 +30,7 @@ std::vector<float> test_input(std::size_t n) {
 void expect_empty(const SampleOutput& out) {
   EXPECT_EQ(out.baseline_mv, 0.0F);
   EXPECT_EQ(out.conditioned_mv, 0.0F);
+  EXPECT_EQ(out.detection_count, 0U);
 }
 
 TEST(Chain, StartsNotConfigured) {
@@ -149,5 +152,35 @@ TEST(Chain, ReconfigurationStartsANewStream) {
 }
 
 TEST(Chain, FitsTheMemoryLimit) { EXPECT_LE(sizeof(Chain), sinus::dsp::kChainMemoryLimitBytes); }
+
+TEST(Chain, ReportsTheDetectionsOfTheDetectorOnTheConditionedSignal) {
+  // An ECG with an offset and a slow baseline: the chain detects on its conditioned output.
+  const double fs = 250.0;
+  std::vector<float> x =
+      sinus_test::synthetic_beats(fs, 20.0, sinus_test::regular_beats(0.4, 0.9, 19.5));
+  for (std::size_t k = 0; k < x.size(); ++k) {
+    x[k] += 1.5F + 0.2F * static_cast<float>(std::sin(0.6 * static_cast<double>(k) / fs));
+  }
+  Chain chain;
+  ASSERT_EQ(chain.configure(Config{fs, 50}), Status::kOk);
+  sinus::dsp::QrsDetector detector;
+  ASSERT_EQ(detector.configure(fs), Status::kOk);
+  SampleOutput out;
+  sinus::dsp::DetectorStep step;
+  std::size_t total = 0;
+  for (const float v : x) {
+    ASSERT_EQ(chain.process(v, out), Status::kOk);
+    ASSERT_EQ(detector.process(out.conditioned_mv, step), Status::kOk);
+    ASSERT_EQ(out.detection_count, step.count);
+    for (std::size_t i = 0; i < step.count; ++i) {
+      EXPECT_EQ(out.detections[i].index, step.detections[i].index);
+      EXPECT_EQ(out.detections[i].reported_at, step.detections[i].reported_at);
+      EXPECT_EQ(out.detections[i].mark, step.detections[i].mark);
+      EXPECT_EQ(out.detections[i].path, step.detections[i].path);
+    }
+    total += out.detection_count;
+  }
+  EXPECT_EQ(total, 22U);
+}
 
 }  // namespace

@@ -1,12 +1,16 @@
 #pragma once
 
 // SRS-017, SRS-018, SRS-031, SRS-032: the processing chain, its input checks and its restart
-// (architecture-m2.md 14.4, 14.5, 14.10). In this version it holds the signal conditioning; the
-// detection, heart-rate and quality outputs are added to SampleOutput with their components.
+// (architecture-m2.md 14.4, 14.5, 14.10). In this version it holds the signal conditioning and the
+// detection; the heart-rate and quality outputs are added to SampleOutput with their components.
+
+#include <array>
+#include <cstddef>
 
 #include "sinus/dsp/conditioner.hpp"
 #include "sinus/dsp/config.hpp"
 #include "sinus/dsp/limits.hpp"
+#include "sinus/dsp/qrs_detector.hpp"
 #include "sinus/dsp/status.hpp"
 
 namespace sinus::dsp {
@@ -14,6 +18,8 @@ namespace sinus::dsp {
 struct SampleOutput {
   float baseline_mv = 0.0F;
   float conditioned_mv = 0.0F;
+  std::size_t detection_count = 0;  // detections reported at this sample (architecture-m2.md 14.7)
+  std::array<Detection, kMaxDetectionsPerSample> detections{};
 };
 
 class Chain {
@@ -33,6 +39,7 @@ class Chain {
  private:
   Config config_{};
   Conditioner conditioner_;
+  QrsDetector detector_;
   bool configured_ = false;
   bool stopped_ = false;
 };
