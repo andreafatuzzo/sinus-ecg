@@ -89,6 +89,17 @@ class Counting {
   [[nodiscard]] static unsigned long requests() { return g_requests.load(); }
 };
 
+// Makes a pointer escape, so that the compiler cannot prove an allocation unused and elide it
+// (allowed since C++14). Without it the self-check below could count nothing under optimisation.
+inline void escape(const void* p) {
+#if defined(__GNUC__) || defined(__clang__)
+  asm volatile("" : : "g"(p) : "memory");
+#else
+  static const void* volatile sink;
+  sink = p;
+#endif
+}
+
 }  // namespace
 
 void* operator new(std::size_t n) { return allocate(n); }
@@ -178,7 +189,8 @@ using sinus::dsp::Status;
 Chain g_chain;
 
 // Case: the counter detects a request (a test of the test). Input: one `new` and one `delete`
-// of an int, and one vector growth, inside the armed region.
+// of an int, and one vector growth, inside the armed region; the pointers escape through an
+// optimisation barrier so that no compiler can elide the requests.
 // Expected: the count is at least 2, so a zero count elsewhere is meaningful.
 // Verifies: SRS-032
 TEST(Srs032FixedMemory, CounterSeesDynamicRequests) {
@@ -186,8 +198,7 @@ TEST(Srs032FixedMemory, CounterSeesDynamicRequests) {
   {
     Counting counting;
     int* p = new int(3);
-    volatile int sink = *p;
-    (void)sink;
+    escape(p);
     delete p;
     n = Counting::requests();
   }
@@ -196,6 +207,7 @@ TEST(Srs032FixedMemory, CounterSeesDynamicRequests) {
     Counting counting;
     std::vector<int> v;
     v.push_back(1);
+    escape(v.data());
     n = Counting::requests();
   }
   EXPECT_GE(n, 1UL);
