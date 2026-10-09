@@ -19,6 +19,7 @@ from sinus_dsp.filters import apply_sos, baseline_sos, mains_sos
 from sinus_dsp.heart_rate import HeartRateEvent, track_heart_rate
 from sinus_dsp.input_checks import validate_input, validate_mains
 from sinus_dsp.qrs import Detections, _trace
+from sinus_dsp.quality import QualityWindows, assess_quality
 
 #: SRS-015: names of the conditioning stages, in the order applied, as golden-vector files
 #: state them.
@@ -41,6 +42,7 @@ class PipelineResult:
     beats: IndexArray
     detections: Detections
     heart_rate: tuple[HeartRateEvent, ...]
+    quality: QualityWindows
 
 
 @dataclass(frozen=True)
@@ -84,7 +86,8 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
     :data:`STAGES`, and the beats, which a golden-vector file states. SRS-022: the result
     also holds the detections with their marks (:class:`~sinus_dsp.qrs.Detections`), whose
     indices are the beats. SRS-024, SRS-025, SRS-026: and the heart rate events of those
-    detections (:func:`~sinus_dsp.heart_rate.track_heart_rate`).
+    detections (:func:`~sinus_dsp.heart_rate.track_heart_rate`). SRS-027, SRS-028: and the
+    signal quality index of every window (:func:`~sinus_dsp.quality.assess_quality`).
 
     The input and the mains setting are checked once, before any other computation; then the
     baseline filter, the mains filter and the detection on the mains output run in this
@@ -104,7 +107,8 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
             neither 50 nor 60.
     """
     conditioned = _condition(signal_mv, fs_hz, mains_hz)
-    detections = _trace(conditioned.mains_mv, conditioned.fs_hz).detections
+    trace = _trace(conditioned.mains_mv, conditioned.fs_hz)
+    detections = trace.detections
     heart_rate = track_heart_rate(
         detections.indices,
         detections.startup,
@@ -122,6 +126,7 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
         beats=detections.indices,
         detections=detections,
         heart_rate=heart_rate,
+        quality=assess_quality(conditioned.input_mv, trace),
     )
 
 

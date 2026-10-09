@@ -717,9 +717,12 @@ flowchart BT
   report --> start
   run["evaluation.run"] -.-> start
   run -.-> sq
+  quality -.-> pipeline
 ```
 
-- `evaluation.start_of_stream` and `evaluation.signal_quality` import `evaluation.run` (its types and `meets_target`), as `evaluation.noise_stress` does; `evaluation.run` imports them inside `run_validation`, like `evaluate_noise_stress` (§8.13). These two are the only new imports inside a function; the unit test that imports each module first in a new interpreter covers them.
+- `evaluation.start_of_stream` and `evaluation.signal_quality` import `evaluation.run` (its types and `meets_target`), as `evaluation.noise_stress` does; `evaluation.run` imports them inside `run_validation`, like `evaluate_noise_stress` (§8.13).
+- `quality.quality_windows` runs the whole chain (§13.6) while `pipeline` imports `quality` for `assess_quality`, so it imports `pipeline` inside the function.
+- These three are the only new imports inside a function; the unit test that imports each module first in a new interpreter covers them.
 - `heart_rate` takes arrays (§13.5) and imports no other module of the package than `input_checks`, `errors` and `_types`.
 - `golden` also imports `heart_rate` and `quality` for their types and constants.
 
