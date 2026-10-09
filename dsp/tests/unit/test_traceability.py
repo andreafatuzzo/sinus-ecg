@@ -41,8 +41,11 @@ UNKNOWN = "Unknown requirement IDs referenced in code or tests"
 INDEPENDENCE = "Requirement tags outside tests/requirements/ or tests/system/ (independence rule)"
 OUTSIDE = "Requirement marks outside test files"
 CPP_TAGS = "Malformed or dangling C++ requirement tags"
+DISABLED = "Disabled requirement tests"
 LEVEL = "Tests in the wrong folder for the requirement's verification level"
+ITEM_TESTS = "Tests in the folder of an item that the requirement does not name"
 UNTESTED = "Implemented requirements without a verifying test"
+ITEM_CITES = "Requirements cited by an item that they do not name"
 DANGLING = "Open points citing undefined IDs"
 DUPLICATE = "Duplicate open point IDs"
 TARGET = "Open points with a Target that is not a milestone"
@@ -54,8 +57,11 @@ RULES = [
     INDEPENDENCE,
     OUTSIDE,
     CPP_TAGS,
+    DISABLED,
     LEVEL,
+    ITEM_TESTS,
     UNTESTED,
+    ITEM_CITES,
     DANGLING,
     DUPLICATE,
     TARGET,
@@ -85,6 +91,7 @@ def requirement(
     *,
     milestone: str | None = "M1",
     level: str | None = "Requirement",
+    item: str | None = "dsp",
     extra: str = "",
 ) -> str:
     """An srs.md entry; a field given as ``None`` has no line."""
@@ -94,6 +101,8 @@ def requirement(
         lines.append(f"**Milestone:** {milestone}".rstrip())
     if level is not None:
         lines.append(f"**Verification level:** {level}".rstrip())
+    if item is not None:
+        lines.append(f"**Software item:** {item}".rstrip())
     if extra:
         lines.append(extra)
     return "\n".join(lines) + "\n"
@@ -120,6 +129,21 @@ def python_test_file(*tests: str) -> str:
 def cpp_test(*tags: str, test: str = CPP_TEST) -> str:
     """A GoogleTest source: the tag lines, then the test."""
     return "".join(f"{tag}\n" for tag in tags) + test
+
+
+def untested(req_id: str, *places: str) -> list[str]:
+    """The items of the rule "implemented without a verifying test", one per software item
+    that cites the requirement at ``path:line`` places."""
+    by_item: dict[str, list[str]] = {}
+    for place in places:
+        parts = place.split("/")
+        item = f"libs/{parts[1]}" if parts[0] == "libs" else parts[0]
+        by_item.setdefault(item, []).append(f"`{place}`")
+    return [
+        f"{req_id}: implemented in {item} (cited in {', '.join(cites)}) "
+        f"without a verifying test in {item}"
+        for item, cites in sorted(by_item.items())
+    ]
 
 
 def target_item(op_id: str, target: str) -> str:
@@ -164,14 +188,14 @@ BASE_MATRIX = """\
 Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). \
 Milestone status: [`milestones.md`](milestones.md).
 
-| Requirement | Title | Milestone | Verification level | Implemented in | Verified by \
-| Open points |
-|---|---|---|---|---|---|---|
-| SRS-001 | Remove baseline wander | M1 | Requirement | `dsp/sinus_dsp/filters.py:4` \
+| Requirement | Title | Software items | Milestone | Verification level | Implemented in \
+| Verified by | Open points |
+|---|---|---|---|---|---|---|---|
+| SRS-001 | Remove baseline wander | dsp | M1 | Requirement | `dsp/sinus_dsp/filters.py:4` \
 | `dsp/tests/requirements/test_srs_001.py::test_removes_wander` | — |
-| SRS-002 | Detection performance | M1 | System | `dsp/scripts/validate.py:1` \
+| SRS-002 | Detection performance | dsp | M1 | System | `dsp/scripts/validate.py:1` \
 | `dsp/tests/system/test_srs_002.py::test_detects_beats` | — |
-| SRS-003 | Later feature | M2 | Requirement | — | **none** | OP-001 |
+| SRS-003 | Later feature | dsp | M2 | Requirement | — | **none** | OP-001 |
 
 ## Milestones
 
@@ -204,6 +228,13 @@ class Tree:
         self.root = root
         self.tool = tool
         self.layout: Any = tool.Layout(root)
+        # Files of the older tests are written in several software items while the requirements
+        # name only dsp: with ``widen`` set, a file written in another item makes every
+        # requirement name that item too, so that those tests keep checking one rule at a time.
+        # The tests of the rules per item switch it off.
+        self.widen = True
+        self.entries: tuple[str, ...] = ()
+        self.extra_items: list[str] = []
         for rel, text in BASE_FILES.items():
             self.write(rel, text)
         self.srs(*BASE_REQUIREMENTS)
@@ -215,10 +246,20 @@ class Tree:
         path = self.root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8", newline="\n")
+        item = self.tool.item_of(rel)
+        if self.widen and item not in ("", "dsp") and item not in self.extra_items:
+            self.extra_items.append(item)
+            if self.entries:
+                self.srs(*self.entries)
         return path
 
     def srs(self, *entries: str) -> None:
-        self.write("docs/regulatory/srs.md", SRS_HEAD + "\n".join(entries))
+        self.entries = entries
+        text = SRS_HEAD + "\n".join(entries)
+        if self.widen:
+            more = "".join(f"; {item}" for item in self.extra_items)
+            text = re.sub(r"^(\*\*Software item:\*\* dsp)$", rf"\1{more}", text, flags=re.M)
+        self.write("docs/regulatory/srs.md", text)
 
     def register(self, statuses: dict[str, str], extra_rows: Sequence[str] = ()) -> None:
         rows = [f"| {ms} | Title of {ms} | {status} |" for ms, status in statuses.items()]
@@ -497,7 +538,9 @@ def test_an_entry_ends_at_the_next_heading(tree: Tree, tool: ModuleType) -> None
     )
     requirements, _ = tool.parse_requirements(tree.layout)
     assert requirements["SRS-001"].milestone is None
-    assert tree.check() == {FIELDS: [f"SRS-001: {NO_MILESTONE}"]}
+    assert tree.check() == {
+        FIELDS: [f"SRS-001: {NO_MILESTONE}", "SRS-001: no '**Software item:**' line"]
+    }
 
 
 @pytest.mark.parametrize(
@@ -743,11 +786,14 @@ def test_text_that_is_not_an_id_is_not_a_citation(tree: Tree, text: str) -> None
         "firmware/test_apps/main/extra.c",
         "libs/sinus-dsp/CMakeLists.txt",
         "libs/sinus-dsp/src/extra.cxx",
-        "libs/sinus-dsp/src/extra.py",
         "backend/app/extra.py",
+        "libs/sinus-dsp/tools/extra.py",
+        "libs/sinus-dsp/tools/sub/extra.py",
     ],
 )
 def test_ids_outside_production_code_are_not_citations(tree: Tree, rel: str) -> None:
+    if rel.endswith("CMakeLists.txt"):  # a CMakeLists.txt asks for a VERSION file
+        tree.write("libs/sinus-dsp/VERSION", "0.1.0.dev0\n")
     tree.write(rel, "# SRS-099 and SRS-003\n")
     assert tree.check() == {}
 
@@ -786,7 +832,7 @@ def test_test_folders_under_the_python_code_roots_are_not_code(
 )
 def test_other_files_under_the_python_code_roots_are_code(tree: Tree, rel: str) -> None:
     tree.write(rel, "# SRS-003\n")
-    assert tree.check() == {UNTESTED: [f"SRS-003: cited in `{rel}:1`"]}
+    assert tree.check() == {UNTESTED: untested("SRS-003", f"{rel}:1")}
 
 
 # --- independence: requirement tags only in tests/requirements/ and tests/system/ -----------
@@ -897,7 +943,7 @@ def test_marks_outside_test_files_fail_and_never_count(tree: Tree, name: str) ->
     # Not counted for implemented => tested either.
     tree.write("dsp/sinus_dsp/later.py", "# SRS-003\n")
     failures = tree.check()
-    assert failures[UNTESTED] == ["SRS-003: cited in `dsp/sinus_dsp/later.py:1`"]
+    assert failures[UNTESTED] == untested("SRS-003", "dsp/sinus_dsp/later.py:1")
     assert set(failures) == {OUTSIDE, UNTESTED}
 
 
@@ -1017,7 +1063,7 @@ def test_cpp_tag_outside_the_verification_folders(tree: Tree, folder: str, code:
     tree.write(rel, cpp_test("// Verifies: SRS-003"))
     expected = {INDEPENDENCE: [f"{rel}:1"]}
     if code:  # outside a test folder the tag is also a citation in production code
-        expected[UNTESTED] = [f"SRS-003: cited in `{rel}:1`"]
+        expected[UNTESTED] = untested("SRS-003", f"{rel}:1")
     assert tree.check() == expected
     assert tree.test_names("SRS-003") == []
 
@@ -1146,7 +1192,7 @@ def test_only_test_classes_are_read(tree: Tree) -> None:
     tree.write("dsp/tests/requirements/test_later.py", text)
     assert tree.test_names("SRS-003") == []
     tree.write("dsp/sinus_dsp/later.py", "# SRS-003\n")
-    assert tree.check() == {UNTESTED: ["SRS-003: cited in `dsp/sinus_dsp/later.py:1`"]}
+    assert tree.check() == {UNTESTED: untested("SRS-003", "dsp/sinus_dsp/later.py:1")}
 
 
 def test_marks_outside_tests_and_test_classes_are_not_read(tree: Tree) -> None:
@@ -1221,10 +1267,9 @@ def test_cpp_suffixes_that_are_read(tree: Tree, suffix: str) -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    "name", ["qrs_test.cxx", "qrs_test.hh", "qrs_test.txt", "CMakeLists.txt", "qrs_test.py"]
-)
+@pytest.mark.parametrize("name", ["qrs_test.cxx", "qrs_test.hh", "qrs_test.txt", "CMakeLists.txt"])
 def test_other_files_under_the_cpp_roots_are_not_read(tree: Tree, name: str) -> None:
+    tree.write("libs/sinus-dsp/VERSION", "0.1.0.dev0\n")  # for CMakeLists.txt
     tree.write(f"libs/sinus-dsp/tests/requirements/{name}", cpp_test("// Verifies: nothing"))
     tree.write(f"libs/sinus-dsp/tests/unit/{name}", cpp_test("// Verifies: SRS-003"))
     assert tree.check() == {}
@@ -1261,8 +1306,7 @@ def test_tag_covers_only_the_test_below_it(tree: Tree) -> None:
 
 
 def test_cpp_file_with_windows_line_endings(tree: Tree) -> None:
-    path = tree.root / REQ_CPP
-    path.parent.mkdir(parents=True)
+    path = tree.write(REQ_CPP, "")
     path.write_bytes(
         b"// Verifies: SRS-003\r\nTEST(Qrs, Detects) {\r\n}\r\n// Verifies: SRS-003\r\n"
     )
@@ -1477,7 +1521,7 @@ def test_only_test_in_the_wrong_folder_fails_the_check(tree: Tree) -> None:
         "tagged in dsp/tests/system/test_srs_001.py::test_removes_wander"
     ]
     # The misplaced test does not verify (architecture §8.16 item 2).
-    assert failures[UNTESTED] == ["SRS-001: cited in `dsp/sinus_dsp/filters.py:4`"]
+    assert failures[UNTESTED] == untested("SRS-001", "dsp/sinus_dsp/filters.py:4")
     assert set(failures) == {LEVEL, UNTESTED}
 
 
@@ -1499,7 +1543,7 @@ def test_only_test_in_the_wrong_folder_fails_the_check(tree: Tree) -> None:
 )
 def test_cited_requirement_without_a_test(tree: Tree, rel: str, text: str, line: int) -> None:
     tree.write(rel, text)
-    assert tree.check() == {UNTESTED: [f"SRS-003: cited in `{rel}:{line}`"]}
+    assert tree.check() == {UNTESTED: untested("SRS-003", f"{rel}:{line}")}
 
 
 def test_every_citation_is_listed(tree: Tree) -> None:
@@ -1509,9 +1553,14 @@ def test_every_citation_is_listed(tree: Tree) -> None:
     tree.write("libs/sinus-dsp/src/a.cpp", "// SRS-004\n")
     assert tree.check() == {
         UNTESTED: [
-            "SRS-003: cited in `dsp/scripts/later.py:1`, `dsp/sinus_dsp/later.py:1`, "
-            "`dsp/sinus_dsp/later.py:2`, `dsp/sinus_dsp/later.py:3`",
-            "SRS-004: cited in `libs/sinus-dsp/src/a.cpp:1`",
+            *untested(
+                "SRS-003",
+                "dsp/scripts/later.py:1",
+                "dsp/sinus_dsp/later.py:1",
+                "dsp/sinus_dsp/later.py:2",
+                "dsp/sinus_dsp/later.py:3",
+            ),
+            *untested("SRS-004", "libs/sinus-dsp/src/a.cpp:1"),
         ]
     }
 
@@ -1530,7 +1579,12 @@ def test_every_citation_is_listed(tree: Tree) -> None:
     ],
 )
 def test_a_verifying_test_clears_the_rule(tree: Tree, rel: str, text: str) -> None:
-    tree.write("dsp/sinus_dsp/later.py", "# SRS-003\n")
+    tree.widen = False
+    item = tree.tool.item_of(rel)
+    tree.srs(*BASE_REQUIREMENTS[:2], requirement("SRS-003", milestone="M2", item=item))
+    tree.write(
+        "dsp/sinus_dsp/later.py" if item == "dsp" else f"{item}/src/later.cpp", "// SRS-003\n"
+    )
     tree.write(rel, text)
     assert tree.check() == {}
 
@@ -1544,7 +1598,7 @@ def test_a_misplaced_test_does_not_verify(tree: Tree) -> None:
             "dsp/tests/unit/test_later.py:4",
             "libs/sinus-dsp/tests/unit/later_test.cpp:1",
         ],
-        UNTESTED: ["SRS-003: cited in `dsp/sinus_dsp/later.py:1`"],
+        UNTESTED: untested("SRS-003", "dsp/sinus_dsp/later.py:1"),
     }
 
 
@@ -1553,7 +1607,7 @@ def test_a_dangling_cpp_tag_does_not_verify(tree: Tree) -> None:
     tree.write(REQ_CPP, "// Verifies: SRS-003\n\n" + CPP_TEST)
     assert tree.check() == {
         CPP_TAGS: [f"{REQ_CPP}:1: {DANGLING_TAG}"],
-        UNTESTED: ["SRS-003: cited in `dsp/sinus_dsp/later.py:1`"],
+        UNTESTED: untested("SRS-003", "dsp/sinus_dsp/later.py:1"),
     }
 
 
@@ -1561,13 +1615,13 @@ def test_rule_holds_whatever_the_milestone(tree: Tree) -> None:
     tree.register({"M0": "Released", "M1": "In progress", "M2": "Planned", "M3": "Planned"})
     tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004", milestone="M3"))
     tree.write("dsp/sinus_dsp/later.py", "# SRS-004\n")
-    assert tree.check() == {UNTESTED: ["SRS-004: cited in `dsp/sinus_dsp/later.py:1`"]}
+    assert tree.check() == {UNTESTED: untested("SRS-004", "dsp/sinus_dsp/later.py:1")}
 
 
 def test_cited_deleted_requirement_without_a_test(tree: Tree) -> None:
     tree.srs(*BASE_REQUIREMENTS, "### SRS-004: _Deleted_\n")
     tree.write("dsp/sinus_dsp/old.py", "# SRS-004\n")
-    assert tree.check() == {UNTESTED: ["SRS-004: cited in `dsp/sinus_dsp/old.py:1`"]}
+    assert tree.check() == {UNTESTED: untested("SRS-004", "dsp/sinus_dsp/old.py:1")}
 
 
 # --- open points ----------------------------------------------------------------------------
@@ -1893,6 +1947,7 @@ def test_changes_shown_by_the_release_gate_make_it_stale(tree: Tree) -> None:
     ],
 )
 def test_change_not_shown_by_the_matrix_leaves_it_current(tree: Tree, rel: str, text: str) -> None:
+    tree.widen = False
     tree.update()
     tree.write(rel, text)
     tree.open_points(BASE_OPEN, [*BASE_CLOSED, ("OP-003", "SRS-003")])
@@ -1917,7 +1972,7 @@ def test_requirement_of_a_gated_milestone_without_a_test(
     tree.register(statuses)
     tree.version("0.1.0.dev0" if status == "In progress" else "0.1.0")
     tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004", milestone=milestone))
-    expected = [f"SRS-004 ({milestone}, {statuses[milestone]}): no verifying test"]
+    expected = [f"SRS-004 ({milestone}, {statuses[milestone]}): no verifying test in dsp"]
     if status == "In progress":
         expected.append(DEV_ITEM)
     assert tree.gate() == expected
@@ -1938,8 +1993,9 @@ def test_requirement_of_a_planned_milestone_is_not_gated(tree: Tree) -> None:
     ],
 )
 def test_a_verifying_test_opens_the_gate(tree: Tree, rel: str, text: str) -> None:
+    tree.widen = False
     tree.release()
-    tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004"))
+    tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004", item=tree.tool.item_of(rel)))
     tree.write(rel, text)
     assert tree.gate() == []
 
@@ -1964,10 +2020,11 @@ def test_a_verifying_test_opens_the_gate(tree: Tree, rel: str, text: str) -> Non
     ],
 )
 def test_a_test_that_is_not_counted_does_not_open_the_gate(tree: Tree, rel: str, text: str) -> None:
+    tree.widen = False
     tree.release()
     tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004"))
     tree.write(rel, text)
-    assert tree.gate() == ["SRS-004 (M1, Released): no verifying test"]
+    assert tree.gate() == ["SRS-004 (M1, Released): no verifying test in dsp"]
 
 
 @pytest.mark.parametrize(
@@ -2059,8 +2116,8 @@ def test_release_gate_items_in_order(tree: Tree) -> None:
     tree.open_points([("OP-004", "", "M1"), *BASE_OPEN, ("OP-003", "", "M0")], BASE_CLOSED)
     assert tree.gate() == [
         "SRS-004: no valid milestone, so the gate cannot place it",
-        "SRS-005 (M1, In progress): no verifying test",
-        "SRS-006 (M0, Released): no verifying test",
+        "SRS-005 (M1, In progress): no verifying test in dsp",
+        "SRS-006 (M0, Released): no verifying test in dsp",
         "OP-003: open point still targets M0; close or retarget it",
         "OP-004: open point still targets M1; close or retarget it",
         DEV_ITEM,
@@ -2118,9 +2175,11 @@ def test_open_points_of_each_requirement(tree: Tree) -> None:
 
 
 def test_requirement_rows(tree: Tree) -> None:
+    tree.widen = False
     tree.srs(
         requirement("SRS-004", "Without fields", milestone=None, level=None),
-        *BASE_REQUIREMENTS,
+        requirement("SRS-001", "Remove baseline wander", item="dsp; libs/sinus-dsp"),
+        *BASE_REQUIREMENTS[1:],
         "### SRS-005: _Deleted_\n",
     )
     tree.write("dsp/sinus_dsp/more.py", "\n# SRS-001\n")
@@ -2131,6 +2190,7 @@ def test_requirement_rows(tree: Tree) -> None:
     assert list(rows) == ["SRS-001", "SRS-002", "SRS-003", "SRS-004", "SRS-005"]
     assert rows["SRS-001"] == [
         "Remove baseline wander",
+        "dsp, libs/sinus-dsp",
         "M1",
         "Requirement",
         "`dsp/sinus_dsp/filters.py:4`<br>`dsp/sinus_dsp/more.py:2`<br>`libs/sinus-dsp/src/qrs.cpp:1`",
@@ -2141,8 +2201,8 @@ def test_requirement_rows(tree: Tree) -> None:
         + "::Qrs.Detects`",
         "—",
     ]
-    assert rows["SRS-004"] == ["Without fields", "—", "—", "—", "**none**", "—"]
-    assert rows["SRS-005"] == ["_Deleted_", "—", "—", "—", "deleted", "—"]
+    assert rows["SRS-004"] == ["Without fields", "dsp", "—", "—", "—", "**none**", "—"]
+    assert rows["SRS-005"] == ["_Deleted_", "—", "—", "—", "—", "deleted", "—"]
 
 
 def test_milestone_table(tree: Tree) -> None:
@@ -2193,20 +2253,22 @@ def test_matrix_without_requirements(tree: Tree) -> None:
     tree.srs()
     text = tree.render()
     assert (
-        "| — | _No requirements defined yet in `srs.md`_ | — | — | — | — | — |" in text.splitlines()
+        "| — | _No requirements defined yet in `srs.md`_ | — | — | — | — | — | — |"
+        in text.splitlines()
     )
     assert "| M0 | Title of M0 | Released | 0 | 0 | pass |" in text.splitlines()
     assert "| M1 | Title of M1 | In progress | 0 | 0 | **fail** |" in text.splitlines()
 
 
 def test_matrix_shows_every_requirement_whatever_the_check(tree: Tree) -> None:
+    tree.widen = False
     tree.write("dsp/tests/unit/test_more.py", python_test_file(marked("test_more", "SRS-003")))
     tree.write("dsp/tests/unit/helpers.py", python_test_file(marked("test_more", "SRS-003")))
     tree.write(SYS_CPP, cpp_test("// Verifies: SRS-001"))
     rows = table_rows(tree.render(), r"SRS-\d+")
     assert list(rows) == ["SRS-001", "SRS-002", "SRS-003"]
-    assert rows["SRS-003"][4] == "**none**"
-    assert rows["SRS-001"][4] == f"`{BASE_PY_TEST}`"
+    assert rows["SRS-003"][5] == "**none**"
+    assert rows["SRS-001"][5] == f"`{BASE_PY_TEST}`"
 
 
 # --- the matrix: the release gate (architecture §8.16 item 1) -------------------------------
@@ -2343,8 +2405,8 @@ def test_release_gate_section_when_the_gate_fails(
     tree.open_points([("OP-004", "", "M1"), *BASE_OPEN, ("OP-003", "", "M0")], BASE_CLOSED)
     items = [
         "SRS-004: no valid milestone, so the gate cannot place it",
-        "SRS-005 (M1, In progress): no verifying test",
-        "SRS-006 (M0, Released): no verifying test",
+        "SRS-005 (M1, In progress): no verifying test in dsp",
+        "SRS-006 (M0, Released): no verifying test in dsp",
         "OP-003: open point still targets M0; close or retarget it",
         "OP-004: open point still targets M1; close or retarget it",
         DEV_ITEM,
@@ -2425,20 +2487,21 @@ def test_only_test_in_the_folder_of_the_other_level_verifies_nothing(
     cited = {"SRS-001": "dsp/sinus_dsp/filters.py:4", "SRS-002": "dsp/scripts/validate.py:1"}
     assert tree.check() == {
         LEVEL: [item],
-        UNTESTED: [f"{req_id}: cited in `{cited[req_id]}`"],
+        UNTESTED: untested(req_id, cited[req_id]),
     }
     text = tree.render()
-    assert table_rows(text, r"SRS-\d+")[req_id][4] == "**none**"
+    assert table_rows(text, r"SRS-\d+")[req_id][5] == "**none**"
     assert table_rows(text, r"M\d+")["M1"][3] == "1"
     assert f"- Requirements without tests: {req_id}, SRS-003\n" in text
     assert f"- Implemented requirements without tests: {req_id}\n" in text
     tree.release()
-    assert tree.gate() == [f"{req_id} (M1, Released): no verifying test"]
+    assert tree.gate() == [f"{req_id} (M1, Released): no verifying test in dsp"]
     assert gate_cells(tree)["M1"] == "**fail**"
 
 
 def test_only_cpp_test_in_the_folder_of_the_other_level_verifies_nothing(tree: Tree) -> None:
-    tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004"))
+    tree.widen = False
+    tree.srs(*BASE_REQUIREMENTS, requirement("SRS-004", item="libs/sinus-dsp"))
     tree.write("libs/sinus-dsp/src/later.cpp", "// SRS-004\n")
     tree.write(SYS_CPP, cpp_test("// Verifies: SRS-004"))
     assert tree.check() == {
@@ -2446,9 +2509,9 @@ def test_only_cpp_test_in_the_folder_of_the_other_level_verifies_nothing(tree: T
             "SRS-004 has Verification level Requirement (tests in tests/requirements/), but is "
             f"tagged in {SYS_CPP}::Qrs.Detects"
         ],
-        UNTESTED: ["SRS-004: cited in `libs/sinus-dsp/src/later.cpp:1`"],
+        UNTESTED: untested("SRS-004", "libs/sinus-dsp/src/later.cpp:1"),
     }
-    assert table_rows(tree.render(), r"SRS-\d+")["SRS-004"][4] == "**none**"
+    assert table_rows(tree.render(), r"SRS-\d+")["SRS-004"][5] == "**none**"
 
 
 def test_a_test_in_each_folder(tree: Tree, tool: ModuleType) -> None:
@@ -2465,8 +2528,11 @@ def test_a_test_in_each_folder(tree: Tree, tool: ModuleType) -> None:
         ]
     }
     rows = table_rows(tree.render(), r"SRS-\d+")
-    assert rows["SRS-001"][4] == f"`{BASE_PY_TEST}`"
-    assert rows["SRS-002"][4] == "`dsp/tests/system/test_srs_002.py::test_detects_beats`"
+    # SRS-001 and SRS-002 name libs/sinus-dsp too (the tree widens them): no test there counts
+    assert rows["SRS-001"][5] == f"`{BASE_PY_TEST}`<br>**none in libs/sinus-dsp**"
+    assert rows["SRS-002"][5] == (
+        "`dsp/tests/system/test_srs_002.py::test_detects_beats`<br>**none in libs/sinus-dsp**"
+    )
     matrix = tree.matrix()
     assert [t.name for t in tool.verifying(matrix, "SRS-001")] == [BASE_PY_TEST]
     assert tree.test_names("SRS-001") == [BASE_PY_TEST, "dsp/tests/system/test_more.py::test_more"]
@@ -2499,8 +2565,8 @@ def test_deleted_requirement_in_the_matrix(tree: Tree) -> None:
     tree.srs(*BASE_REQUIREMENTS, "### SRS-004: _Deleted_\n", requirement("SRS-005"))
     text = tree.render()
     rows = table_rows(text, r"SRS-\d+")
-    assert rows["SRS-004"] == ["_Deleted_", "—", "—", "—", "deleted", "—"]
-    assert rows["SRS-005"][4] == "**none**"
+    assert rows["SRS-004"] == ["_Deleted_", "—", "—", "—", "—", "deleted", "—"]
+    assert rows["SRS-005"][5] == "**none**"
     assert "- Requirements without tests: SRS-003, SRS-005\n" in text
     assert tree.check() == {}
 
@@ -2511,7 +2577,7 @@ def test_deleted_requirement_with_a_test_shows_the_test(tree: Tree) -> None:
         "dsp/tests/requirements/test_old.py", python_test_file(marked("test_old", "SRS-004"))
     )
     rows = table_rows(tree.render(), r"SRS-\d+")
-    assert rows["SRS-004"][4] == "`dsp/tests/requirements/test_old.py::test_old`"
+    assert rows["SRS-004"][5] == "`dsp/tests/requirements/test_old.py::test_old`"
 
 
 def test_deleted_requirement_cited_in_code_is_still_an_implemented_gap(tree: Tree) -> None:
@@ -2581,7 +2647,7 @@ def test_check_lists_each_failing_rule_and_does_not_write(
         f"FAIL: {INDEPENDENCE}\n"
         "  - dsp/tests/unit/test_more.py:4\n"
         f"FAIL: {UNTESTED}\n"
-        "  - SRS-003: cited in `dsp/sinus_dsp/more.py:2`\n",
+        f"  - {untested('SRS-003', 'dsp/sinus_dsp/more.py:2')[0]}\n",
     )
     assert not (tree.root / OUTPUT).exists()
 
@@ -2621,7 +2687,12 @@ def test_help_and_docstring_name_the_new_rules(
     for words in [
         "a requirement mark is in a file under dsp/tests that is not a test file",
         "have a Target that is not 'Mn' or 'After Mn' with Mn in the milestone register",
-        "has a verifying test in the folder of its verification level",
+        "has a verifying test, in the folder of its verification level, in each of its "
+        "software items",
+        "a requirement cited in production code has no verifying test in the item that cites it",
+        "a requirement test is disabled (skip, xfail, DISABLED_)",
+        "a requirement has no valid '**Software item:**' line",
+        "the VERSION files of the C++ items",
     ]:
         assert words in text
     assert tool.__doc__ is not None
@@ -2663,7 +2734,8 @@ def test_check_and_release_gate(tree: Tree, run: Callable[..., tuple[int, str]])
     assert run("--release-gate", "--check") == (
         1,
         f"FAIL: {STALE}\n  - {STALE_ITEM}\n"
-        "FAIL: Release gate on milestones M0, M1\n  - SRS-004 (M1, Released): no verifying test\n",
+        "FAIL: Release gate on milestones M0, M1\n"
+        "  - SRS-004 (M1, Released): no verifying test in dsp\n",
     )
 
 
@@ -2683,6 +2755,7 @@ def test_unknown_option(tool: ModuleType, run: Callable[..., tuple[int, str]]) -
 
 def test_run_as_a_command(tree: Tree, tmp_path: Path) -> None:
     """A copy of the script finds the tree from its own location, whatever the working folder."""
+    tree.widen = False
     copy = tree.root / "dsp" / "scripts" / "traceability.py"
     shutil.copyfile(SCRIPT, copy)
 

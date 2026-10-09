@@ -1,25 +1,36 @@
 """Generate the traceability matrix and enforce the traceability gates (IEC 62304 §5.1.1).
 
 The rules and their rationale are in docs/adr/0004-test-tagging-and-traceability-gates.md, with
-the corrections and clarifications of docs/regulatory/architecture.md §8.16.
+the corrections and clarifications of docs/regulatory/architecture.md §8.16. From Milestone 2
+the rules apply per software item (docs/adr/0006-verification-per-software-item.md, design in
+docs/regulatory/architecture-m2.md §13.12).
 IDs in this file are written as SRS-nnn, because this file is itself scanned for citations.
 
 Sources of truth (paths relative to the repository root):
   - Requirements: headings ``### SRS-nnn: Title`` in docs/regulatory/srs.md. Each one has a
                   ``**Milestone:** Mn`` line and a ``**Verification level:**`` line whose first
-                  word is ``Requirement`` or ``System``. A requirement marked ``_Deleted_`` needs
-                  neither.
+                  word is ``Requirement`` or ``System``, and a ``**Software item:**`` line:
+                  entries separated by ``;``, items joined by `` and ``, a qualifier in
+                  parentheses ignored, ``CI workflow`` not an item. The items are ``dsp``,
+                  ``desktop``, ``firmware``, ``backend`` and ``libs/<name>``. A requirement
+                  marked ``_Deleted_`` needs none of these.
   - Milestones:   rows ``| Mn | Title | Status |`` in docs/regulatory/milestones.md, where Status
                   is ``Planned``, ``In progress`` or ``Released``.
-  - Code:         any SRS ID in the Python sources of dsp/sinus_dsp and dsp/scripts, and in the
-                  C and C++ sources of libs/, firmware/ and desktop/, outside test folders (a
-                  folder named tests, test or test_apps).
+  - Code:         any SRS ID in the Python sources of dsp/sinus_dsp and dsp/scripts, in the
+                  Python sources of each C++ item (libs/<name>, firmware, desktop) outside its
+                  test folders and its tools folder, and in the C and C++ sources of libs/,
+                  firmware/ and desktop/, outside test folders (a folder named tests, test or
+                  test_apps).
   - Python tests: ``@pytest.mark.requirement("SRS-nnn", ...)`` on test functions or classes,
-                  or in ``pytestmark``, in the test files under dsp/tests. Test files, classes
-                  and functions are those of pytest's default discovery: files ``test_*.py``
+                  or in ``pytestmark``, in the test files under dsp/tests and under the tests
+                  folder of each C++ item (libs/<name>/tests, ...). Test files, classes and
+                  functions are those of pytest's default discovery: files ``test_*.py``
                   or ``*_test.py``, classes ``Test*``, functions ``test*``. A requirement mark
                   in any other file under dsp/tests (a conftest.py, a helper module) fails
-                  --check and is never counted.
+                  --check and is never counted. The same holds under the tests folder of a C++ item.
+                  A test with a ``skip`` or ``xfail`` mark (decorator or ``pytestmark``), or a
+                  GoogleTest suite or test named ``DISABLED_*``, is disabled: it fails --check
+                  and never counts.
   - C++ tests:    one or more ``// Verifies: SRS-nnn, SRS-nnn`` lines directly above a
                   GoogleTest ``TEST``, ``TEST_F``, ``TEST_P``, ``TYPED_TEST`` or ``TYPED_TEST_P``,
                   in the sources under libs/, firmware/ and desktop/.
@@ -27,12 +38,17 @@ Sources of truth (paths relative to the repository root):
                   docs/regulatory/open-points.md; Refs may cite SRS, HAZ and RC IDs (HAZ and RC
                   rows are in risk-analysis.md). The Target of a row of the Open section is
                   ``Mn`` or ``After Mn``, with Mn a milestone of the register.
+  - Items:        the item of a file is given by its path: dsp/ is ``dsp``, libs/<name>/ is
+                  ``libs/<name>``, and desktop/, firmware/ and backend/ are those items. A test
+                  verifies a requirement for the item whose folder holds it, if the requirement
+                  names that item; the release gate needs one in each item the requirement names.
   - Version:      ``[project] version`` in dsp/pyproject.toml and the string literal assigned
                   to ``__version__`` in dsp/sinus_dsp/__init__.py. Both are equal and follow
                   the milestone register: ``0.N.0.dev0`` with N the lowest milestone In
                   progress; if none is in progress, ``0.N.P`` with N the highest milestone
                   Released (docs/regulatory/sdp.md §4, architecture.md §8.14). The files are
-                  read, not imported.
+                  read, not imported. The file ``VERSION`` (one line) of each C++ item folder
+                  with a CMakeLists.txt holds the same version.
 
 Test folders: a requirement tag is only accepted in a ``tests/requirements/`` folder (tests for
 requirements with Verification level Requirement) or a ``tests/system/`` folder (level System),
@@ -65,7 +81,7 @@ import sys
 import tomllib
 from collections import Counter, defaultdict
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -98,6 +114,15 @@ REQ_HEADING = re.compile(r"^#{2,4}\s+(SRS-\d{3})\b[\s:—-]*(.*)$")
 ANY_HEADING = re.compile(r"^#{1,6}\s")
 MILESTONE_LINE = re.compile(r"^\*\*Milestone:\*\*(.*)$")
 LEVEL_LINE = re.compile(r"^\*\*Verification level:\*\*\s*(\w*)")
+ITEM_LINE = re.compile(r"^\*\*Software item:\*\*(.*)$")
+CI_WORKFLOW = "CI workflow"
+# First folders of the software items (the folder of a library is libs/<name>)
+ITEM_FOLDERS = frozenset({"dsp", "desktop", "firmware", "backend"})
+ITEM_NAME = re.compile(r"dsp|desktop|firmware|backend|libs/[a-z0-9][a-z0-9-]*")
+# Marks that disable a test (skipif is allowed)
+DISABLING_MARKS = frozenset({"skip", "xfail"})
+CPP_DISABLED_PREFIX = "DISABLED_"
+VERSION_FILE_NAME = "VERSION"
 DELETED_MARK = "_Deleted_"
 MILESTONE_ROW = re.compile(r"^\|\s*(M\d+)\s*\|")
 RISK_ROW = re.compile(r"^\|\s*((?:HAZ|RC)-\d{3})\s*\|")
@@ -156,12 +181,32 @@ class Layout:
         return self.root / "dsp" / "sinus_dsp" / "__init__.py"
 
     @property
+    def cpp_item_dirs(self) -> list[Path]:
+        """The folders of the C++ software items that exist: ``libs/<name>``, ``desktop``,
+        ``firmware`` (architecture-m2.md §13.12)."""
+        libs = self.root / "libs"
+        dirs = (
+            sorted(d for d in libs.iterdir() if d.is_dir() and not _skipped_dir(d.name))
+            if libs.is_dir()
+            else []
+        )
+        return dirs + [self.root / n for n in ("desktop", "firmware") if (self.root / n).is_dir()]
+
+    @property
     def python_code_roots(self) -> list[Path]:
-        return [self.root / "dsp" / "sinus_dsp", self.root / "dsp" / "scripts"]
+        return [self.root / "dsp" / "sinus_dsp", self.root / "dsp" / "scripts", *self.cpp_item_dirs]
 
     @property
     def python_test_roots(self) -> list[Path]:
-        return [self.root / "dsp" / "tests"]
+        return [self.root / "dsp" / "tests"] + [
+            d / "tests" for d in self.cpp_item_dirs if (d / "tests").is_dir()
+        ]
+
+    @property
+    def version_files(self) -> list[Path]:
+        """The ``VERSION`` file of each C++ item folder that holds a ``CMakeLists.txt``."""
+        dirs = [d for d in self.cpp_item_dirs if (d / "CMakeLists.txt").is_file()]
+        return [d / VERSION_FILE_NAME for d in dirs]
 
     @property
     def cpp_roots(self) -> list[Path]:
@@ -178,6 +223,9 @@ class Requirement:
     milestone: str | None  # value of the Milestone line; None if the line is missing
     level: str | None  # first word of the Verification level line; None if missing
     deleted: bool
+    # SRS-nnn software items of the "Software item" line, in its order, without CI workflow
+    items: tuple[str, ...] = ()
+    item_errors: tuple[str, ...] = ()  # what is wrong with that line (without the SRS ID)
 
 
 @dataclass(frozen=True)
@@ -191,6 +239,12 @@ class Milestone:
 class TestRef:
     name: str  # path::Class::test (pytest) or path::Suite.Name (GoogleTest)
     level: str  # verification level of the folder the test is in
+    disabled: str = ""  # how the test is disabled (rule "Disabled requirement tests"); else ""
+
+    @property
+    def item(self) -> str:
+        """The software item whose folder holds the test file."""
+        return item_of(self.name.split("::", 1)[0])
 
 
 @dataclass(frozen=True)
@@ -216,9 +270,39 @@ class Matrix:
     tag_errors: list[str]  # malformed or dangling C++ tags
     versions: dict[str, str]  # file -> package version found in it (pyproject first)
     version_errors: list[str]  # files whose package version cannot be read
+    disabled_tests: list[str] = field(default_factory=list)  # tagged tests that are disabled
 
 
 # --- Sources ---------------------------------------------------------------------------------
+
+
+def item_of(rel_path: str) -> str:
+    """The software item of a file from its path relative to the repository root (``dsp``,
+    ``libs/<name>``, ``desktop``, ``firmware``, ``backend``); empty if it belongs to none."""
+    parts = rel_path.replace("`", "").split("/")
+    if parts[0] == "libs":
+        return f"libs/{parts[1]}" if len(parts) > 2 else ""
+    return parts[0] if parts[0] in ITEM_FOLDERS and len(parts) > 1 else ""
+
+
+def parse_software_items(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Software items of a ``**Software item:**`` line (the text after the label) and the
+    errors in it. Entries are separated by ``;``, an entry may join items with `` and ``, a
+    qualifier in parentheses is ignored, and ``CI workflow`` is not an item."""
+    items: list[str] = []
+    errors: list[str] = []
+    for entry in text.split(";"):
+        for part in re.split(r"\s+and\s+", re.sub(r"\([^)]*\)", "", entry).strip()):
+            name = part.strip()
+            if not name or name == CI_WORKFLOW:
+                continue
+            if not ITEM_NAME.fullmatch(name):
+                errors.append(f"unknown software item '{name}'")
+            elif name not in items:
+                items.append(name)
+    if not items and not errors:
+        errors.append(f"no software item other than {CI_WORKFLOW}")
+    return tuple(items), tuple(errors)
 
 
 def _skipped_dir(name: str) -> bool:
@@ -234,6 +318,12 @@ def iter_sources(root: Path, suffixes: tuple[str, ...]) -> Iterator[Path]:
         for name in sorted(filenames):
             if name.endswith(suffixes):
                 yield Path(dirpath) / name
+
+
+def _in_tools_folder(path: Path, layout: Layout) -> bool:
+    """Whether the file of a C++ software item is in a folder named ``tools``."""
+    rel = layout.rel(path)
+    return item_of(rel) != "dsp" and "tools" in rel.split("/")[:-1]
 
 
 def is_test_path(path: Path, layout: Layout) -> bool:
@@ -271,14 +361,23 @@ def parse_requirements(layout: Layout) -> tuple[dict[str, Requirement], list[str
         if req_id in requirements:
             errors.append(f"{req_id}: defined more than once in srs.md")
             continue
-        milestone = level = None
+        milestone = level = item_text = None
         for line in lines:
             if m := MILESTONE_LINE.match(line):
                 milestone = m.group(1).strip()
             elif m := LEVEL_LINE.match(line):
                 level = m.group(1)
+            elif m := ITEM_LINE.match(line):
+                item_text = m.group(1)
         deleted = any(DELETED_MARK in line for line in lines)
-        requirements[req_id] = Requirement(req_id, title, milestone, level, deleted)
+        if item_text is None:
+            items: tuple[str, ...] = ()
+            item_errors: tuple[str, ...] = ("no '**Software item:**' line",)
+        else:
+            items, item_errors = parse_software_items(item_text)
+        requirements[req_id] = Requirement(
+            req_id, title, milestone, level, deleted, items, item_errors
+        )
     return requirements, errors
 
 
@@ -342,6 +441,8 @@ def scan_code(layout: Layout) -> dict[str, set[str]]:
     files = [p for r in layout.python_code_roots for p in iter_sources(r, (".py",))]
     files += [p for r in layout.cpp_roots for p in iter_sources(r, CPP_SUFFIXES)]
     files = [p for p in files if not is_test_path(p, layout)]
+    # Python files in the tools folder of a C++ item are not production code
+    files = [p for p in files if p.suffix != ".py" or not _in_tools_folder(p, layout)]
     refs: dict[str, set[str]] = defaultdict(set)
     for path in files:
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -397,8 +498,21 @@ def read_package_init_version(layout: Layout) -> tuple[str | None, str | None]:
     return value.value, None
 
 
+def read_version_file(layout: Layout, path: Path) -> tuple[str | None, str | None]:
+    """The version in the one line of the ``VERSION`` file of a C++ item, or the reason it
+    cannot be read."""
+    name = layout.rel(path)
+    if not path.is_file():
+        return None, f"{name} not found"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if len(lines) != 1 or not lines[0].strip():
+        return None, f"{name}: not one line"
+    return lines[0].strip(), None
+
+
 def read_versions(layout: Layout) -> tuple[dict[str, str], list[str]]:
-    """Package version by file (dsp/pyproject.toml first), and the files where none is read."""
+    """Package version by file (dsp/pyproject.toml first, then the ``VERSION`` file of each C++
+    item that has a CMakeLists.txt), and the files where none is read."""
     versions: dict[str, str] = {}
     errors: list[str] = []
     for path, read in (
@@ -406,6 +520,12 @@ def read_versions(layout: Layout) -> tuple[dict[str, str], list[str]]:
         (layout.package_init, read_package_init_version),
     ):
         version, error = read(layout)
+        if version is not None:
+            versions[layout.rel(path)] = version
+        if error is not None:
+            errors.append(error)
+    for path in layout.version_files:
+        version, error = read_version_file(layout, path)
         if version is not None:
             versions[layout.rel(path)] = version
         if error is not None:
@@ -436,22 +556,39 @@ def _mark_ids(expr: ast.expr) -> list[str]:
     ]
 
 
-def _pytestmark_ids(body: list[ast.stmt]) -> list[str]:
-    """IDs from ``pytestmark = ...`` assignments, annotated or not, at module or class level."""
-    ids: list[str] = []
+def _pytestmark_exprs(body: list[ast.stmt]) -> list[ast.expr]:
+    """Values of ``pytestmark = ...`` assignments, annotated or not, at module or class level."""
+    exprs: list[ast.expr] = []
     for stmt in body:
         if isinstance(stmt, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == "pytestmark" for t in stmt.targets
         ):
-            ids.extend(_mark_ids(stmt.value))
+            exprs.append(stmt.value)
         elif (
             isinstance(stmt, ast.AnnAssign)
             and isinstance(stmt.target, ast.Name)
             and stmt.target.id == "pytestmark"
             and stmt.value is not None
         ):
-            ids.extend(_mark_ids(stmt.value))
-    return ids
+            exprs.append(stmt.value)
+    return exprs
+
+
+def _pytestmark_ids(body: list[ast.stmt]) -> list[str]:
+    """IDs from ``pytestmark = ...`` assignments at module or class level."""
+    return [i for expr in _pytestmark_exprs(body) for i in _mark_ids(expr)]
+
+
+def _disabling_marks(expr: ast.expr) -> list[str]:
+    """The marks ``skip`` and ``xfail`` of a mark or of a list/tuple of marks, as written
+    (``pytest.mark.skip``), whether used bare or called; ``skipif`` is not one."""
+    marks = expr.elts if isinstance(expr, ast.List | ast.Tuple) else [expr]
+    out: list[str] = []
+    for mark in marks:
+        target = mark.func if isinstance(mark, ast.Call) else mark
+        if isinstance(target, ast.Attribute) and target.attr in DISABLING_MARKS:
+            out.append(ast.unparse(target))
+    return out
 
 
 def is_python_test_file(path: Path) -> bool:
@@ -472,19 +609,28 @@ def scan_python_tests(layout: Layout) -> tuple[dict[str, list[TestRef]], list[st
     misplaced: list[str] = []
     outside: list[str] = []
 
-    def visit(body: list[ast.stmt], prefix: str, inherited: list[str], level: str) -> None:
+    def visit(
+        body: list[ast.stmt], prefix: str, inherited: list[str], off: list[str], level: str
+    ) -> None:
         inherited = inherited + _pytestmark_ids(body)
+        marks = [x for e in _pytestmark_exprs(body) for x in _disabling_marks(e)]
+        off = off + [f"pytestmark {x}" for x in marks]
         for node in body:
             if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
                 ids = inherited + [i for d in node.decorator_list for i in _mark_ids(d)]
+                # A skip or xfail mark disables the test (OP-066)
+                node_off = off + [
+                    f"decorator @{x}" for d in node.decorator_list for x in _disabling_marks(d)
+                ]
                 name = f"{prefix}::{node.name}"
                 if isinstance(node, ast.ClassDef):
                     # pytest's default discovery: tests are only collected in classes Test*
                     if node.name.startswith("Test"):
-                        visit(node.body, name, ids, level)
+                        visit(node.body, name, ids, node_off, level)
                 elif node.name.startswith("test"):
+                    how = ", ".join(dict.fromkeys(node_off))
                     for req in dict.fromkeys(ids):
-                        refs[req].append(TestRef(name, level))
+                        refs[req].append(TestRef(name, level, how))
 
     for root in layout.python_test_roots:
         for path in iter_sources(root, (".py",)):
@@ -504,7 +650,7 @@ def scan_python_tests(layout: Layout) -> tuple[dict[str, list[TestRef]], list[st
             if level is None:
                 misplaced += marks
                 continue
-            visit(tree.body, layout.rel(path), [], level)
+            visit(tree.body, layout.rel(path), [], [], level)
     return refs, misplaced, outside
 
 
@@ -557,8 +703,13 @@ def scan_cpp_tests(layout: Layout) -> tuple[dict[str, list[TestRef]], list[str],
                     errors.append(f"{where}:{pending_at}: tag not directly followed by {expected}")
                 elif level is not None:
                     name = f"{where}::{test.group(1)}.{test.group(2)}"
+                    how = ", ".join(
+                        f"{kind} {text}"
+                        for kind, text in (("suite", test.group(1)), ("test", test.group(2)))
+                        if text.startswith(CPP_DISABLED_PREFIX)
+                    )
                     for req in dict.fromkeys(pending):
-                        refs[req].append(TestRef(name, level))
+                        refs[req].append(TestRef(name, level, how))
                 pending = []
             if pending:
                 errors.append(f"{where}:{pending_at}: tag not directly followed by {expected}")
@@ -575,9 +726,14 @@ def build(layout: Layout) -> Matrix:
     cpp_tests, cpp_misplaced, tag_errors = scan_cpp_tests(layout)
     versions, version_errors = read_versions(layout)
     tests: dict[str, list[TestRef]] = defaultdict(list)
+    disabled: dict[str, str] = {}  # a disabled test does not count (OP-066)
     for source in (py_tests, cpp_tests):
         for req, refs in source.items():
-            tests[req] += refs
+            for ref in refs:
+                if ref.disabled:
+                    disabled[ref.name] = f"{ref.name}: requirement test disabled ({ref.disabled})"
+                else:
+                    tests[req].append(ref)
     return Matrix(
         requirements=requirements,
         milestones=milestones,
@@ -591,6 +747,7 @@ def build(layout: Layout) -> Matrix:
         tag_errors=sorted(tag_errors),
         versions=versions,
         version_errors=version_errors,
+        disabled_tests=sorted(disabled.values()),
     )
 
 
@@ -605,9 +762,35 @@ def verifying(m: Matrix, req_id: str) -> list[TestRef]:
     """
     tests = m.tests.get(req_id, [])
     req = m.requirements.get(req_id)
-    if req is None or req.level not in LEVEL_FOLDER:
+    if req is None:
+        return list(tests)
+    # A test in an item that the requirement does not name does not count (ADR 0006)
+    if req.items:
+        tests = [test for test in tests if test.item in req.items]
+    if req.level not in LEVEL_FOLDER:
         return list(tests)
     return [test for test in tests if test.level == req.level]
+
+
+def verifying_in(m: Matrix, req_id: str, item: str) -> list[TestRef]:
+    """The verifying tests of a requirement whose file belongs to ``item``."""
+    return [test for test in verifying(m, req_id) if test.item == item]
+
+
+def missing_items(m: Matrix, req_id: str) -> list[str]:
+    """The software items of a requirement that have no verifying test, in the order of its
+    ``Software item`` line."""
+    req = m.requirements.get(req_id)
+    return [item for item in req.items if not verifying_in(m, req_id, item)] if req else []
+
+
+def is_verified(m: Matrix, req_id: str) -> bool:
+    """Whether a requirement has a verifying test in each of its software items (in any, if
+    its line names none that can be read)."""
+    req = m.requirements.get(req_id)
+    if req is not None and req.items:
+        return not missing_items(m, req_id)
+    return bool(verifying(m, req_id))
 
 
 def requirement_errors(m: Matrix) -> list[str]:
@@ -625,6 +808,7 @@ def requirement_errors(m: Matrix) -> list[str]:
                 f"{req.id}: the '**Verification level:**' line must start with "
                 f"{REQUIREMENT_LEVEL} or {SYSTEM_LEVEL}"
             )
+        errors += [f"{req.id}: {error}" for error in req.item_errors]
     return errors
 
 
@@ -649,12 +833,52 @@ def level_mismatches(m: Matrix) -> list[str]:
 
 
 def implemented_untested(m: Matrix) -> list[str]:
-    """Requirements cited in production code without any verifying test."""
-    return [
-        f"{req}: cited in {', '.join(sorted(m.code[req]))}"
-        for req in sorted(m.code)
-        if req in m.requirements and not verifying(m, req)
-    ]
+    """Items whose production code cites a requirement without a verifying test in the item."""
+    out: list[str] = []
+    for req in sorted(m.code):
+        if req not in m.requirements:
+            continue
+        by_item: dict[str, list[str]] = defaultdict(list)
+        for citation in sorted(m.code[req]):
+            by_item[item_of(citation.strip("`").rsplit(":", 1)[0])].append(citation)
+        for item, citations in sorted(by_item.items()):
+            if not verifying_in(m, req, item):
+                out.append(
+                    f"{req}: implemented in {item} (cited in {', '.join(citations)}) "
+                    f"without a verifying test in {item}"
+                )
+    return out
+
+
+def cited_outside_items(m: Matrix) -> list[str]:
+    """Citations in the production code of an item that the requirement does not name."""
+    out: list[str] = []
+    for req_id in sorted(m.code):
+        req = m.requirements.get(req_id)
+        if req is None or not req.items:
+            continue
+        for citation in sorted(m.code[req_id]):
+            where = citation.strip("`")
+            if item_of(where.rsplit(":", 1)[0]) not in req.items:
+                out.append(
+                    f"{req_id}: cited in {where}, but its software items are {', '.join(req.items)}"
+                )
+    return out
+
+
+def tagged_outside_items(m: Matrix) -> list[str]:
+    """Tests tagged with a requirement that lie in an item that the requirement does not name."""
+    out: list[str] = []
+    for req_id in sorted(m.tests):
+        req = m.requirements.get(req_id)
+        if req is None or not req.items:
+            continue
+        out += [
+            f"{req_id} names {', '.join(req.items)}, but is tagged in {test.name}"
+            for test in sorted(m.tests[req_id], key=lambda t: t.name)
+            if test.item not in req.items
+        ]
+    return out
 
 
 def dangling_refs(m: Matrix) -> list[str]:
@@ -761,9 +985,14 @@ def release_gate_failures(m: Matrix) -> list[str]:
             continue
         if req.milestone not in m.milestones:
             out.append(f"{req.id}: no valid milestone, so the gate cannot place it")
-        elif req.milestone in gated and not verifying(m, req.id):
+        elif req.milestone in gated and not is_verified(m, req.id):
             status = m.milestones[req.milestone].status
-            out.append(f"{req.id} ({req.milestone}, {status}): no verifying test")
+            where = missing_items(m, req.id) or [""]
+            out += [
+                f"{req.id} ({req.milestone}, {status}): no verifying test"
+                + (f" in {item}" if item else "")
+                for item in where
+            ]
     for op in sorted(m.open_points, key=lambda o: o.id):
         if op.is_open and op.target in gated:
             out.append(f"{op.id}: open point still targets {op.target}; close or retarget it")
@@ -787,7 +1016,7 @@ def milestone_gate(m: Matrix, ms: Milestone) -> str:
     if ms.status == PLANNED:
         return "not applied"
     reqs = [r for r in m.requirements.values() if r.milestone == ms.id and not r.deleted]
-    verified = all(verifying(m, r.id) for r in reqs)
+    verified = all(is_verified(m, r.id) for r in reqs)
     targeted = any(op.is_open and op.target == ms.id for op in m.open_points)
     return "pass" if ms.status == RELEASED and verified and not targeted else "**fail**"
 
@@ -807,22 +1036,25 @@ def render(m: Matrix) -> str:
         "Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). "
         "Milestone status: [`milestones.md`](milestones.md).",
         "",
-        "| Requirement | Title | Milestone | Verification level | Implemented in | Verified by "
-        "| Open points |",
-        "|---|---|---|---|---|---|---|",
+        "| Requirement | Title | Software items | Milestone | Verification level "
+        "| Implemented in | Verified by | Open points |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for req_id in sorted(m.requirements):
         req = m.requirements[req_id]
         code = "<br>".join(sorted(m.code.get(req_id, ()))) or "—"
-        tests = "<br>".join(sorted(f"`{t.name}`" for t in verifying(m, req_id)))
-        tests = tests or ("deleted" if req.deleted else "**none**")
+        cells = sorted(f"`{t.name}`" for t in verifying(m, req_id))
+        if len(req.items) > 1 and not req.deleted:
+            cells += [f"**none in {item}**" for item in missing_items(m, req_id)]
+        tests = "<br>".join(cells) or ("deleted" if req.deleted else "**none**")
         ops = ", ".join(sorted(open_by_req.get(req_id, ()))) or "—"
+        items = ", ".join(req.items) or "—"
         lines.append(
-            f"| {req_id} | {req.title} | {req.milestone or '—'} | {req.level or '—'} "
+            f"| {req_id} | {req.title} | {items} | {req.milestone or '—'} | {req.level or '—'} "
             f"| {code} | {tests} | {ops} |"
         )
     if not m.requirements:
-        lines.append("| — | _No requirements defined yet in `srs.md`_ | — | — | — | — | — |")
+        lines.append("| — | _No requirements defined yet in `srs.md`_ | — | — | — | — | — | — |")
 
     lines += [
         "",
@@ -834,7 +1066,7 @@ def render(m: Matrix) -> str:
     for ms_id in sorted(m.milestones, key=_milestone_key):
         ms = m.milestones[ms_id]
         reqs = [r for r in m.requirements.values() if r.milestone == ms_id and not r.deleted]
-        tested = sum(1 for r in reqs if verifying(m, r.id))
+        tested = sum(1 for r in reqs if is_verified(m, r.id))
         gate = milestone_gate(m, ms)
         lines.append(f"| {ms_id} | {ms.title} | {ms.status} | {len(reqs)} | {tested} | {gate} |")
 
@@ -850,10 +1082,15 @@ def render(m: Matrix) -> str:
     if gate_items:
         lines += ["", *(f"- {item}" for item in gate_items)]
 
-    untested = sorted(
-        r for r, req in m.requirements.items() if not req.deleted and not verifying(m, r)
-    )
-    implemented = [line.split(":", 1)[0] for line in implemented_untested(m)]
+    untested: list[str] = []
+    for r in sorted(m.requirements):
+        if m.requirements[r].deleted:
+            continue
+        if not verifying(m, r):
+            untested.append(r)
+        elif missing := missing_items(m, r):
+            untested.append(f"{r} ({', '.join(missing)})")
+    implemented = list(dict.fromkeys(line.split(":", 1)[0] for line in implemented_untested(m)))
     open_count = sum(op.is_open for op in m.open_points)
     lines += ["", "## Gaps", ""]
     lines.append(f"- Requirements without tests: {', '.join(untested) or 'none'}")
@@ -878,8 +1115,14 @@ def check_failures(m: Matrix, layout: Layout, content: str) -> list[tuple[str, l
         ),
         ("Requirement marks outside test files", m.marks_outside_test_files),
         ("Malformed or dangling C++ requirement tags", m.tag_errors),
+        ("Disabled requirement tests", m.disabled_tests),
         ("Tests in the wrong folder for the requirement's verification level", level_mismatches(m)),
+        (
+            "Tests in the folder of an item that the requirement does not name",
+            tagged_outside_items(m),
+        ),
         ("Implemented requirements without a verifying test", implemented_untested(m)),
+        ("Requirements cited by an item that they do not name", cited_outside_items(m)),
         ("Open points citing undefined IDs", dangling_refs(m)),
         ("Duplicate open point IDs", duplicate_open_points(m)),
         ("Open points with a Target that is not a milestone", target_errors(m)),
@@ -898,10 +1141,13 @@ def main(argv: list[str] | None = None) -> int:
             "is outside tests/requirements/ and tests/system/ or in the folder of the other "
             "verification level, a requirement mark is in a file under dsp/tests that is not a "
             "test file, a C++ tag is malformed, a requirement cited in production code has no "
-            "verifying test, open points cite undefined IDs, repeat an ID or have a Target that "
-            "is not 'Mn' or 'After Mn' with Mn in the milestone register, or the package "
-            "version differs between dsp/pyproject.toml and sinus_dsp/__init__.py or does not "
-            "follow the milestone register"
+            "verifying test in the item that cites it, an item cites a requirement that does not "
+            "name it, a test is tagged in an item that the requirement does not name, a "
+            "requirement test is disabled (skip, xfail, DISABLED_), a requirement has no valid "
+            "'**Software item:**' line, open points cite undefined IDs, repeat an ID or have a "
+            "Target that is not 'Mn' or 'After Mn' with Mn in the milestone register, or the "
+            "package version differs between dsp/pyproject.toml, sinus_dsp/__init__.py and the "
+            "VERSION files of the C++ items, or does not follow the milestone register"
         ),
     )
     parser.add_argument(
@@ -909,9 +1155,10 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "do not write; fail unless every requirement of a milestone that is In progress or "
-            "Released in docs/regulatory/milestones.md has a verifying test in the folder of "
-            "its verification level, no open point still targets such a milestone, and the "
-            "package version is not a development version (run on pull requests into main)"
+            "Released in docs/regulatory/milestones.md has a verifying test, in the folder of "
+            "its verification level, in each of its software items, no open point still "
+            "targets such a milestone, and the package version is not a development version "
+            "(run on pull requests into main)"
         ),
     )
     args = parser.parse_args(argv)
