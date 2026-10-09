@@ -124,6 +124,18 @@ from sinus_dsp.evaluation.run import (
     run_validation,
     write_validation_report,
 )
+from sinus_dsp.evaluation.signal_quality import (
+    QUALITY_CRITERIA,
+    QualityResults,
+    RecordQuality,
+    WindowSummary,
+)
+from sinus_dsp.evaluation.start_of_stream import (
+    SEGMENT_S,
+    SEGMENT_STARTS_S,
+    StartOfStreamRecord,
+    StartOfStreamResults,
+)
 from sinus_dsp.version import SoftwareIdentity
 
 pytestmark = pytest.mark.usefixtures("forbid_network")
@@ -213,14 +225,17 @@ def _generate(
         nstdb=nstdb,
         detector=detector,
         fetch=None,
+        **detector.stages(),
         **options,
     )
+    second = detector_class()
     results = run_validation(
         fixture.data_root,
         mitdb=mitdb,
         nstdb=nstdb,
-        detector=detector_class(),
+        detector=second,
         fetch=None,
+        **second.stages(),
         **options,
     )
     return Run(
@@ -477,13 +492,15 @@ def test_report_states_the_licence_of_version_1_0_0_of_the_mit_bih_arrhythmia_da
     _, nstdb = _databases(evaluation_fixture)
     output = tmp_path / "qrs-ec57-report.md"
 
+    detector = make_spike_detector()
     write_validation_report(
         output,
         evaluation_fixture.data_root,
         mitdb=mitdb,
         nstdb=nstdb,
-        detector=make_spike_detector(),
+        detector=detector,
         fetch=None,
+        **detector.stages(),
     )
 
     report = parse_report(output.read_bytes().decode("utf-8"))
@@ -1150,16 +1167,50 @@ RENDER_SOFTWARE = SoftwareIdentity(
 )
 
 
+def _start_of_stream(evaluations: Sequence[RecordEvaluation]) -> StartOfStreamResults:
+    """Start-of-stream results of the same records (sections 1 to 7 do not depend on them)."""
+    counts = [RecordCounts(e.record, 10, 0, 0) for e in evaluations]
+    return StartOfStreamResults(
+        segment_s=SEGMENT_S,
+        starts_s=SEGMENT_STARTS_S,
+        records=tuple(
+            StartOfStreamRecord(record=c.record, signal_name="MLII", n_segments=30, counts=c)
+            for c in counts
+        ),
+        statistics=aggregate_statistics(counts),
+    )
+
+
+def _quality(evaluations: Sequence[RecordEvaluation]) -> QualityResults:
+    """Signal quality results of the same records, with made-up windows."""
+    summary = WindowSummary(n_windows=10, n_usable=9, median_index=0.8)
+    return QualityResults(
+        records=tuple(
+            RecordQuality(
+                record=e.record, from_start=summary, fn_in_not_usable=0, fp_in_not_usable=0
+            )
+            for e in evaluations
+        ),
+        by_snr=tuple((snr, summary) for snr in SNR_DB),
+        clean=summary,
+        noise_records=tuple((name, summary) for name in ("bw", "em", "ma")),
+        criteria=tuple((name, True) for name in QUALITY_CRITERIA),
+    )
+
+
 def _results(evaluations: Sequence[RecordEvaluation]) -> ValidationResults:
     """Validation results of the given MIT-BIH record evaluations, default settings, and a
     software identity made up by the test."""
+    ordered = sorted(evaluations, key=lambda e: e.record)
     return ValidationResults(
         software=RENDER_SOFTWARE,
         settings=EvaluationSettings(),
         mitdb=VerificationResult(database=RENDER_MITDB, records=None, files=("RECORDS",)),
-        records=tuple(sorted(evaluations, key=lambda e: e.record)),
+        records=tuple(ordered),
         noise_stress=_noise_stress(),
         subset=False,
+        quality=_quality(ordered),
+        start_of_stream=_start_of_stream(ordered),
     )
 
 
