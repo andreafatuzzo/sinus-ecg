@@ -246,7 +246,8 @@ def test_all_48_records_are_evaluated_in_full(run: Run) -> None:
     Inputs: the full local MIT-BIH Arrhythmia Database, version 1.0.0.
     Expected: the whole database was verified (every listed file, not a subset of records);
     the results hold the 48 records of the database, each once, in record-name order; each was
-    loaded once from the database folder, and the detector received its whole signal (as many
+    loaded once from the database folder by the evaluation step (the first 48 loads; the later
+    steps load records again), and the detector received its whole signal (as many
     samples as its header states) at its sampling frequency of 360 Hz.
     """
     verification = run.results.mitdb
@@ -257,16 +258,19 @@ def test_all_48_records_are_evaluated_in_full(run: Run) -> None:
 
     assert tuple(e.record for e in run.results.records) == MITDB_RECORDS
 
-    mitdb_loads = [call for call in run.loader_calls if call.folder == MITDB.slug]
+    # The run evaluates the 48 records first (architecture §8.10 step 2), loading each record and
+    # running the detector on it; the later steps (noise stress, start of stream, signal
+    # quality; §13.7.4) load records again. Only the calls of the evaluation step are counted.
+    n_records = len(MITDB_RECORDS)
+    mitdb_loads = list(run.loader_calls[:n_records])
+    assert {call.folder for call in mitdb_loads} == {MITDB.slug}
     assert sorted(call.record for call in mitdb_loads) == list(MITDB_RECORDS)
 
-    mitdb_detections = [
-        call
-        for call in run.detector_calls
-        if call.loaded is not None and call.loaded.folder == MITDB.slug
-    ]
+    mitdb_detections = list(run.detector_calls[:n_records])
+    assert all(
+        call.loaded is not None and call.loaded.folder == MITDB.slug for call in mitdb_detections
+    )
     detected = {call.loaded.record: call for call in mitdb_detections if call.loaded is not None}
-    assert len(mitdb_detections) == len(MITDB_RECORDS)
     assert sorted(detected) == list(MITDB_RECORDS)
     evaluations = run.mitdb_records()
     for record in MITDB_RECORDS:
@@ -382,9 +386,12 @@ def test_report_states_the_gross_values_and_verdicts(run: Run) -> None:
     assert meets_target(tp, fp) is ppv_met
 
     report = render_full_report(run.results)
+    # SRS-007 is stated in the section "Performance targets"; other sections (start of stream)
+    # have rows of the same names.
+    section = report.split("\n## Performance targets\n", 1)[1].split("\n## ", 1)[0]
     rows = {
         cells[0]: cells[1:]
-        for line in report.splitlines()
+        for line in section.splitlines()
         if line.startswith("| Gross ")
         and len(cells := [cell.strip() for cell in line.strip("|").split("|")]) == 4
     }

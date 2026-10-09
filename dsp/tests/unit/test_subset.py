@@ -201,7 +201,7 @@ def test_subset_module_can_be_imported_first() -> None:
 
 
 def test_imports_inside_functions_are_only_those_of_the_design() -> None:
-    """Architecture §8.13: ``run`` imports ``noise_stress`` and ``report`` in two functions."""
+    """Architecture §8.13 and §13.7.4: the imports ``run`` makes inside its two functions."""
     found: list[tuple[str, str, str]] = []
     package = Path(sinus_dsp.__file__).resolve().parent
     for path in sorted(package.rglob("*.py")):
@@ -217,6 +217,8 @@ def test_imports_inside_functions_are_only_those_of_the_design() -> None:
     assert sorted(found) == [
         ("quality.py", "quality_windows", "sinus_dsp.pipeline"),
         ("run.py", "run_validation", "sinus_dsp.evaluation.noise_stress"),
+        ("run.py", "run_validation", "sinus_dsp.evaluation.signal_quality"),
+        ("run.py", "run_validation", "sinus_dsp.evaluation.start_of_stream"),
         ("run.py", "write_validation_report", "sinus_dsp.evaluation.report"),
     ]
 

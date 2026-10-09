@@ -397,6 +397,8 @@ class StartOfStreamRecord:
     signal_name: str
     n_segments: int
     counts: RecordCounts            # summed over the segments of the record
+    continuation_samples: int = 0   # from v0.4.3: continuation_samples(fs_hz) of the record
+    short_continuations: int = 0    # from v0.4.3: segments whose continuation the record end cuts
 
 @dataclass(frozen=True)
 class StartOfStreamResults:
@@ -405,6 +407,7 @@ class StartOfStreamResults:
     records: tuple[StartOfStreamRecord, ...]   # sorted by record name
     statistics: AggregateStatistics            # aggregate_statistics of the per-record counts (§8.9)
 
+def continuation_samples(fs_hz: float) -> int: ...   # from v0.4.3: G + N + D + 1 − R (§13.4)
 def evaluate_segment(record: Record, start_sample: int, settings: EvaluationSettings,
                      detector: MarkedDetector = detect_marked) -> MatchResult: ...
 def evaluate_start_of_stream(database_dir: Path, records: Sequence[str], settings: EvaluationSettings, *,
@@ -415,15 +418,33 @@ def evaluate_start_of_stream(database_dir: Path, records: Sequence[str], setting
 
 The start sample of a segment is `round_samples(t, record.fs_hz)` for each `t` of `starts_s`. `starts_s` must be non-empty, of distinct non-negative integers in increasing order (`InvalidInputError` otherwise); it is a parameter so that fixture records can be short, and `run_validation` always passes `SEGMENT_STARTS_S`, the starts of SRS-023.
 
-**`evaluate_segment(record, s0, settings, detector)`**, with `n_seg = round_samples(60, record.fs_hz)` (21600 at 360 Hz) and `L = detector_samples(record.fs_hz).learning`:
-1. If `s0 + n_seg > record.n_samples`, `InvalidInputError` naming the record and the start (all 48 records hold 650000 samples, so the last segment, 29:00 to 30:00, fits).
-2. The segment `record.signal_mv[s0 : s0 + n_seg]` is processed on its own, from its first sample: `detector(segment, record.fs_hz, settings.mains_hz)`. Only the detections marked reliable are kept.
-3. Reference beats: those of the record with `s0 ≤ sample < s0 + n_seg`, minus `s0`. Episodes: `vf_episodes(record.other_annotations, record.n_samples)` (§8.8.1) on the whole record, each one that overlaps the segment clipped to it and shifted by `−s0`, so that an episode that begins before the segment and ends inside it is still excluded.
+**Continuation after the segment (v0.4.3, owner decision of 2026-10-09).** Detection reports a beat after the sample at its index (§13.4): by up to `N + P + D + 2` samples (0.286 s at 360 Hz) on the normal path, and by more after a re-learning or by search-back. Up to v0.4.2 a segment was cut at its last sample, so the beats of its last fraction of a second were never reported and counted as false negatives: in the first run on the database, 319 of the 617 false negatives were reference beats in the last 0.3 s of a segment. This is an artefact of the evaluation, not a behaviour of a stream, which goes on after any minute. The method is therefore corrected: detection keeps running on the record past the end of the segment, and only what lies in the segment is scored. The detection algorithm does not change.
+- **Length.** `continuation_samples(fs_hz)` returns the documented maximum delay of §13.4, `G + N + D + 1 − R` samples, from `detector_samples(fs_hz)`: 2876 samples (7.989 s) at 360 Hz, 1998 at 250 Hz. With it, every detection whose index lies in the segment has been reported before the input ends, whatever its path (normal, re-learning or search-back), so the scored detections are exactly those that a continuing stream reports for the segment. The normal-path bound (`N + P + D + 2`, 103 samples) is not used: it would leave out the late detections of a re-learning or of search-back, and the scored set would then depend on a second, arbitrary length. The cost is at most 8 s of extra detection per 60 s segment (about 13 %).
+- **Record end.** The continuation is `min(continuation_samples(fs_hz), record.n_samples − (s0 + n_seg))` samples: it stops at the last sample of the record when that comes first. The segment itself must still fit (step 1). For the records of the database (650000 samples, 30:05.6), the last segment, 29:00 to 30:00, is followed by 2000 samples (5.556 s) instead of 2876. A detection with its index in that segment is then left out only if it is reported more than 2000 samples after its index, which only search-back can do (§13.4). Such a segment is counted in `short_continuations` and the report states the count (§13.7.5), 48 for the database (one per record).
+- **Marks.** The marks are those that the detector gives on the longer input, decided when each detection is reported (§13.3). The detector is causal, so its output up to the last sample of the segment is unchanged; a detection reported in the continuation is marked by the latest initialisation at its report. A re-learning in the continuation whose learning stretch reaches back into the segment marks the detections of that stretch start-up, and they are not scored (SRS-023 scores the reliable detections only).
+
+**`evaluate_segment(record, s0, settings, detector)`**, with `n_seg = round_samples(60, record.fs_hz)` (21600 at 360 Hz), `L = detector_samples(record.fs_hz).learning` and `c = min(continuation_samples(fs), record.n_samples − (s0 + n_seg))`:
+1. If `s0 < 0` or `s0 + n_seg > record.n_samples`, `InvalidInputError` naming the record and the start (all 48 records hold 650000 samples, so the last segment, 29:00 to 30:00, fits).
+2. The input `record.signal_mv[s0 : s0 + n_seg + c]` (float64) is processed on its own, from its first sample: `detector(input, record.fs_hz, settings.mains_hz)`. The detections kept are those marked reliable **with `index < n_seg`**: a detection whose index lies in the continuation is not scored, and is not a false positive.
+3. Reference beats: those of the record with `s0 ≤ sample < s0 + n_seg`, minus `s0` (the beats of the continuation are not scored). Episodes: `vf_episodes(record.other_annotations, record.n_samples)` (§8.8.1) on the whole record, each one that overlaps the segment clipped to it and shifted by `−s0`, so that an episode that begins before the segment and ends inside it is still excluded.
 4. `match_beats(reference, reliable, window_samples=match_window_samples(fs), start_sample=L, vf=clipped episodes)` (§8.8): the rules of SRS-008 with the start-up period `[0, L − 1]` in place of the first 5 minutes.
 
 A reference beat inside a re-learning stretch whose only nearby detection is marked start-up is a false negative: only reliable detections are scored (SRS-023).
 
-**`evaluate_start_of_stream`** checks the names as `evaluate_records` does (§8.10), loads each record once with `loader(path, settings.channel)`, evaluates its 30 segments in order, sums their counts per record, and returns the records sorted by name with `aggregate_statistics` of the per-record counts: the gross values are over all the segments, the averages over the records (SRS-011). The targets use `meets_target` with FN for Se and FP for +P (§8.10). Cost: 1440 segments of 60 s, 24 h of ECG, about the time of the Milestone 1 evaluation.
+**Edge of the segment.** Both lists stop at the last sample of the segment, and the pairing of §8.8 has no look beyond its last element, as at the end of a record in Milestone 1. A reference beat in the last 150 ms whose detection has its index just after the segment is therefore a false negative, and a detection in the last 150 ms whose reference beat lies just after the segment a false positive. This follows from scoring only what lies in the segment (the owner's rule); it is small and is not corrected (on the database: 16 FN and 10 FP in the last 150 ms of a segment, over 1440 segments).
+
+**Expected effect** (prototype of the v0.4.3 method on the reference, on the whole database, before implementation): FN from 617 to 314, FP from 204 to 214, TP from 104864 to 105167 (the reference beats scored, 105481, do not change); gross Se from 99.415 % to 99.702 %, gross +P from 99.806 % to 99.797 %. A continuation of 103 samples (normal path only) gives FN 316; any length from 787 samples (the re-learning bound) up gives the same counts as the full continuation. The figures of record are those of the regenerated report.
+
+**`evaluate_start_of_stream`** checks the names with `checked_record_names` of `evaluation.run` (public from v0.4.3, the check that `evaluate_records` uses, §8.10), loads each record once with `loader(path, settings.channel)`, evaluates its 30 segments in order, sums their counts per record, counts the segments with `record.n_samples − (s0 + n_seg) < continuation_samples(fs)` in `short_continuations`, and returns the records sorted by name with `aggregate_statistics` of the per-record counts: the gross values are over all the segments, the averages over the records (SRS-011). The targets use `meets_target` with FN for Se and FP for +P (§8.10). Cost: 1440 segments of 60 s plus their continuations, about 27 h of ECG, a little more than the time of the Milestone 1 evaluation.
+
+```python
+# evaluation/run.py (public from v0.4.3; was the private _checked_names)
+def checked_record_names(records: Sequence[str]) -> tuple[str, ...]: ...   # InvalidInputError as in §8.10
+```
+
+**Verification notes (v0.4.3).**
+- Developer's unit tests: `continuation_samples` at 125, 250, 360 and 1000 Hz equals the documented maximum of §13.4 (1000, 1998, 2876, 7987); with a fake `MarkedDetector` that records the length of its input, the input of a segment is `n_seg + continuation_samples(fs)` samples, and `n_seg + c` with the shorter `c` for a segment near the record end (and `n_seg` exactly when the segment ends at the last sample); a reliable detection with index `n_seg − 1` is scored and one with index `n_seg` is not (neither TP nor FP); a reference beat whose detection is reported only in the continuation is a TP; a start-up detection in the segment stays unscored; `short_continuations` counts the cut segments.
+- QA (SRS-030, fixtures of §13.7.5): fakes of `marked_detector` now receive the segment plus its continuation, so a fake must return indices relative to the start of its input and below its length.
 
 #### 13.7.3 Signal quality on the reference databases (SRS-029, SRS-030)
 
@@ -468,7 +489,25 @@ def summarize_windows(windows: QualityWindows, selected: BoolArray) -> WindowSum
 def windows_within(windows: QualityWindows, first_sample: int, last_sample: int) -> BoolArray: ...
 def count_in_not_usable(samples: Sequence[int], windows: QualityWindows) -> int: ...
 def quality_criteria(by_snr, clean, noise_records) -> tuple[tuple[str, bool], ...]: ...
+
+# Helpers recorded in v0.4.3 (as implemented; no change of behaviour):
+def summarize_pooled(parts: Sequence[tuple[QualityWindows, BoolArray]]) -> WindowSummary: ...
+def windows_from(windows: QualityWindows, first_sample: int) -> BoolArray: ...
+def record_quality(record: str, windows: QualityWindows, fs_hz: float,
+                   false_negatives: Sequence[int], false_positives: Sequence[int]) -> RecordQuality: ...
+def build_quality_results(records: Sequence[RecordQuality], by_snr: Sequence[tuple[int, WindowSummary]],
+                          clean: WindowSummary,
+                          noise_records: Sequence[tuple[str, WindowSummary]]) -> QualityResults: ...
+def evaluate_quality(mitdb_dir: Path, nstdb_dir: Path, evaluations: Sequence[RecordEvaluation],
+                     settings: EvaluationSettings, *, quality: QualityFunction,
+                     loader: RecordLoader, noise_loader: RecordLoader) -> QualityResults: ...
 ```
+
+- `summarize_pooled` summarises the selected windows of several inputs as one set (the two records of an SNR, records 118 and 119): counts summed, median of all their indices; `summarize_windows(w, s)` is `summarize_pooled([(w, s)])`. A selection whose shape differs from the windows raises `InvalidInputError`.
+- `windows_from` selects the windows with `first ≥ first_sample` (the selection of the records of the MIT-BIH Arrhythmia Database and of records 118 and 119).
+- `record_quality` gives the `RecordQuality` of one record: its windows from `learning_period_samples(fs_hz)` and the two counts of `count_in_not_usable`.
+- `build_quality_results` sorts the records by name and adds `quality_criteria`.
+- `evaluate_quality` is step 5 of §13.7.4: it loads each record again with `loader` (or `noise_loader` for `bw`, `em`, `ma`), runs `quality` and assembles the results with the helpers above.
 
 **Selections** (SRS-029, SRS-030):
 - **Records of the MIT-BIH Arrhythmia Database**: the windows whose first sample is at or after `learning_period_samples(fs)` (5:00, §8.8.1). `fn_in_not_usable` and `fp_in_not_usable` count the samples of `false_negatives` and `false_positives` of the record's evaluation (§8.10) that lie in at least one window marked not usable, whatever its start (`first ≤ sample ≤ last`); each is counted once.
@@ -485,6 +524,8 @@ def quality_criteria(by_snr, clean, noise_records) -> tuple[tuple[str, bool], ..
 - `usable_24`, `usable_18`: `100 · n_usable ≥ 90 · n_windows` at each SNR **separately**;
 - `usable_6`, `usable_0`, `usable_-6`: `100 · n_usable ≤ 20 · n_windows` at each SNR **separately**;
 - `noise_bw`, `noise_em`, `noise_ma`: `100 · n_usable ≤ 10 · n_windows` for each noise record **separately**.
+
+Both median criteria use all six SNRs: if any SNR has no summary or no window (no median), **both** `median_non_increasing` and `median_lower_at_lowest_snr` are `False`, even when the medians at 24 dB and −6 dB exist (v0.4.3, as implemented).
 
 Separate criteria imply the criteria on the pooled windows, so they are the stricter reading of SRS-029; the pooled reading of "records 118 and 119" follows its wording ("the windows of records 118 and 119").
 
@@ -517,11 +558,11 @@ The new fields have defaults and come last, so every existing construction stays
 
 **Run** (§8.10, with steps 4 and 5 new; the software identity becomes step 6):
 1. to 3. as in §8.10; `evaluate_record` fills `false_negatives` and `false_positives`.
-4. **Start of stream**: `evaluate_start_of_stream(data_root / mitdb.slug, <record names of step 2>, settings, detector=marked_detector, loader=loader)`.
+4. **Start of stream**: `evaluate_start_of_stream(data_root / mitdb.slug, <record names of step 2>, settings, detector=marked_detector, loader=loader)`. From v0.4.3 each segment is followed by its continuation (§13.7.2); the call and the signature of `run_validation` do not change.
 5. **Signal quality**: for each record of step 2, `loader` then `quality(signal, fs, settings.mains_hz)`, giving its `RecordQuality` with the false negatives and false positives of step 2; for each noise stress record, `loader` then `quality`, selected by `noisy_stretches`, two records per SNR; records 118 and 119 from the windows of step 5 for the MIT-BIH Arrhythmia Database; for each name of `NOISE_RECORDS`, `noise_loader(data_root / nstdb.slug / name, settings.channel)` then `quality`. Then `quality_criteria`. Records are loaded again rather than kept, so that memory stays that of one record.
 6. Software identity (§8.14).
 
-The injected functions keep QA's tests free of real detection: a fake `marked_detector` returns known detections and marks, a fake `quality` known windows. `evaluate_noise_stress` (§8.10) is unchanged.
+The injected functions keep QA's tests free of real detection: a fake `marked_detector` returns known detections and marks, a fake `quality` known windows. From v0.4.3 a fake `marked_detector` receives `n_seg + c` samples per segment (§13.7.2), so its detections are positions in that input. `evaluate_noise_stress` (§8.10) is unchanged.
 
 #### 13.7.5 Report sections 8 and 9 (full report only)
 
@@ -544,26 +585,30 @@ The injected functions keep QA's tests free of real detection: a fake `marked_de
      | Criterion | Value | Required |
      |---|---|---|
      | `Median index from 24 dB to -6 dB` | the six medians, separated by `, ` | `non-increasing` |
-     | `Median index at -6 dB and at 24 dB` | the two medians, separated by `, ` | `lower at -6 dB` |
+     | `Median index at -6 dB and at 24 dB` | the two medians, the one at -6 dB first, separated by `, ` | `lower at -6 dB` |
      | `Usable windows, records 118 and 119 from 5:00 (%)` | the share | `≥ 95.00` |
      | `Usable windows at 24 dB (%)`, `… at 18 dB (%)` | the share | `≥ 90.00` |
      | `Usable windows at 6 dB (%)`, `… at 0 dB (%)`, `… at -6 dB (%)` | the share | `≤ 20.00` |
      | `Usable windows, noise record bw (%)`, `… em (%)`, `… ma (%)` | the share | `≤ 10.00` |
 
-     (`…` stands for the beginning of the label above it; each label is written out in full.) `Result` is `pass` or `fail`.
+     (`…` stands for the beginning of the label above it; each label is written out in full.) `Result` is `pass` or `fail`. In the `Value` cell, a median that is missing (an SNR without windows) is written `not defined` in its place in the list (e.g. `0.9123, not defined, …`), and a share without windows is `not defined` (v0.4.3, as implemented).
 9. **Start of stream.** The heading `## Start of stream`, then:
    - a table with the columns `Item` and `Value` and the rows:
      - `Segments`: `<segment_s> s each, processed on their own, starting at <starts>`, where `<starts>` are the values of `start_of_stream.starts_s` written `m:ss` (minutes without leading zero, two-digit seconds) and joined by `, `; for SRS-023: `60 s each, processed on their own, starting at 0:00, 1:00, 2:00, …, 29:00` (all 30 written out);
      - `Segments per record`: the number of starts;
      - `Start-up period`: `first 2 s of each segment, not scored` (2 from `LEARNING_S` of §8.7);
-     - `Detections scored`: `marked reliable`;
+     - `Continuation after each segment` (v0.4.3): `<samples> samples, the longest delay of a detection, or to the end of the record when it comes first`, where `<samples>` are the distinct values of `continuation_samples` of the records, in increasing order, joined by `, ` (`2876` for the MIT-BIH Arrhythmia Database);
+     - `Segments with a shorter continuation` (v0.4.3): the sum of `short_continuations` over the records (`48` for the MIT-BIH Arrhythmia Database);
+     - `Detections scored`: `marked reliable, with the index in the segment` (v0.4.3; was `marked reliable`);
+     - `Reference beats scored` (v0.4.3): `in the segment`;
      - `Matching`: `EC57 beat by beat, pairing rules of the WFDB comparator bxb; match window 150 ms; start-up period not scored; ventricular flutter and fibrillation episodes not scored`;
+   - (v0.4.3) the paragraph, a constant text: `Method correction. In the first run of this evaluation, each segment was processed only up to its last sample. Detection reports a beat a fraction of a second after it, so the beats at the end of each segment were never reported and were counted as false negatives; the analysis of the false negatives of that run showed it. From this version, detection continues on the record after each segment for the longest delay of a detection, and only the reference beats and detections whose index lies in the segment are scored. The detection algorithm is unchanged.`;
    - the heading `### Results per record`, then a table with the columns `Record`, `Signal`, `Segments`, `TP`, `FN`, `FP`, `Se (%)` and `+P (%)`, all but the first two right-aligned, with the rows `Gross` and `Average` as in section 4 (empty cells as there; `Segments` summed in `Gross`, empty in `Average`), then the paragraph of section 4 on the averages, with the values of `start_of_stream.statistics`;
    - the heading `### Targets`, then the table of section 3 (`Statistic`, `Value (%)`, `Target (%)`, `Result`) for the gross values of `start_of_stream.statistics`.
 
 **Verification notes.**
 - QA (SRS-030): fixture databases as in §8.10 (MIT-BIH fixture with records 118 and 119; noise stress fixture with the 12 names and the three noise records, the noise records without annotation files), a fake `marked_detector` and a fake `quality` with known output. Noisy stretches start at 5:00, so noise stress fixture records need at least about 7 min (a low fixture rate such as 125 Hz keeps them small). `run_validation` always evaluates the 30 starts of SRS-023, so fixture records for the full run hold at least 30 min; the content of the start-of-stream section can also be checked with `evaluate_start_of_stream(..., starts_s=…)` on short records and `render_full_report` on hand-built results. Each listed item is present with the expected values; a criterion or target that is not met reads `fail`; the sections are absent from the subset report. The sentences, labels and columns above are the documented format and may be compared literally.
-- Test engineer (SRS-023, SRS-029, `needs_data` and `needs_nstdb`): `run_validation(data_root, fetch=None)` on the full local databases; the targets of section 9 and the criteria of section 8 from the results; the full report regenerated with `validate.py` for the milestone verification report. The `needs_nstdb` marker (`dsp/tests/conftest.py`, §8.11) also requires the `.hea` and `.dat` files of `bw`, `em` and `ma`.
+- Test engineer (SRS-023, SRS-029, `needs_data` and `needs_nstdb`): `run_validation(data_root, fetch=None)` on the full local databases; the targets of section 9 and the criteria of section 8 from the results; the full report regenerated with `validate.py` for the milestone verification report. From v0.4.3, an independent recount of SRS-023 feeds each segment plus `min(G + N + D + 1 − R, samples left in the record)` samples, keeps the reliable detections with index in the segment and the reference beats in the segment, and must give the counts of the results (expected about FN 314, FP 214, §13.7.2); the rows `Continuation after each segment` (2876) and `Segments with a shorter continuation` (48) and the method-correction paragraph are in section 9. The `needs_nstdb` marker (`dsp/tests/conftest.py`, §8.11) also requires the `.hea` and `.dat` files of `bw`, `em` and `ma`.
 - Developer's unit tests (the list continues below): `noisy_stretches` at 360 Hz on 650000 samples (the seven stretches above) and on a short record; `load_signal` on a fixture without annotation file; `evaluate_segment` with an episode that begins before the segment, with a start-up detection matching a reference beat (a false negative) and with a segment that does not fit; `windows_within`; `count_in_not_usable` with a sample on the first and on the last sample of a window; each criterion at its boundary (95, 90, 20, 10 percent exactly) and without windows.
 
 ### 13.8 Golden-vector format, version 2 (SRS-015, SRS-033)
@@ -608,6 +653,8 @@ first_sample,last_sample,reported_at,quality_index,usable
 
 A rule that relates two sections (a `beat_index` and the rows of `[beats]`) names the line of `[heart_rates]` where it fails.
 
+**Line named when a reliable detection has no row (v0.4.3, as implemented; the C++ reader follows it).** The rule "every reliable detection of `[beats]` is named" is checked once the `n_heart_rates` rows given by the header have been read, **before** the line after them is read. It is named at the last line read: the last counted row of `[heart_rates]`, or its column line when `n_heart_rates` is 0. It therefore comes before the row-count rule of §7.3. Example: with `n_heart_rates` one lower than the rows present and the last row the only one that names the last reliable detection, the reader names the last counted row (the row before it), with the reason that this detection has no row; it does not name the extra row, where the count rule alone would fail. When every reliable detection is named within the counted rows, an extra row is named by the count rule as in §7.3.
+
 **Interface changes** (`sinus_dsp.golden`):
 
 ```python
@@ -629,6 +676,8 @@ class GoldenVector:
 `golden_vector` takes the new fields from `run_pipeline` (§13.1: `PipelineResult.detections`, `.heart_rate`, `.quality`). `render_golden_vector` and `parse_golden_vector` write and read them with the rules above, and `render_golden_vector` rejects with `InvalidInputError` any vector that would break them, as in §8.12. Every text that it returns is accepted by `parse_golden_vector`, which gives back an equal vector.
 
 **Notice (from v0.4, OP-067).** When it writes the record segments, `export_golden_vectors` also writes `NOTICE.md` into the output folder, with the constant text `NOTICE_TEXT` of `golden` given in §14.12, and `ExportSummary.notice` holds its path (`None` when no record segment is written). Every CI artifact that holds the vectors carries it (§14.12).
+
+**Notice after a failed export (v0.4.3, design confirmed).** `NOTICE.md` is written once the record list is verified and **before** the first record segment, so that a folder never holds a record segment without its notice, even if the export stops between two files. If the export then fails (e.g. a record shorter than its segment, `InvalidInputError`), it raises and leaves the folder as it is: the files already written and `NOTICE.md` stay, and nothing is deleted. The export never deletes files in a folder that it does not own. A failed export is reported by its exception, not by the folder content, and a folder left by a failed export is not a valid set (§14.12 checks the set by its file names). A notice without record segments is harmless: its text names the record files and states that the other files are synthetic.
 
 **Size.** The new sections add a few kilobytes per file; the eight event inputs of §13.9 add about 6 MB. The set is about 22 MB (§7.5), still not stored in the repository.
 
@@ -667,7 +716,7 @@ For an event input, `SyntheticEcg.variant` holds the event name, `heart_rate_bpm
 
 | Event | Detection | Heart rate | Signal quality |
 |---|---|---|---|
-| `artefact` | The ×20 beat is detected and raises the signal levels so far that the next beats are missed; re-learning at 18.2 s; the beats of its learning stretch are detected and marked start-up (three), the later ones reliable. At 250 Hz, also one detection by search-back, reported 5.8 s after its index | `not_enough_beats`, `valid`, `no_recent_beat` from 13.1 s, `valid` again from 22.3 s | Windows starting at 0 s and at 11 to 13 s not usable |
+| `artefact` | The ×20 beat is detected and raises the signal levels so far that the next beats are missed; re-learning at 18.2 s at 360 Hz and at 18.49 s (sample 4623) at 250 Hz (corrected in v0.4.3); the beats of its learning stretch are detected and marked start-up (three), the later ones reliable. At 250 Hz, also one detection by search-back, reported 5.8 s after its index | `not_enough_beats`, `valid`, `no_recent_beat` from 13.1 s, `valid` again from 22.3 s | Windows starting at 0 s and at 11 to 13 s not usable |
 | `small-beat` | The ×0.4 beat is below the first thresholds and is found by search-back, reported 0.62 s after its index | `not_enough_beats`, then `valid` throughout | All usable |
 | `held` | No detection in the held stretch | `no_recent_beat` from 17.9 s, `valid` again from 24.7 s | Windows starting at 10 to 16 s (at least 5 s held) not usable |
 | `rate-change` | Every beat detected | `out_of_range` from 19.1 s (25 bpm), `valid` again from 33.5 s | All usable |
@@ -1288,7 +1337,7 @@ A structural difference (a count, a mark, a status, a sample, a usable mark) fai
 - Numbers: differences written as the shortest text that converts back to the same binary64 value (`std::to_chars`), `0` for exact zero; samples as integers (`—` where none); tolerances as written in §14.11. A structural difference is written `<what> differs` in the column `Largest difference` (for example `count 74, file 73`, `mark`, `status`).
 - `Database notice`, present when a record segment is in the set: `The files mitdb-100-first60s, mitdb-105-first60s, mitdb-108-first60s, mitdb-119-first60s, mitdb-203-first60s and mitdb-207-first60s contain extracts of the MIT-BIH Arrhythmia Database, version 1.0.0, made available by PhysioNet under the Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/; the results above are computed from them.` (§8.15; OP-067).
 
-**Notice beside the vectors (OP-067, option (b) of the owner).** From this version, `export_golden_vectors` (§8.12, §13.8) also writes `NOTICE.md` into the output folder, with `write_atomically`, whenever it writes the record segments, and never otherwise:
+**Notice beside the vectors (OP-067, option (b) of the owner).** From this version, `export_golden_vectors` (§8.12, §13.8) also writes `NOTICE.md` into the output folder, with `write_atomically`, whenever it writes the record segments (before the first of them; it stays if the export then fails, §13.8), and never otherwise:
 
 ````markdown
 # Notice

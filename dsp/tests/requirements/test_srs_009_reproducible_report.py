@@ -83,6 +83,7 @@ def _write_report(
         nstdb=nstdb,
         detector=detector,
         fetch=fetch,
+        **detector.stages(),
     )
     return output.read_bytes()
 
@@ -170,12 +171,14 @@ def test_report_written_is_the_rendered_report_in_utf8(
     rendered text (no other line ending, no byte-order mark).
     """
     mitdb, nstdb = _databases(evaluation_fixture)
+    detector = make_spike_detector()
     results = run_validation(
         evaluation_fixture.data_root,
         mitdb=mitdb,
         nstdb=nstdb,
-        detector=make_spike_detector(),
+        detector=detector,
         fetch=None,
+        **detector.stages(),
     )
 
     assert render_full_report(results).encode("utf-8") == reference.data
@@ -348,7 +351,7 @@ def test_single_command_runs_detection_and_writes_the_report_to_docs_validation(
 
     Input: a copy of the scripts folder of the software in `<repo>/dsp/scripts/`, with an
     existing `<repo>/docs/validation/` folder, as in the repository; the fixture databases of
-    6-min noise-free synthetic ECGs (MIT-BIH records 118 at 75 bpm and 119 at 60 bpm, the 12
+    30-min noise-free synthetic ECGs (MIT-BIH records 118 at 75 bpm and 119 at 60 bpm, the 12
     noise stress records); the pinned checksum lists set to the fixture lists for these runs
     only. First run: `validate.py --offline --data-dir <fixture>` from `<repo>`; second run:
     the same with `--output <another path>`, from another folder.
@@ -390,6 +393,8 @@ def test_single_command_runs_detection_and_writes_the_report_to_docs_validation(
         assert per_record.row(name)[2:] == (str(record.tp), "0", "0", "100.00", "100.00")
     noise = report.section("noise stress").table_with_row("118e24")
     for name, record in fixture.nstdb.records.items():
+        if name in ("bw", "em", "ma"):  # noise records: not evaluated for detection (SRS-014)
+            continue
         assert noise.row(name)[2:] == (str(record.tp), "0", "0", "100.00", "100.00")
     for database in (fixture.mitdb, fixture.nstdb):
         assert f"verified: {database.n_listed_files} files match" in report.text

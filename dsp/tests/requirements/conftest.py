@@ -666,6 +666,7 @@ EVALUATION_FS_HZ = 360
 FIVE_MINUTES = 108000  # 5:00 at 360 Hz: the first scored sample
 SIX_MINUTES = 129600  # length of the synthetic ECG records, in samples
 SEVEN_MINUTES = 151200  # length of the spike records, in samples
+THIRTY_MINUTES = 648000  # length of the synthetic ECG records of the real-run fixture
 SPIKE_MV = 1.0
 SPIKE_THRESHOLD_MV = 0.5
 
@@ -1278,14 +1279,16 @@ def evaluation_fixture_without_episodes(
 
 @pytest.fixture(scope="session")
 def ecg_evaluation_fixture(tmp_path_factory: pytest.TempPathFactory) -> EvaluationFixture:
-    """Fixture databases of 6-min noise-free synthetic ECGs, for the real detector. Read only.
+    """Fixture databases of 30-min noise-free synthetic ECGs, for the real functions. Read only.
 
     - ``mitdb``: records 118 (75 bpm) and 119 (60 bpm).
-    - ``nstdb``: the 12 ECG records, ``118eNN`` at 75 bpm and ``119eNN`` at 60 bpm.
-    Channel 1 is flat. Every record: TP = the beats at or after 5:00, FN 0, FP 0.
+    - ``nstdb``: the 12 ECG records, ``118eNN`` at 75 bpm and ``119eNN`` at 60 bpm, and the
+      3 noise records (1 min of flat signal).
+    Channel 1 is flat. Every record: TP = the beats at or after 5:00, FN 0, FP 0. Thirty
+    minutes is the length that the 30 segments of 60 s of SRS-023 need.
     """
     data_root = tmp_path_factory.mktemp("evaluation-ecg") / "data"
-    ecg = {rate: _long_synthetic_ecg(EVALUATION_FS_HZ, rate, SIX_MINUTES) for rate in (60, 75)}
+    ecg = {rate: _long_synthetic_ecg(EVALUATION_FS_HZ, rate, THIRTY_MINUTES) for rate in (60, 75)}
     mitdb = _write_evaluation_database(
         data_root,
         "mitdb",
@@ -1297,9 +1300,10 @@ def ecg_evaluation_fixture(tmp_path_factory: pytest.TempPathFactory) -> Evaluati
     nstdb = _write_evaluation_database(
         data_root,
         "nstdb",
-        [_ecg_record(name, ecg[75 if name.startswith("118") else 60]) for name in names],
-        record_list=names,
-        extra_files={},
+        [_ecg_record(name, ecg[75 if name.startswith("118") else 60]) for name in names]
+        + [_noise_record(name) for name in ("bw", "em", "ma")],
+        record_list=[*names, "bw", "em", "ma"],
+        extra_files=_ANNOTATORS,
     )
     return EvaluationFixture(data_root=data_root, mitdb=mitdb, nstdb=nstdb)
 
@@ -1325,6 +1329,12 @@ class SpikeDetector:
         signal = np.asarray(signal_mv, dtype=np.float64)
         self.calls.append((int(signal.size), float(fs_hz), int(mains_hz)))
         return np.flatnonzero(signal > SPIKE_THRESHOLD_MV).astype(np.int64)
+
+    def stages(self) -> dict[str, Any]:
+        """The arguments ``marked_detector``, ``quality`` and ``loader`` for the stages that
+        follow the matching in one run (``_stage_doubles``): give them to the same call of
+        ``run_validation`` or ``write_validation_report`` as this detector."""
+        return _stage_doubles()
 
 
 @pytest.fixture(scope="session")
@@ -1733,6 +1743,99 @@ def copy_package() -> Callable[..., Path]:
     return _copy_package
 
 
+# Doubles for the stages that the evaluation run added after the matching (architecture,
+# section 13.7.4): the start of stream (30 segments of 60 s per record, SRS-023) and the signal
+# quality (SRS-029, SRS-030). The fixture records of the report tests are 7 min long and hold
+# spikes, so the real functions have nothing to do on them. The source is kept as text, so
+# that the report driver (a separate process) runs the same doubles as the tests.
+_STAGE_DOUBLES_SOURCE = '''import dataclasses
+
+import numpy as np
+
+from sinus_dsp.data.records import load_record
+from sinus_dsp.qrs import DETECTION_PATHS, Detections
+from sinus_dsp.quality import QualityWindows
+
+SEGMENT_END_S = 1800  # the last segment of SRS-023 ends at 30:00
+
+
+def fake_marked_detector(signal_mv, fs_hz, mains_hz):
+    """Every sample above 0.5 mV is a detection marked reliable."""
+    indices = np.flatnonzero(np.asarray(signal_mv, dtype=np.float64) > 0.5).astype(np.int64)
+    return Detections(
+        indices=indices,
+        startup=np.zeros(indices.size, dtype=bool),
+        reported_at=indices.copy(),
+        peaks=indices.copy(),
+        paths=(DETECTION_PATHS[0],) * indices.size,
+        initialisations=np.zeros(0, dtype=np.int64),
+    )
+
+
+def fake_quality(signal_mv, fs_hz, mains_hz):
+    """Windows of 10 s every 5 s, all usable with index 0.8."""
+    n = int(np.asarray(signal_mv).size)
+    width, hop = int(round(10 * fs_hz)), int(round(5 * fs_hz))
+    first = np.arange(0, max(n - width, 0) + 1, hop, dtype=np.int64)
+    last = first + width - 1
+    count = first.size
+    return QualityWindows(
+        first=first,
+        last=last,
+        reported_at=np.minimum(last, n - 1),
+        index=np.full(count, 0.8),
+        usable=np.ones(count, dtype=bool),
+        held=np.zeros(count, dtype=bool),
+        n_detections=np.zeros(count, dtype=np.int64),
+        signal_power=np.full(count, np.nan),
+        background_power=np.full(count, np.nan),
+    )
+
+
+class ExtendingLoader:
+    """Record loader for the fixture records, which are shorter than 30 min.
+
+    The first load of a record is the record as written. Any later load of the same file
+    gives the same record with zeros after its last sample, up to 30:00, so that the
+    segments of the start of stream fit. The evaluation of the records (the first load) is
+    therefore that of the record as written.
+    """
+
+    def __init__(self):
+        self._seen = set()
+
+    def __call__(self, record_path, channel=0):
+        record = load_record(record_path, channel)
+        key = (str(record_path), channel)
+        if key in self._seen:
+            wanted = int(round(SEGMENT_END_S * record.fs_hz))
+            if record.n_samples < wanted:
+                padding = np.zeros(wanted - record.n_samples, dtype=np.float64)
+                record = dataclasses.replace(
+                    record, signal_mv=np.concatenate([record.signal_mv, padding])
+                )
+        self._seen.add(key)
+        return record
+
+
+def stage_doubles():
+    return {
+        "marked_detector": fake_marked_detector,
+        "quality": fake_quality,
+        "loader": ExtendingLoader(),
+    }
+'''
+
+
+def _stage_doubles() -> dict[str, Any]:
+    """The injectable arguments of ``run_validation`` and ``write_validation_report`` for the
+    stages after the matching: ``marked_detector``, ``quality`` and ``loader``. Call it once
+    for each run (the loader remembers which records it has loaded)."""
+    namespace: dict[str, Any] = {}
+    exec(_STAGE_DOUBLES_SOURCE, namespace)  # noqa: S102
+    return namespace["stage_doubles"]()  # type: ignore[no-any-return]
+
+
 # A script run in a separate Python process: it writes the validation report of fixture
 # databases with a detector double (the samples above 0.5 mV), without network access, and
 # prints the folder of the package ``sinus_dsp`` it imported.
@@ -1766,6 +1869,8 @@ import sinus_dsp  # noqa: E402
 from sinus_dsp.data.physionet import Database, DatabaseLicence  # noqa: E402
 from sinus_dsp.evaluation.run import write_validation_report  # noqa: E402
 
+# __STAGE_DOUBLES__
+
 
 def spike_detector(signal_mv, fs_hz, mains_hz):
     return np.flatnonzero(np.asarray(signal_mv, dtype=np.float64) > 0.5).astype(np.int64)
@@ -1794,6 +1899,7 @@ write_validation_report(
     ),
     detector=spike_detector,
     fetch=None,
+    **stage_doubles(),
 )
 '''
 
@@ -1824,7 +1930,9 @@ def _run_report_driver(
     the package ``sinus_dsp`` found there. ``env`` adds environment variables.
     """
     driver = output.parent / "write_report_driver.py"
-    driver.write_text(_REPORT_DRIVER, encoding="utf-8")
+    driver.write_text(
+        _REPORT_DRIVER.replace("# __STAGE_DOUBLES__", _STAGE_DOUBLES_SOURCE), encoding="utf-8"
+    )
     environment = {**os.environ, **(env or {})}
     if package_root is not None:
         existing = environment.get("PYTHONPATH")

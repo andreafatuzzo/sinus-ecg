@@ -140,13 +140,16 @@ def standard_run(
             nstdb=nstdb,
             detector=detector,
             fetch=None,
+            **detector.stages(),
         )
+        second = make_spike_detector()
         results = run_validation(
             evaluation_fixture.data_root,
             mitdb=mitdb,
             nstdb=nstdb,
-            detector=make_spike_detector(),
+            detector=second,
             fetch=None,
+            **second.stages(),
         )
     return Run(
         results=results, text=output.read_bytes().decode("utf-8"), calls=tuple(detector.calls)
@@ -352,13 +355,15 @@ def test_noise_stress_section_states_the_licence_of_version_1_0_0_of_the_databas
     )
     output = tmp_path / "qrs-ec57-report.md"
 
+    detector = make_spike_detector()
     write_validation_report(
         output,
         evaluation_fixture.data_root,
         mitdb=mitdb,
         nstdb=nstdb,
-        detector=make_spike_detector(),
+        detector=detector,
         fetch=None,
+        **detector.stages(),
     )
 
     report = parse_report(output.read_bytes().decode("utf-8"))
