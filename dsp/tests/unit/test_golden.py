@@ -28,6 +28,7 @@ from sinus_dsp.golden import (
     read_golden_vector,
     render_golden_vector,
 )
+from sinus_dsp.heart_rate import HeartRateEvent
 from sinus_dsp.pipeline import STAGES, run_pipeline
 from sinus_dsp.synthetic import synthetic_ecg
 from sinus_dsp.version import SoftwareIdentity
@@ -64,13 +65,30 @@ def small_vector(**changes: Any) -> GoldenVector:
         ),
         beats=np.array([1, 3], dtype=np.int64),
         reference_beats=np.array([0, 0, 3], dtype=np.int64),
+        beat_startup=np.array([True, False]),
+        beat_reported_at=np.array([2, 3], dtype=np.int64),
+        heart_rates=(HeartRateEvent(3, 3, "not_enough_beats", None),),
+        window_first=np.array([0], dtype=np.int64),
+        window_last=np.array([3], dtype=np.int64),
+        window_reported_at=np.array([3], dtype=np.int64),
+        window_index=np.array([0.75]),
+        window_usable=np.array([True]),
     )
+    if "beats" in changes and "beat_startup" not in changes:
+        # Beats given alone: all start-up, reported at their own sample, nothing reliable.
+        n = len(changes["beats"])
+        changes = {
+            "beat_startup": np.ones(n, dtype=np.bool_),
+            "beat_reported_at": np.array(changes["beats"], dtype=np.int64).copy(),
+            "heart_rates": (),
+            **changes,
+        }
     return dataclasses.replace(vector, **changes)
 
 
 SMALL_TEXT = """\
 format=sinus-golden-vector
-format_version=1
+format_version=2
 input_id=t_1-A
 input_source=synthetic
 input_parameters=a=1;b=0.5
@@ -82,6 +100,8 @@ stages=baseline,mains
 n_samples=4
 n_beats=2
 n_reference_beats=3
+n_heart_rates=1
+n_quality_windows=1
 [coefficients]
 stage,section,b0,b1,b2,a1,a2
 baseline,0,0.5,-1.0,0.5,-0.25,0.125
@@ -94,14 +114,20 @@ input_mv,baseline_mv,mains_mv
 1e+16,-2.5,0.0
 5e-324,3.0,123456.789
 [beats]
-sample_index
-1
-3
+sample_index,mark,reported_at
+1,startup,2
+3,reliable,3
 [reference_beats]
 sample_index
 0
 0
 3
+[heart_rates]
+sample_index,beat_index,status,heart_rate_bpm
+3,3,not_enough_beats,
+[quality_windows]
+first_sample,last_sample,reported_at,quality_index,usable
+0,3,3,0.75,usable
 [end]
 """
 
@@ -132,7 +158,7 @@ def assert_same_array(got: Any, want: npt.NDArray[Any]) -> None:
 
 def test_constants() -> None:
     assert FORMAT_NAME == "sinus-golden-vector"
-    assert FORMAT_VERSION == 1
+    assert FORMAT_VERSION == 2
     assert GOLDEN_SEGMENT_S == 60
     assert GOLDEN_FILE_SUFFIX == ".golden.txt"
 
@@ -231,7 +257,7 @@ def test_every_number_of_a_real_vector_follows_the_syntax() -> None:
     assert "" not in lines
     signals = lines.index("[signals]")
     beats = lines.index("[beats]")
-    for line in lines[15:17]:
+    for line in lines[17:19]:
         stage, section, *values = line.split(",")
         assert stage in STAGES and section == "0"
         assert all(FLOAT_SYNTAX.fullmatch(value) for value in values)
@@ -239,10 +265,26 @@ def test_every_number_of_a_real_vector_follows_the_syntax() -> None:
         fields = line.split(",")
         assert len(fields) == 3
         assert all(FLOAT_SYNTAX.fullmatch(field) for field in fields)
-    for line in lines[beats + 2 :]:
-        if line in ("[reference_beats]", "sample_index", "[end]"):
-            continue
+    reference = lines.index("[reference_beats]")
+    heart_rates = lines.index("[heart_rates]")
+    windows = lines.index("[quality_windows]")
+    for line in lines[beats + 2 : reference]:
+        index, mark, reported = line.split(",")
+        assert INTEGER_SYNTAX.fullmatch(index) and INTEGER_SYNTAX.fullmatch(reported)
+        assert mark in ("startup", "reliable")
+    for line in lines[reference + 2 : heart_rates]:
         assert INTEGER_SYNTAX.fullmatch(line)
+    for line in lines[heart_rates + 2 : windows]:
+        sample, beat, status, rate = line.split(",")
+        assert INTEGER_SYNTAX.fullmatch(sample)
+        assert beat == "" or INTEGER_SYNTAX.fullmatch(beat)
+        assert status in ("valid", "not_enough_beats", "no_recent_beat", "out_of_range")
+        assert (rate == "") == (status in ("not_enough_beats", "no_recent_beat"))
+        assert rate == "" or FLOAT_SYNTAX.fullmatch(rate)
+    for line in lines[windows + 2 : -1]:
+        first, last, reported, quality, usable = line.split(",")
+        assert all(INTEGER_SYNTAX.fullmatch(field) for field in (first, last, reported))
+        assert FLOAT_SYNTAX.fullmatch(quality) and usable in ("usable", "not_usable")
     assert_same_vector(parse_golden_vector(text, "t"), vector)
 
 
@@ -274,7 +316,7 @@ def test_no_beats_at_all_round_trips() -> None:
         beats=np.array([], dtype=np.int64), reference_beats=np.array([], dtype=np.int64)
     )
     text = render_golden_vector(vector)
-    assert text.endswith("[beats]\nsample_index\n[reference_beats]\nsample_index\n[end]\n")
+    assert "[beats]\nsample_index,mark,reported_at\n[reference_beats]\nsample_index\n" in text
     assert_same_vector(parse_golden_vector(text, "t"), vector)
 
 
@@ -443,28 +485,42 @@ def test_content_the_reader_would_reject_is_not_written(
 LINES = SMALL_TEXT.split("\n")[:-1]
 
 
+def _v(number: int) -> int:
+    """Line of the text of version 2 for a line number of the version 1 text (below 34).
+
+    Version 2 adds two header lines after line 13; a number from 34 on is already a line of
+    the version 2 text.
+    """
+    if number < 14:
+        return number
+    return number + 2 if number <= 33 else number
+
+
 def _text(lines: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
 def replaced(number: int, line: str) -> str:
     lines = list(LINES)
-    lines[number - 1] = line
+    lines[_v(number) - 1] = line
     return _text(lines)
 
 
 def inserted(number: int, line: str) -> str:
     lines = list(LINES)
-    lines.insert(number - 1, line)
+    lines.insert(_v(number) - 1, line)
     return _text(lines)
 
 
 def deleted(*numbers: int) -> str:
-    return _text([line for index, line in enumerate(LINES, start=1) if index not in numbers])
+    return _text(
+        [line for index, line in enumerate(LINES, start=1) if index not in [_v(n) for n in numbers]]
+    )
 
 
 def swapped(first: int, second: int) -> str:
     lines = list(LINES)
+    first, second = _v(first), _v(second)
     lines[first - 1], lines[second - 1] = lines[second - 1], lines[first - 1]
     return _text(lines)
 
@@ -478,14 +534,15 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
     ("empty line", inserted(20, ""), 20, "empty line"),
     ("empty text", "", 1, "the file ends before the header key format"),
     ("byte-order mark", "﻿" + SMALL_TEXT, 1, "byte-order mark"),
-    ("no line feed after [end]", SMALL_TEXT[:-1], 34, "no line feed after [end]"),
-    ("a line after [end]", SMALL_TEXT + "x\n", 35, "text after [end]"),
-    ("an empty line after [end]", SMALL_TEXT + "\n", 35, "text after [end]"),
-    ("text without line feed after [end]", SMALL_TEXT + "x", 35, "text after [end]"),
-    ("[end] twice", SMALL_TEXT + "[end]\n", 35, "text after [end]"),
+    ("no line feed after [end]", SMALL_TEXT[:-1], 42, "no line feed after [end]"),
+    ("a line after [end]", SMALL_TEXT + "x\n", 43, "text after [end]"),
+    ("an empty line after [end]", SMALL_TEXT + "\n", 43, "text after [end]"),
+    ("text without line feed after [end]", SMALL_TEXT + "x", 43, "text after [end]"),
+    ("[end] twice", SMALL_TEXT + "[end]\n", 43, "text after [end]"),
     # Format and version.
     ("unknown format", replaced(1, "format=other"), 1, "unknown format other"),
-    ("unknown version", replaced(2, "format_version=2"), 2, "unknown format version 2"),
+    ("unknown version", replaced(2, "format_version=3"), 2, "unknown format version 3"),
+    ("version 1", replaced(2, "format_version=1"), 2, "unknown format version 1"),
     ("version with a zero", replaced(2, "format_version=01"), 2, "unknown format version"),
     # Header keys.
     ("not key=value", replaced(3, "input_id"), 3, "not a key=value line"),
@@ -568,14 +625,14 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
         18,
         "integer greater than",
     ),
-    ("beat 2**63", replaced(28, "9223372036854775808"), 28, "integer greater than"),
+    ("beat 2**63", replaced(28, "9223372036854775808,reliable,3"), 28, "integer greater than"),
     ("reference 2**63", replaced(33, "9223372036854775808"), 33, "integer greater than"),
     # At the bound or below it, an integer passes the integer rule, and the file fails later,
     # where the rows and the count disagree, or at the next rule.
     (
         "n_reference_beats 2**63 - 1",
         replaced(13, "n_reference_beats=9223372036854775807"),
-        34,
+        36,
         "[reference_beats] has 3 rows, n_reference_beats is 9223372036854775807",
     ),
     (
@@ -598,7 +655,7 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
     ),
     (
         "beat 2**63 - 1",
-        replaced(28, "9223372036854775807"),
+        replaced(28, "9223372036854775807,reliable,3"),
         28,
         "sample 9223372036854775807 is outside 0 to 3",
     ),
@@ -606,7 +663,7 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
     ("section name", replaced(14, "[coefficient]"), 14, "expected [coefficients]"),
     ("coefficient columns", replaced(15, "stage,section,b0,b1,b2,a0,a1,a2"), 15, "expected stage"),
     ("signal columns", replaced(20, "input_mv,mains_mv,baseline_mv"), 20, "expected input_mv"),
-    ("beat column", replaced(26, "sample"), 26, "expected sample_index"),
+    ("beat column", replaced(26, "sample"), 26, "expected sample_index,mark,reported_at"),
     ("reference column", replaced(30, "sample"), 30, "expected sample_index"),
     ("no [signals]", deleted(19), 19, "coefficient row with 3 fields, expected 7"),
     ("misnamed [signals]", replaced(19, "[signal]"), 19, "expected [signals], found [signal]"),
@@ -615,11 +672,11 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
     ("[signals] twice", replaced(25, "[signals]"), 25, "expected [beats], found [signals]"),
     (
         "sections swapped",
-        _text([*LINES[:24], *LINES[28:33], *LINES[24:28], LINES[33]]),
+        _text([*LINES[:26], *LINES[30:35], *LINES[26:30], *LINES[35:]]),
         25,
         "expected [beats], found [reference_beats]",
     ),
-    ("no [end]", deleted(34), 33, "the file ends before [end]"),
+    ("no [end]", deleted(42), 41, "the file ends before [end]"),
     ("[end] elsewhere", replaced(29, "[end]"), 29, "expected [reference_beats], found [end]"),
     # Coefficient rows.
     ("six fields", replaced(16, "baseline,0,0.5,-1.0,0.5,-0.25"), 16, "6 fields, expected 7"),
@@ -667,19 +724,29 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
     ("more signal rows", replaced(11, "n_samples=3"), 24, "[signals] has more rows than n_samples"),
     ("fewer beats", replaced(12, "n_beats=3"), 29, "[beats] has 2 rows, n_beats is 3"),
     ("more beats", replaced(12, "n_beats=1"), 28, "[beats] has more rows than n_beats (1)"),
-    ("fewer references", replaced(13, "n_reference_beats=4"), 34, "has 3 rows, n_reference_beats"),
+    ("fewer references", replaced(13, "n_reference_beats=4"), 36, "has 3 rows, n_reference_beats"),
     (
         "more references",
         replaced(13, "n_reference_beats=2"),
         33,
         "more rows than n_reference_beats",
     ),
-    ("beat row fields", replaced(27, "1,2"), 27, "row with 2 fields, expected 1"),
-    ("beat syntax", replaced(27, "01"), 27, "not an integer: 01"),
-    ("beat negative", replaced(27, "-1"), 27, "not an integer: -1"),
-    ("beat equal", replaced(28, "1"), 28, "sample 1 is not greater than the one before it, 1"),
-    ("beat smaller", replaced(28, "0"), 28, "sample 0 is not greater than the one before it, 1"),
-    ("beat outside", replaced(28, "4"), 28, "sample 4 is outside 0 to 3"),
+    ("beat row fields", replaced(27, "1,2"), 27, "row with 2 fields, expected 3"),
+    ("beat syntax", replaced(27, "01,startup,2"), 27, "not an integer: 01"),
+    ("beat negative", replaced(27, "-1,startup,2"), 27, "not an integer: -1"),
+    (
+        "beat equal",
+        replaced(28, "1,reliable,3"),
+        28,
+        "sample 1 is not greater than the one before it, 1",
+    ),
+    (
+        "beat smaller",
+        replaced(28, "0,reliable,3"),
+        28,
+        "sample 0 is not greater than the one before it, 1",
+    ),
+    ("beat outside", replaced(28, "4,reliable,3"), 28, "sample 4 is outside 0 to 3"),
     ("reference smaller", replaced(33, "0").replace("\n0\n0\n0\n", "\n0\n3\n0\n"), 33, "at least"),
     ("reference outside", replaced(33, "4"), 33, "sample 4 is outside 0 to 3"),
     # Text ending too early.
@@ -689,15 +756,18 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
         1,
         "ends before the header key format_v",
     ),
-    ("ends in the rows", _text(LINES[:22]), 22, "the file ends before row 3 of [signals]"),
-    ("ends in a row", _text(LINES[:21]) + "-0.0,1.0,-1e-05", 22, "ends before row 3 of [signals]"),
-    ("ends in the beats", _text(LINES[:27]), 27, "the file ends before row 2 of [beats]"),
+    ("ends in the rows", _text(LINES[:24]), 22, "the file ends before row 3 of [signals]"),
+    ("ends in a row", _text(LINES[:23]) + "-0.0,1.0,-1e-05", 22, "ends before row 3 of [signals]"),
+    ("ends in the beats", _text(LINES[:29]), 27, "the file ends before row 2 of [beats]"),
 ]
 
 
 @pytest.mark.parametrize(
     ("text", "line", "reason"),
-    [pytest.param(text, line, reason, id=name) for name, text, line, reason in REJECTED],
+    [
+        pytest.param(text, line if line is None else _v(line), reason, id=name)
+        for name, text, line, reason in REJECTED
+    ],
 )
 def test_each_reader_rule_rejects_with_the_line_number(
     text: str, line: int | None, reason: str
@@ -711,9 +781,9 @@ def test_each_reader_rule_rejects_with_the_line_number(
 
 
 def test_the_reference_smaller_case_is_built_as_intended() -> None:
-    """Guard for the parametrized case: reference beats 0, 3, 0 at lines 31 to 33."""
+    """Guard for the parametrized case: reference beats 0, 3, 0 at lines 33 to 35."""
     case = next(text for name, text, _, _ in REJECTED if name == "reference smaller")
-    assert case.split("\n")[30:33] == ["0", "3", "0"]
+    assert case.split("\n")[32:35] == ["0", "3", "0"]
 
 
 def test_valid_variations_are_accepted() -> None:
@@ -722,7 +792,18 @@ def test_valid_variations_are_accepted() -> None:
     assert parse_golden_vector(text, "t").fs_hz == 360.0
     text = replaced(32, "0")
     assert parse_golden_vector(text, "t").reference_beats.tolist() == [0, 0, 3]
-    text = _text([*LINES[:11], "n_beats=0", *LINES[12:26], *LINES[28:]])
+    text = _text(
+        [
+            *LINES[:11],
+            "n_beats=0",
+            LINES[12],
+            "n_heart_rates=0",
+            LINES[14],
+            *LINES[15:28],
+            *LINES[30:37],
+            *LINES[38:],
+        ]
+    )
     assert parse_golden_vector(text, "t").beats.tolist() == []
 
 
@@ -763,15 +844,15 @@ def test_the_integer_bound_is_checked_before_any_conversion() -> None:
     digits = "1" * 10000
     with pytest.raises(ValueError, match="digits"):
         int(digits)  # Python's default limit on the digits that int() converts
-    text = replaced(27, digits)
+    text = replaced(27, digits + ",startup,2")
     with pytest.raises(MalformedFileError) as caught:
         parse_golden_vector(text, "t")
-    assert caught.value.line == 27
+    assert caught.value.line == 29
     assert "integer greater than 9223372036854775807" in caught.value.reason
 
 
 def test_first_offending_line_is_named() -> None:
-    text = replaced(22, "-0.0, 1.0,-1e-05").replace("format_version=1", "format_version=9")
+    text = replaced(22, "-0.0, 1.0,-1e-05").replace("format_version=2", "format_version=9")
     with pytest.raises(MalformedFileError) as caught:
         parse_golden_vector(text, "t")
     assert caught.value.line == 2
@@ -991,10 +1072,10 @@ def test_every_vector_of_golden_vector_is_written_and_read_back(ecg: Any) -> Non
     text = render_golden_vector(vector)
     assert_same_vector(parse_golden_vector(text, "t"), vector)
     assert text.startswith(
-        "format=sinus-golden-vector\nformat_version=1\ninput_id=syn-fs360-hr075-bw-mains60\n"
+        "format=sinus-golden-vector\nformat_version=2\ninput_id=syn-fs360-hr075-bw-mains60\n"
         "input_source=synthetic\ninput_parameters=duration_s=30;heart_rate_bpm=75;"
         "baseline_wander_hz=0.3;baseline_wander_mv=1.0;mains_hz=60;mains_mv=0.2\n"
         "sampling_frequency_hz=360.0\nmains_frequency_hz=60\nsoftware_version=1.2.3.dev4\n"
         f"source_sha256={DIGEST}\nstages=baseline,mains\nn_samples=10800\nn_beats=37\n"
-        "n_reference_beats=37\n[coefficients]\n"
+        "n_reference_beats=37\n"
     )

@@ -49,6 +49,13 @@ SYNTHETIC_IDS = tuple(
     for hr in (40, 75, 180)
     for variant in ("clean", "bw-mains50", "bw-mains60")
 )
+EVENT_IDS = tuple(
+    f"syn-fs{fs}-event-{event}"
+    for fs in (250, 360)
+    for event in ("artefact", "small-beat", "held", "rate-change")
+)
+ALL_SYNTHETIC_IDS = SYNTHETIC_IDS + EVENT_IDS
+NOTICE = "NOTICE.md"
 SEGMENT_IDS = tuple(f"mitdb-{name}-first60s" for name in SUBSET)
 
 
@@ -113,8 +120,8 @@ def _run(
 def synthetic_reference(
     tmp_path_factory: pytest.TempPathFactory, network_forbidden: Callable[[], Any]
 ) -> dict[str, bytes]:
-    """The 18 synthetic files written by `export_golden_vectors` in the test process (data
-    folder without the database)."""
+    """The 26 synthetic files (18 and the 8 event inputs) written by `export_golden_vectors`
+    in the test process (data folder without the database)."""
     root = tmp_path_factory.mktemp("srs015-synthetic-reference")
     (root / "data").mkdir()
     with network_forbidden():
@@ -128,8 +135,8 @@ def fixture_reference(
     tmp_path_factory: pytest.TempPathFactory,
     network_forbidden: Callable[[], Any],
 ) -> dict[str, bytes]:
-    """The 24 files written by `export_golden_vectors` in the test process from the synthetic
-    ECG subset fixture."""
+    """The 33 files (26 synthetic, 6 record segments, `NOTICE.md`) written by
+    `export_golden_vectors` in the test process from the synthetic ECG subset fixture."""
     root = tmp_path_factory.mktemp("srs015-fixture-reference")
     with network_forbidden():
         export_golden_vectors(
@@ -150,9 +157,10 @@ def test_command_without_the_database_writes_the_synthetic_files(
 
     Input: `export_golden.py --output <folder> --data-dir <empty folder>`, in a separate
     process without network, with the real pinned checksum list.
-    Expected: exit status 0, no traceback; the folder holds exactly the 18 synthetic files,
-    byte-identical to those of `export_golden_vectors` in the test process; standard output
-    gives `written: <folder>/<file>` for the 18 files in the order of the synthetic set,
+    Expected: exit status 0, no traceback; the folder holds exactly the 26 synthetic files
+    (18 and the 8 event inputs), byte-identical to those of `export_golden_vectors` in the
+    test process, and no `NOTICE.md`; standard output
+    gives `written: <folder>/<file>` for the 26 files in the order of the synthetic set,
     then `skipped: ` with the six record-segment identifiers in code-point order of the
     records, and a `reason: ` line that names `SHA256SUMS.txt`.
     """
@@ -166,10 +174,11 @@ def test_command_without_the_database_writes_the_synthetic_files(
     assert "Traceback" not in completed.stderr
     assert _files(output) == synthetic_reference
     lines = completed.stdout.splitlines()
-    assert lines[:18] == [f"written: {output / (i + SUFFIX)}" for i in SYNTHETIC_IDS]
-    assert lines[18] == f"skipped: {', '.join(SEGMENT_IDS)}"
-    assert lines[19].startswith("reason: ") and "SHA256SUMS.txt" in lines[19]
-    assert len(lines) == 20
+    assert NOTICE not in _files(output)
+    assert lines[:26] == [f"written: {output / (i + SUFFIX)}" for i in ALL_SYNTHETIC_IDS]
+    assert lines[26] == f"skipped: {', '.join(SEGMENT_IDS)}"
+    assert lines[27].startswith("reason: ") and "SHA256SUMS.txt" in lines[27]
+    assert len(lines) == 28
 
 
 @pytest.mark.requirement("SRS-015")
@@ -185,9 +194,10 @@ def test_command_run_twice_on_fixture_records_gives_identical_files(
     subset fixture (six records named as the subset, verified against the fixture checksum
     list, pinned in the process), run twice in separate processes: from two working folders,
     into two output folders, with two hash seeds.
-    Expected: both runs exit with status 0 and write the 24 files (18 synthetic, 6 record
-    segments), byte-identical between the two runs and to those of `export_golden_vectors` in
-    the test process; standard output names the 24 files and no skipped input.
+    Expected: both runs exit with status 0 and write the 32 vector files (26 synthetic, 6 record
+    segments) and `NOTICE.md`, byte-identical between the two runs and to those of
+    `export_golden_vectors` in the test process; standard output names the 32 vector
+    files and no skipped input.
     """
     driver = write_command_driver(tmp_path)
     pin = subset_ecg_fixture.checksum_list_sha256
@@ -200,10 +210,11 @@ def test_command_run_twice_on_fixture_records_gives_identical_files(
         completed = _run(driver, pin, arguments, cwd=cwd, hash_seed=seed)
         assert completed.returncode == 0, completed.stderr
         assert "skipped" not in completed.stdout
-        assert len(re.findall(r"^written: ", completed.stdout, flags=re.MULTILINE)) == 24
+        assert len(re.findall(r"^written: ", completed.stdout, flags=re.MULTILINE)) == 32
         runs.append(_files(output))
 
-    assert sorted(runs[0]) == sorted(i + SUFFIX for i in SYNTHETIC_IDS + SEGMENT_IDS)
+    expected_names = [i + SUFFIX for i in ALL_SYNTHETIC_IDS + SEGMENT_IDS] + [NOTICE]
+    assert sorted(runs[0]) == sorted(expected_names)
     assert runs[0] == runs[1]
     assert runs[0] == fixture_reference
 
@@ -222,8 +233,9 @@ def test_command_default_folders_are_those_of_the_repository(
     records of the synthetic ECG subset fixture and its checksum list in `<repo>/data/mitdb/`
     (as the cache of the build keeps them); `export_golden.py` without options, run from
     another folder, the pinned list set to the fixture list.
-    Expected: exit status 0; `<repo>/data/golden/` holds the 24 files, byte-identical to those
-    of `export_golden_vectors` on the same records; nothing is written in the working folder.
+    Expected: exit status 0; `<repo>/data/golden/` holds the 33 files (32 vectors and `NOTICE.md`),
+    byte-identical to those of `export_golden_vectors` on the same records; nothing is
+    written in the working folder.
     """
     repo = tmp_path / "repo"
     shutil.copytree(
@@ -277,7 +289,7 @@ def test_command_states_the_code_that_runs(
     `sinus_dsp/golden.py`; or the package with its `__version__` literal set to `0.1.0.dev9`.
     The expected identity of the copy is computed by the test (version literal, and the
     identifier with the six steps of architecture section 8.14).
-    Expected: exit status 0. Same source code: the 18 files are byte-identical to those of the
+    Expected: exit status 0. Same source code: the 26 files are byte-identical to those of the
     package under test (same version and source identifier). Comment added: the identifier
     of the copy differs from that of the package under test, and each file equals the file of
     the package under test with `source_sha256` set to the identifier of the copy. Version

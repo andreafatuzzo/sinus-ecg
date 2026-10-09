@@ -39,6 +39,7 @@ import pytest
 
 FloatArray = npt.NDArray[np.float64]
 IndexArray = npt.NDArray[np.int64]
+BoolArray = npt.NDArray[np.bool_]
 
 # Synthetic ECG of docs/regulatory/architecture.md, section 7.2: each beat is the sum of five
 # Gaussian waves. Columns: offset from the R centre (ms), amplitude (mV), width sigma (ms),
@@ -191,6 +192,61 @@ def _ordering_errors(detections: npt.ArrayLike, fs_hz: float) -> list[str]:
 def make_synthetic_ecg() -> Callable[..., SyntheticEcg]:
     """``make_synthetic_ecg(fs_hz, heart_rate_bpm, *, n_samples=None, mains_hz=None)``."""
     return _synthetic_ecg
+
+
+# The beats of the event inputs of architecture section 13.9: (t_ms, rr_s, scale), per event, and
+# the duration in s.
+EVENT_NAMES = ("artefact", "small-beat", "held", "rate-change")
+EVENT_DURATION_S = {"artefact": 40, "small-beat": 40, "held": 40, "rate-change": 44}
+
+
+def _event_beats(event: str) -> list[tuple[int, float, float]]:
+    regular = [(500 + 800 * k, 0.8, 1.0) for k in range(49)]
+    if event in ("artefact", "small-beat"):
+        scale = 20.0 if event == "artefact" else 0.4
+        return [(t, rr, scale if t == 10100 else 1.0) for t, rr, _ in regular]
+    if event == "held":
+        return regular
+    if event == "rate-change":
+        return [
+            *((500 + 800 * k, 0.8, 1.0) for k in range(15)),
+            *((11700 + 2400 * j, 2.4, 1.0) for j in range(1, 9)),
+            *((30900 + 800 * j, 0.8, 1.0) for j in range(1, 16)),
+        ]
+    raise AssertionError(event)
+
+
+def _event_ecg(fs_hz: int, event: str) -> tuple[FloatArray, IndexArray]:
+    """The event input of section 13.9, built from its table with the waveform of section 7.2.
+
+    Returns the signal in mV (float64, ``duration_s * fs_hz`` samples) and the reference beats,
+    the R-wave centres ``r = (t_ms * fs + 500) // 1000`` of all the beats, scaled ones included.
+    Each beat is the five waves of ``_WAVES`` with ``s = sqrt(rr_s)`` and every amplitude
+    multiplied by its scale; ``held`` repeats the sample at 15 s over [15 s, 21 s).
+    """
+    n = EVENT_DURATION_S[event] * fs_hz
+    t_s = np.arange(n, dtype=np.float64) / fs_hz
+    signal = np.zeros(n, dtype=np.float64)
+    reference: list[int] = []
+    for t_ms, rr_s, scale in _event_beats(event):
+        r = (t_ms * fs_hz + 500) // 1000
+        reference.append(r)
+        s = math.sqrt(rr_s)
+        for _name, offset_ms, amplitude_mv, sigma_ms, scaled in _WAVES:
+            factor = s if scaled else 1.0
+            centre_s = r / fs_hz + offset_ms * factor / 1000.0
+            sigma_s = sigma_ms * factor / 1000.0
+            signal += scale * amplitude_mv * np.exp(-((t_s - centre_s) ** 2) / (2.0 * sigma_s**2))
+    if event == "held":
+        n0, n1 = (15000 * fs_hz + 500) // 1000, (21000 * fs_hz + 500) // 1000
+        signal[n0:n1] = signal[n0]
+    return signal, np.asarray([r for r in reference if r < n], dtype=np.int64)
+
+
+@pytest.fixture(scope="session")
+def make_event_ecg() -> Callable[[int, str], tuple[FloatArray, IndexArray]]:
+    """``make_event_ecg(fs_hz, event)``: see ``_event_ecg`` (the test's own construction)."""
+    return _event_ecg
 
 
 @pytest.fixture(scope="session")
@@ -2029,7 +2085,12 @@ GOLDEN_HEADER_KEYS = (
     "n_samples",
     "n_beats",
     "n_reference_beats",
+    "n_heart_rates",
+    "n_quality_windows",
 )
+# The usable threshold of the quality index (architecture, section 13.8).
+GOLDEN_USABLE_THRESHOLD = 0.5
+GOLDEN_STATUSES = ("valid", "not_enough_beats", "no_recent_beat", "out_of_range")
 _GOLDEN_FLOAT = re.compile(r"-?[0-9]+(\.[0-9]+)?(e[+-][0-9]+)?")
 _GOLDEN_INTEGER = re.compile(r"0|[1-9][0-9]*")
 _GOLDEN_INPUT_ID = re.compile(r"[A-Za-z0-9_-]+")
@@ -2060,7 +2121,13 @@ class GoldenFile:
     - ``coefficients``: for each stage, one row ``(b0, b1, b2, a1, a2)`` per section, in order;
     - ``signals``: one row per sample, the columns ``input_mv`` then ``<stage>_mv`` for each
       stage in the order of ``stages``;
-    - ``beats``, ``reference_beats``: the rows of ``[beats]`` and ``[reference_beats]``;
+    - ``beats``, ``reference_beats``: the ``sample_index`` column of ``[beats]`` and
+      ``[reference_beats]``; ``beat_startup`` and ``beat_reported_at``: the other columns of
+      ``[beats]``;
+    - ``heart_rates``: one tuple ``(sample_index, beat_index or None, status, rate or None)``
+      per row of ``[heart_rates]``;
+    - ``window_*``: the columns of ``[quality_windows]`` (``window_usable`` True for
+      ``usable``);
     - ``not_shortest``: (line, number) for each float that is not written as Python's
       ``repr()`` of its value (the first 10), which the writer must never produce.
     """
@@ -2072,6 +2139,14 @@ class GoldenFile:
     beats: IndexArray
     reference_beats: IndexArray
     not_shortest: tuple[tuple[int, str], ...]
+    beat_startup: BoolArray
+    beat_reported_at: IndexArray
+    heart_rates: tuple[tuple[int, int | None, str, float | None], ...]
+    window_first: IndexArray
+    window_last: IndexArray
+    window_reported_at: IndexArray
+    window_index: FloatArray
+    window_usable: BoolArray
 
     @property
     def input_mv(self) -> FloatArray:
@@ -2083,7 +2158,7 @@ class GoldenFile:
 
 
 def _read_golden_file(data: bytes) -> GoldenFile:
-    """Read a golden-vector file with every rule of architecture section 7.3.
+    """Read a golden-vector file (format version 2): rules of architecture 7.3 and 13.8.
 
     Written by the test from the documented format, independently of the readers of the
     software. Raises ``GoldenFormatError`` naming the first offending line: a file that is not
@@ -2098,7 +2173,10 @@ def _read_golden_file(data: bytes) -> GoldenFile:
     of v0.2.11: ``1e-400`` is refused, ``0.0e-400`` is zero and accepted); an integer that does
     not match ``0|[1-9][0-9]*`` or is greater than 2**63 - 1 (rule C3 of v0.2.11, at the line of
     the integer, header counts included); a detected beat not greater than the one before, a
-    reference beat smaller than the one before, or a beat outside ``[0, n_samples)``.
+    reference beat smaller than the one before, or a beat outside ``[0, n_samples)``; the
+    rules of section 13.8 for ``[beats]`` (mark, ``reported_at``), ``[heart_rates]`` (status,
+    empty fields only where allowed, links to the reliable detections) and
+    ``[quality_windows]`` (order, index in [0, 1], ``usable`` exactly when index >= 0.5).
 
     The line named (section 7.3, "The line named"): the first line at which the text breaks a
     rule, the last line for a text that ends too early. A row count that differs from the
@@ -2167,7 +2245,7 @@ def _read_golden_file(data: bytes) -> GoldenFile:
         header[key], lines_of[key] = value, n
         if key == "format" and value != "sinus-golden-vector":
             raise GoldenFormatError(n, f"unknown format {value!r}")
-        if key == "format_version" and value != "1":
+        if key == "format_version" and value != "2":
             raise GoldenFormatError(n, f"unknown format version {value!r}")
         if key == "input_id" and not _GOLDEN_INPUT_ID.fullmatch(value):
             raise GoldenFormatError(n, f"invalid input identifier {value!r}")
@@ -2183,7 +2261,13 @@ def _read_golden_file(data: bytes) -> GoldenFile:
             names = value.split(",")
             if not all(_GOLDEN_STAGE.fullmatch(s) for s in names) or len(set(names)) != len(names):
                 raise GoldenFormatError(n, f"invalid stages {value!r}")
-        if key in ("n_samples", "n_beats", "n_reference_beats"):
+        if key in (
+            "n_samples",
+            "n_beats",
+            "n_reference_beats",
+            "n_heart_rates",
+            "n_quality_windows",
+        ):
             count = as_integer(n, value)
             if key == "n_samples" and count < 1:
                 raise GoldenFormatError(n, "n_samples is 0")
@@ -2227,22 +2311,111 @@ def _read_golden_file(data: bytes) -> GoldenFile:
         signal_rows.append([as_float(n, token) for token in fields])
     signals = np.asarray(signal_rows, dtype=np.float64).reshape(n_samples, 1 + len(stages))
 
-    def read_beats(name: str, count: int, strictly: bool) -> IndexArray:
-        expect(f"[{name}]")
+    def read_reference_beats(count: int) -> IndexArray:
+        expect("[reference_beats]")
         expect("sample_index")
         values: list[int] = []
         for _ in range(count):
             n, line = next_line()
             value = as_integer(n, line)
             if value >= n_samples:
-                raise GoldenFormatError(n, f"{name}: {value} outside [0, {n_samples})")
-            if values and (value <= values[-1] if strictly else value < values[-1]):
-                raise GoldenFormatError(n, f"{name}: {value} out of order")
+                raise GoldenFormatError(n, f"reference_beats: {value} outside [0, {n_samples})")
+            if values and value < values[-1]:
+                raise GoldenFormatError(n, f"reference_beats: {value} out of order")
             values.append(value)
         return np.asarray(values, dtype=np.int64)
 
-    beats = read_beats("beats", int(header["n_beats"]), strictly=True)
-    reference_beats = read_beats("reference_beats", int(header["n_reference_beats"]), False)
+    expect("[beats]")
+    expect("sample_index,mark,reported_at")
+    beat_index: list[int] = []
+    beat_startup: list[bool] = []
+    beat_reported: list[int] = []
+    for _ in range(int(header["n_beats"])):
+        n, line = next_line()
+        fields = line.split(",")
+        if len(fields) != 3:
+            raise GoldenFormatError(n, f"a beat row with {len(fields)} fields, not 3")
+        value = as_integer(n, fields[0])
+        if value >= n_samples:
+            raise GoldenFormatError(n, f"beats: {value} outside [0, {n_samples})")
+        if beat_index and value <= beat_index[-1]:
+            raise GoldenFormatError(n, f"beats: {value} out of order")
+        if fields[1] not in ("startup", "reliable"):
+            raise GoldenFormatError(n, f"beats: unknown mark {fields[1]!r}")
+        reported = as_integer(n, fields[2])
+        if not value <= reported < n_samples:
+            raise GoldenFormatError(n, f"beats: reported_at {reported} outside [{value}, n)")
+        if beat_reported and reported < beat_reported[-1]:
+            raise GoldenFormatError(n, f"beats: reported_at {reported} decreases")
+        beat_index.append(value)
+        beat_startup.append(fields[1] == "startup")
+        beat_reported.append(reported)
+    reference_beats = read_reference_beats(int(header["n_reference_beats"]))
+
+    expect("[heart_rates]")
+    expect("sample_index,beat_index,status,heart_rate_bpm")
+    reliable_rows = [i for i, startup in enumerate(beat_startup) if not startup]
+    heart_rates: list[tuple[int, int | None, str, float | None]] = []
+    named = 0
+    for _ in range(int(header["n_heart_rates"])):
+        n, line = next_line()
+        fields = line.split(",")
+        if len(fields) != 4:
+            raise GoldenFormatError(n, f"a heart-rate row with {len(fields)} fields, not 4")
+        at = as_integer(n, fields[0])
+        if at >= n_samples or (heart_rates and at < heart_rates[-1][0]):
+            raise GoldenFormatError(n, f"heart_rates: sample_index {at} out of order or range")
+        link: int | None = None
+        if fields[1] != "":
+            link = as_integer(n, fields[1])
+            row = next((i for i in reliable_rows if beat_index[i] == link), None)
+            if row is None or beat_reported[row] != at:
+                raise GoldenFormatError(n, f"heart_rates: beat_index {link} is not a reliable beat")
+            if named >= len(reliable_rows) or reliable_rows[named] != row:
+                raise GoldenFormatError(n, "heart_rates: reliable detections not named in order")
+            named += 1
+        if fields[2] not in GOLDEN_STATUSES:
+            raise GoldenFormatError(n, f"heart_rates: unknown status {fields[2]!r}")
+        rate: float | None = None
+        if fields[2] in ("valid", "out_of_range"):
+            rate = as_float(n, fields[3])
+            if not rate > 0.0:
+                raise GoldenFormatError(n, f"heart_rates: rate not greater than 0: {fields[3]!r}")
+        elif fields[3] != "":
+            raise GoldenFormatError(n, f"heart_rates: a rate with status {fields[2]!r}")
+        heart_rates.append((at, link, fields[2], rate))
+    if named != len(reliable_rows):
+        raise GoldenFormatError(position + 1, "heart_rates: a reliable detection not named")
+
+    expect("[quality_windows]")
+    expect("first_sample,last_sample,reported_at,quality_index,usable")
+    w_first: list[int] = []
+    w_last: list[int] = []
+    w_reported: list[int] = []
+    w_index: list[float] = []
+    w_usable: list[bool] = []
+    for _ in range(int(header["n_quality_windows"])):
+        n, line = next_line()
+        fields = line.split(",")
+        if len(fields) != 5:
+            raise GoldenFormatError(n, f"a window row with {len(fields)} fields, not 5")
+        first, last, reported = (as_integer(n, f) for f in fields[:3])
+        if w_first and first <= w_first[-1]:
+            raise GoldenFormatError(n, f"windows: first_sample {first} out of order")
+        if not first <= last <= reported < n_samples:
+            raise GoldenFormatError(n, "windows: first <= last <= reported_at < n_samples broken")
+        index = as_float(n, fields[3])
+        if not 0.0 <= index <= 1.0:
+            raise GoldenFormatError(n, f"windows: quality_index outside [0, 1]: {fields[3]!r}")
+        if fields[4] not in ("usable", "not_usable"):
+            raise GoldenFormatError(n, f"windows: unknown mark {fields[4]!r}")
+        if (fields[4] == "usable") != (index >= GOLDEN_USABLE_THRESHOLD):
+            raise GoldenFormatError(n, "windows: mark does not follow the index")
+        w_first.append(first)
+        w_last.append(last)
+        w_reported.append(reported)
+        w_index.append(index)
+        w_usable.append(fields[4] == "usable")
     expect("[end]")
     if position < len(lines):
         raise GoldenFormatError(position + 1, "text after [end]")
@@ -2253,9 +2426,17 @@ def _read_golden_file(data: bytes) -> GoldenFile:
         stages=stages,
         coefficients={stage: np.asarray(rows[stage], dtype=np.float64) for stage in stages},
         signals=signals,
-        beats=beats,
+        beats=np.asarray(beat_index, dtype=np.int64),
         reference_beats=reference_beats,
         not_shortest=tuple(not_shortest),
+        beat_startup=np.asarray(beat_startup, dtype=np.bool_),
+        beat_reported_at=np.asarray(beat_reported, dtype=np.int64),
+        heart_rates=tuple(heart_rates),
+        window_first=np.asarray(w_first, dtype=np.int64),
+        window_last=np.asarray(w_last, dtype=np.int64),
+        window_reported_at=np.asarray(w_reported, dtype=np.int64),
+        window_index=np.asarray(w_index, dtype=np.float64),
+        window_usable=np.asarray(w_usable, dtype=np.bool_),
     )
 
 
