@@ -1,0 +1,50 @@
+# ADR 0007. Every finding is an error. A check is disabled only here, with its reason.
+Checks: >-
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -misc-non-private-member-variables-in-classes,
+  -llvm-header-guard,
+  -portability-avoid-pragma-once
+# Reasons: the design constants are named where they are defined and coefficients are literals of
+# formulas (magic numbers); trailing return types are not the project style; short names such as
+# n, k, x follow the Python reference (identifier-length); fixed rings are indexed by computed
+# indices, checked by the sanitizers and the unit tests (constant-array-index); plain structures
+# of results have public members (non-private-member-variables); ADR 0007 requires #pragma once in
+# headers, which portability-avoid-pragma-once (clang-tidy 21 and later) forbids.
+WarningsAsErrors: '*'
+# Both separators: on Windows clang reports include\sinus/dsp/x.hpp, which a '/'-only regex misses.
+HeaderFilterRegex: '.*[/\\]libs[/\\]sinus-dsp[/\\](include|src|verification|harness)[/\\].*'
+CheckOptions:
+  - { key: readability-identifier-naming.NamespaceCase, value: lower_case }
+  - { key: readability-identifier-naming.ClassCase, value: CamelCase }
+  - { key: readability-identifier-naming.StructCase, value: CamelCase }
+  - { key: readability-identifier-naming.EnumCase, value: CamelCase }
+  - { key: readability-identifier-naming.TypeAliasCase, value: CamelCase }
+  - { key: readability-identifier-naming.FunctionCase, value: lower_case }
+  - { key: readability-identifier-naming.VariableCase, value: lower_case }
+  - { key: readability-identifier-naming.ParameterCase, value: lower_case }
+  - { key: readability-identifier-naming.MemberCase, value: lower_case }
+  - { key: readability-identifier-naming.PrivateMemberCase, value: lower_case }
+  - { key: readability-identifier-naming.PrivateMemberSuffix, value: _ }
+  - { key: readability-identifier-naming.ConstantCase, value: CamelCase }
+  - { key: readability-identifier-naming.ConstantPrefix, value: k }
+  - { key: readability-identifier-naming.EnumConstantCase, value: CamelCase }
+  - { key: readability-identifier-naming.EnumConstantPrefix, value: k }
+  # Local constants and constant parameters are named like variables; kCamelCase is for the
+  # constants of a namespace or a class.
+  - { key: readability-identifier-naming.LocalConstantCase, value: lower_case }
+  - { key: readability-identifier-naming.LocalConstantPointerCase, value: lower_case }
+  - { key: readability-identifier-naming.ConstantParameterCase, value: lower_case }
+  - { key: readability-identifier-naming.ConstantPointerParameterCase, value: lower_case }

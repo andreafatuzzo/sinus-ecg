@@ -29,7 +29,7 @@ dev = [
 include = ["sinus_dsp*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "../libs/sinus-dsp/tests"]
 # tests/unit: developer unit tests (no requirement marker)
 # tests/requirements: QA functional tests; tests/system: test-engineer system tests
 # Tagging rules and CI gates: docs/adr/0004-test-tagging-and-traceability-gates.md
@@ -37,6 +37,7 @@ addopts = "--strict-markers --import-mode=importlib"
 markers = [
     "requirement(*ids): SRS requirement IDs verified by this test (e.g. 'SRS-001'); only in tests/requirements (Verification level Requirement) and tests/system (level System)",
     "needs_data: requires the complete local MIT-BIH Arrhythmia Database in data/mitdb (RECORDS and the .hea, .dat and .atr files of every record it lists); skipped otherwise (e.g. in CI, which keeps only the subset records)",
+    "needs_harness: requires the shared library sinus_dsp_harness of the release build of libs/sinus-dsp (or the path in SINUS_DSP_HARNESS); skipped otherwise; its hook is in libs/sinus-dsp/tests/conftest.py",
     "needs_nstdb: requires the local MIT-BIH Noise Stress Test Database in data/nstdb (the .hea, .dat and .atr files of its 12 noise stress records); skipped otherwise (e.g. in CI)",
 ]
 
