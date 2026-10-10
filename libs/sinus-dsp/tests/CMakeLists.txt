@@ -40,7 +40,14 @@ file(GLOB SINUS_DSP_REQUIREMENT_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/requirements/*.cpp")
 if(SINUS_DSP_REQUIREMENT_SOURCES)
   add_executable(sinus_dsp_requirement_tests ${SINUS_DSP_REQUIREMENT_SOURCES})
-  target_link_libraries(sinus_dsp_requirement_tests PRIVATE sinus::dsp GTest::gtest_main)
+  # SRS-034, SRS-037: the tests also verify the verification code and run its tool; SINUS_GOLDEN_DIR
+  # names the folder of the golden vectors of the same commit (the tests skip without it).
+  target_link_libraries(sinus_dsp_requirement_tests PRIVATE sinus::dsp sinus::dsp_verification
+                        GTest::gtest_main)
+  add_dependencies(sinus_dsp_requirement_tests sinus_dsp_equivalence)
+  target_compile_definitions(sinus_dsp_requirement_tests PRIVATE
+    "SINUS_QA_EQUIVALENCE_TOOL=\"$<TARGET_FILE:sinus_dsp_equivalence>\""
+    "SINUS_QA_LIBRARY_DIR=\"${PROJECT_SOURCE_DIR}\"")
   sinus_dsp_apply_test_flags(sinus_dsp_requirement_tests)
   gtest_discover_tests(sinus_dsp_requirement_tests PROPERTIES LABELS requirement
                        DISCOVERY_MODE PRE_TEST)
