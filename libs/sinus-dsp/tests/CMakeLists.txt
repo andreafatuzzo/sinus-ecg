@@ -16,7 +16,8 @@ include(GoogleTest)
 add_executable(sinus_dsp_unit_tests
   unit/test_identity.cpp unit/test_arithmetic.cpp unit/test_config.cpp unit/test_biquad.cpp
   unit/test_conditioner.cpp unit/test_chain.cpp unit/test_detector_math.cpp
-  unit/test_qrs_detector.cpp)
+  unit/test_qrs_detector.cpp unit/test_interval_estimate.cpp unit/test_heart_rate.cpp
+  unit/test_signal_quality.cpp)
 target_link_libraries(sinus_dsp_unit_tests PRIVATE sinus::dsp GTest::gtest_main)
 # The private helpers of src/ (compensated sum, search-back limit) are tested directly.
 target_include_directories(sinus_dsp_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")

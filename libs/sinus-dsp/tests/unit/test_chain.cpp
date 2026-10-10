@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "sinus/dsp/chain.hpp"
+#include "sinus/dsp/config.hpp"
+#include "sinus/dsp/heart_rate.hpp"
 #include "sinus/dsp/qrs_detector.hpp"
 #include "synthetic_beats.hpp"
 
@@ -181,6 +183,80 @@ TEST(Chain, ReportsTheDetectionsOfTheDetectorOnTheConditionedSignal) {
     total += out.detection_count;
   }
   EXPECT_EQ(total, 22U);
+}
+
+TEST(Chain, HeartRateAndWindowsComeFromTheDetectionsOfTheSameSample) {
+  const double fs = 360.0;
+  const std::vector<float> x =
+      sinus_test::synthetic_beats(fs, 45.0, sinus_test::regular_beats(0.4, 0.8, 44.5));
+  Chain chain;
+  ASSERT_EQ(chain.configure(Config{fs, 50}), Status::kOk);
+  sinus::dsp::HeartRateTracker tracker;
+  ASSERT_EQ(tracker.configure(fs), Status::kOk);
+  const sinus::dsp::QualitySamples p = sinus::dsp::quality_samples(fs);
+  SampleOutput out;
+  std::size_t events = 0;
+  std::size_t valid = 0;
+  std::vector<std::uint64_t> report_samples;
+  for (std::size_t n = 0; n < x.size(); ++n) {
+    ASSERT_EQ(chain.process(x[n], out), Status::kOk);
+    std::vector<sinus::dsp::ReportedDetection> reported;
+    for (std::size_t i = 0; i < out.detection_count; ++i) {
+      reported.push_back({out.detections[i].index, out.detections[i].mark});
+    }
+    sinus::dsp::HeartRateStep want;
+    ASSERT_EQ(tracker.step(reported.data(), reported.size(), want), Status::kOk);
+    ASSERT_EQ(out.heart_rate_count, want.count) << n;
+    for (std::size_t i = 0; i < want.count; ++i) {
+      EXPECT_EQ(out.heart_rates[i].sample, n);
+      EXPECT_EQ(out.heart_rates[i].status, want.events[i].status);
+      EXPECT_EQ(out.heart_rates[i].beat_index, want.events[i].beat_index);
+      if (out.heart_rates[i].status == sinus::dsp::HeartRateStatus::kValid) {
+        ++valid;
+        EXPECT_NEAR(out.heart_rates[i].bpm, 75.0F, 2.0F);
+      }
+    }
+    events += out.heart_rate_count;
+    if (out.has_window) {
+      report_samples.push_back(out.window.reported_at);
+      EXPECT_EQ(out.window.reported_at, n);
+      EXPECT_EQ(out.window.last_sample + p.report_delay, n);
+      EXPECT_EQ(out.window.usable, out.window.index >= sinus::dsp::kUsableThreshold);
+    }
+  }
+  EXPECT_GT(events, 40U);
+  EXPECT_GT(valid, 30U);
+  ASSERT_EQ(report_samples.size(), ((x.size() - p.report_delay - p.window) / p.block) + 1U);
+}
+
+TEST(Chain, ResetRestartsHeartRateAndWindows) {
+  const double fs = 250.0;
+  const std::vector<float> x =
+      sinus_test::synthetic_beats(fs, 30.0, sinus_test::regular_beats(0.4, 0.9, 29.5));
+  Chain used;
+  ASSERT_EQ(used.configure(Config{fs, 60}), Status::kOk);
+  Chain fresh;
+  ASSERT_EQ(fresh.configure(Config{fs, 60}), Status::kOk);
+  SampleOutput out;
+  for (std::size_t n = 0; n < 5000; ++n) {
+    ASSERT_EQ(used.process(x[n], out), Status::kOk);
+  }
+  used.reset();
+  SampleOutput want;
+  for (const float v : x) {
+    ASSERT_EQ(used.process(v, out), Status::kOk);
+    ASSERT_EQ(fresh.process(v, want), Status::kOk);
+    ASSERT_EQ(out.heart_rate_count, want.heart_rate_count);
+    for (std::size_t i = 0; i < want.heart_rate_count; ++i) {
+      ASSERT_EQ(out.heart_rates[i].sample, want.heart_rates[i].sample);
+      ASSERT_EQ(out.heart_rates[i].status, want.heart_rates[i].status);
+    }
+    ASSERT_EQ(out.has_window, want.has_window);
+    if (want.has_window) {
+      ASSERT_EQ(out.window.first_sample, want.window.first_sample);
+      ASSERT_EQ(out.window.index, want.window.index);
+    }
+  }
 }
 
 }  // namespace

@@ -6,6 +6,10 @@
 
 namespace sinus::dsp {
 
+// The same sum on a state kept by the caller (the blocks of the signal quality index).
+void compensated_add(float& sum, float& compensation, float v) noexcept;
+[[nodiscard]] float compensated_value(float sum, float compensation) noexcept;
+
 class CompensatedSum {
  public:
   void add(float v) noexcept;

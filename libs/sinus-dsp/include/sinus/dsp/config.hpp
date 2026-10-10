@@ -31,5 +31,7 @@ struct QualitySamples {
 // Preconditions: a sampling frequency that validate() accepts.
 [[nodiscard]] DetectorSamples detector_samples(double fs_hz) noexcept;
 [[nodiscard]] QualitySamples quality_samples(double fs_hz) noexcept;
+// SRS-026: ceil(3000 * fs / 1000) samples (1080 at 360 Hz), architecture-m2.md 13.5.
+[[nodiscard]] std::uint32_t no_recent_beat_samples(double fs_hz) noexcept;
 
 }  // namespace sinus::dsp

@@ -69,4 +69,8 @@ QualitySamples quality_samples(double fs_hz) noexcept {
   };
 }
 
+std::uint32_t no_recent_beat_samples(double fs_hz) noexcept {
+  return ceil_samples_ms(3000.0, fs_hz);  // SRS-026
+}
+
 }  // namespace sinus::dsp

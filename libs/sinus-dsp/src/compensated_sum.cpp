@@ -5,12 +5,16 @@
 
 namespace sinus::dsp {
 
-void CompensatedSum::add(float v) noexcept {
-  const float t = sum_ + v;
-  compensation_ += (std::fabs(sum_) >= std::fabs(v)) ? ((sum_ - t) + v) : ((v - t) + sum_);
-  sum_ = t;
+void compensated_add(float& sum, float& compensation, float v) noexcept {
+  const float t = sum + v;
+  compensation += (std::fabs(sum) >= std::fabs(v)) ? ((sum - t) + v) : ((v - t) + sum);
+  sum = t;
 }
 
-float CompensatedSum::value() const noexcept { return sum_ + compensation_; }
+float compensated_value(float sum, float compensation) noexcept { return sum + compensation; }
+
+void CompensatedSum::add(float v) noexcept { compensated_add(sum_, compensation_, v); }
+
+float CompensatedSum::value() const noexcept { return compensated_value(sum_, compensation_); }
 
 }  // namespace sinus::dsp
