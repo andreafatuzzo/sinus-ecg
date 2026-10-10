@@ -118,7 +118,7 @@ jobs:
       - name: clang-format
         run: >-
           uv run --project tools clang-format --dry-run --Werror
-          $(find include src tests -name '*.cpp' -o -name '*.hpp' -o -name '*.cc' -o -name '*.h')
+          $(find include src tests verification -name '*.cpp' -o -name '*.hpp' -o -name '*.cc' -o -name '*.h')
       - name: GCC 14, preset release
         env:
           CXX: g++-14

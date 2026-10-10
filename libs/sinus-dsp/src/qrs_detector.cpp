@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "array_index.hpp"
 #include "compensated_sum.hpp"
 #include "search_back_limit.hpp"
 #include "sinus/dsp/biquad.hpp"
@@ -32,7 +33,7 @@ constexpr float kMinIntegrated = 0x1.a36e3p-14F;
 template <typename Array>
 auto& at(Array& ring, std::uint64_t k) noexcept {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access): k % size.
-  return ring[static_cast<std::size_t>(k % ring.size())];
+  return ring[array_index(k % ring.size())];
 }
 
 // k - j for stream samples, as a signed number (the reference computes on Python integers).

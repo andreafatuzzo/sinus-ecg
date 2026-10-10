@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "array_index.hpp"
 #include "compensated_sum.hpp"
 #include "sinus/dsp/config.hpp"
 #include "sinus/dsp/limits.hpp"
@@ -57,7 +58,7 @@ void SignalQuality::start_stream() noexcept {
 
 SignalQuality::Block& SignalQuality::slot(std::uint64_t number) noexcept {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access): number % size.
-  return ring_[static_cast<std::size_t>(number % kRing)];
+  return ring_[array_index(number % kRing)];
 }
 
 // SRS-027: the zone of a detection is the N samples that end at its peak, split at the block

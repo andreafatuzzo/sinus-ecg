@@ -26,6 +26,15 @@ target_compile_definitions(sinus_dsp_unit_tests PRIVATE
 sinus_dsp_apply_test_flags(sinus_dsp_unit_tests)
 gtest_discover_tests(sinus_dsp_unit_tests PROPERTIES LABELS unit DISCOVERY_MODE PRE_TEST)
 
+# Unit tests of the verification code (reader, equivalence check, results), label "unit".
+add_executable(sinus_dsp_verification_unit_tests
+  unit/test_golden_reader.cpp unit/test_equivalence.cpp unit/test_equivalence_report.cpp)
+target_link_libraries(sinus_dsp_verification_unit_tests PRIVATE sinus::dsp_verification
+                      GTest::gtest_main)
+sinus_dsp_apply_test_flags(sinus_dsp_verification_unit_tests)
+gtest_discover_tests(sinus_dsp_verification_unit_tests PROPERTIES LABELS unit
+                     DISCOVERY_MODE PRE_TEST)
+
 # Requirement tests (QA): every requirements/*.cpp goes into one executable, label "requirement".
 file(GLOB SINUS_DSP_REQUIREMENT_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/requirements/*.cpp")

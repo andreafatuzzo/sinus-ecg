@@ -79,6 +79,9 @@ if(SINUS_DSP_TIDY)
   set_target_properties(sinus_dsp PROPERTIES CXX_CLANG_TIDY "${_tidy_command}")
 endif()
 
+# The verification code and the equivalence tool (architecture-m2.md 14.12).
+add_subdirectory(verification)
+
 if(SINUS_DSP_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
