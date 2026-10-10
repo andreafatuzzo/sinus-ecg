@@ -20,6 +20,19 @@ C++17 library, planned for Milestone 2. It is the single real-time implementatio
 - **Behaviour:** deterministic (no global state, clocks, random numbers or I/O), with bounded work per sample.
 - **Build:** CMake, for the host and for the ESP32-S3, from the same sources.
 
+## Build and test
+
+The development tools (CMake, Ninja, clang-format, clang-tidy, gcovr) are pinned in `tools/`. With a C++17 compiler selected by `CXX` (GCC 14, Clang 18, or LLVM-MinGW on Windows), from this folder:
+
+```sh
+uv sync --locked --project tools
+uv run --project tools cmake --preset debug      # also: release, asan-ubsan, coverage, tidy
+uv run --project tools cmake --build --preset debug
+uv run --project tools ctest --preset debug
+```
+
+GoogleTest 1.18.0 is fetched by URL and checked by SHA-256; a computer without network access sets `FETCHCONTENT_SOURCE_DIR_GOOGLETEST` to a copy. The version is in `VERSION`; the library states it with the SHA-256 of its own code (`sinus::dsp::library_identity()`).
+
 ## Verification
 
 - **Tests:** GoogleTest on the host, in `tests/{unit,requirements,system}/`, with requirement tags as in [ADR 0004](../../docs/adr/0004-test-tagging-and-traceability-gates.md).

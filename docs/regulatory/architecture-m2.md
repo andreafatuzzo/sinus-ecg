@@ -902,7 +902,7 @@ libs/sinus-dsp/
 
 **Local environment.** The development computer has no C++ compiler yet; the project owner chose the LLVM-MinGW toolchain for it on 2026-10-08. With that toolchain (Clang and libc++ for Windows, installed per user) and the tools above, a developer builds the library and runs the unit, requirement and equivalence tests locally. Only CI runs the GCC and Clang builds on Linux, the sanitizers, the clang-tidy gate and the ESP32-S3 emulator. `std::from_chars` for `double`, used by the golden-vector reader, needs libstdc++ from GCC 11 or libc++ from LLVM 20.
 
-### 14.3 Arithmetic (ADR 0008, proposed; OP-057)
+### 14.3 Arithmetic (ADR 0008; OP-057)
 
 **Precision of each part.**
 - **Inputs and outputs** are binary32 (`float`), in mV, as in §4.2.

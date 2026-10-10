@@ -1,0 +1,3 @@
+# ADR 0007: Google style, 100 columns (the line length of the Python code).
+BasedOnStyle: Google
+ColumnLimit: 100
