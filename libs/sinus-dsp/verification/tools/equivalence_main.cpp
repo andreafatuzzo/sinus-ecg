@@ -1,7 +1,8 @@
-// SRS-034, SRS-037: sinus_dsp_equivalence --vectors <folder> --results <file>
+// SRS-034, SRS-035, SRS-037: sinus_dsp_equivalence --vectors <folder> --results <file>
 // Checks the real-time library against the golden vectors of the folder and writes the results.
-// Exit status: 0 if every expected file is present and passes, 1 otherwise, 2 on a usage error (or
-// if the folder cannot be listed or the results cannot be written).
+// Exit status: 0 if every expected file is present and passes, 1 otherwise (the job libs fails
+// on it, SRS-035), 2 on a usage error (or if the folder cannot be listed or the results cannot be
+// written).
 #include <cstddef>
 #include <fstream>
 #include <ios>

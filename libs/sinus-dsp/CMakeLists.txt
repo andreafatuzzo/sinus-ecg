@@ -79,6 +79,23 @@ if(SINUS_DSP_TIDY)
   set_target_properties(sinus_dsp PROPERTIES CXX_CLANG_TIDY "${_tidy_command}")
 endif()
 
+# SBOM of the library (architecture-m2.md 14.16; OP-046): cmake --build <dir> --target sinus_dsp_sbom
+set(SINUS_DSP_SBOM "${CMAKE_CURRENT_BINARY_DIR}/sbom-libs.cdx.json")
+add_custom_command(
+  OUTPUT "${SINUS_DSP_SBOM}"
+  COMMAND ${CMAKE_COMMAND} -DVERSION_FILE=${CMAKE_CURRENT_SOURCE_DIR}/VERSION
+          -DIDENTITY=${SINUS_DSP_IDENTITY}
+          -DTEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/sbom.cdx.json.in
+          "-DBUILD_TARGET=computer (${CMAKE_SYSTEM_PROCESSOR}, ${CMAKE_SYSTEM_NAME}, ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION})"
+          -DCOMPILER_ID=${CMAKE_CXX_COMPILER_ID} -DCOMPILER_VERSION=${CMAKE_CXX_COMPILER_VERSION}
+          -DOUTPUT=${SINUS_DSP_SBOM} -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Sbom.cmake"
+  DEPENDS "${SINUS_DSP_IDENTITY}" "${CMAKE_CURRENT_SOURCE_DIR}/VERSION"
+          "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Sbom.cmake"
+          "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sbom.cdx.json.in"
+  COMMENT "Generating the SBOM of the library"
+  VERBATIM)
+add_custom_target(sinus_dsp_sbom DEPENDS "${SINUS_DSP_SBOM}")
+
 # The verification code and the equivalence tool (architecture-m2.md 14.12).
 add_subdirectory(verification)
 
