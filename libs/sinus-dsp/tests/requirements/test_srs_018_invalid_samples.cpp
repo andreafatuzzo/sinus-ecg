@@ -49,14 +49,18 @@ SampleOutput poisoned() {
   out.baseline_mv = 7.0F;
   out.conditioned_mv = 7.0F;
   out.detection_count = 5;
+  out.heart_rate_count = 5;
+  out.has_window = true;
+  out.window = sinus::dsp::QualityWindow{7, 7, 7, 0.7F, true};
   return out;
 }
 
-// Extended with the heart-rate and window fields when the chain gets them.
 void expect_no_output(const SampleOutput& out) {
   EXPECT_EQ(out.baseline_mv, 0.0F);
   EXPECT_EQ(out.conditioned_mv, 0.0F);
   EXPECT_EQ(out.detection_count, 0U);
+  EXPECT_EQ(out.heart_rate_count, 0U);
+  EXPECT_FALSE(out.has_window);
 }
 
 Chain configured_chain(int mains) {
