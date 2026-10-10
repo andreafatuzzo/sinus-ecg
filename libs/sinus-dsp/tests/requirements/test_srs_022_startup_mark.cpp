@@ -46,7 +46,8 @@ std::size_t expect_first_stretch_marks(const std::vector<Det>& dets, int fs) {
 // Expected: each detection with an index in the first 2 s (index <= 719 at 360 Hz, <= 499 at
 // 250 Hz) is marked start-up, all others reliable; there is at least one start-up detection;
 // the detections found by the learning are reported at sample L - 1 (719, 499); and the detections
-// are those of SRS-006 (one per beat, no other). Verifies: SRS-022
+// are those of SRS-006 (one per beat, no other).
+// Verifies: SRS-022
 TEST(Srs022StartUpMark, FirstTwoSecondsAreStartUpAndTheRestReliable) {
   for (const int fs : kRates) {
     const std::uint64_t l = sinus_qa::learning_samples(fs);
