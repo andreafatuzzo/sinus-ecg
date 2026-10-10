@@ -235,7 +235,9 @@ TEST(GoldenPack, ARemovedDetectionFails) {
   set.at(0).beats.erase(set.at(0).beats.begin() + 2);
   const PackCheck result = check(pack_of(set));
   ASSERT_TRUE(result.outcome.ok);
-  const OutputResult& beats = output_of(result.set.files.at(0), "beats");
+  const FileResult& file = result.set.files.at(0);
+  const std::string name = "beats";  // a named string: no temporary behind the returned reference
+  const OutputResult& beats = output_of(file, name);
   EXPECT_FALSE(beats.pass);
   EXPECT_FALSE(beats.difference.empty());
 }

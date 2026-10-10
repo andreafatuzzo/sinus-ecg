@@ -19,6 +19,9 @@
 #include "sinus/dsp/verification/equivalence_report.hpp"
 #include "sinus/dsp/verification/golden_pack.hpp"
 
+#if __has_include("sinus_build_target.h")
+#include "sinus_build_target.h"  // written by main/CMakeLists.txt: IDF version and compiler
+#endif
 #ifndef SINUS_DSP_BUILD_TARGET
 #define SINUS_DSP_BUILD_TARGET "ESP32-S3 (emulator)"
 #endif
