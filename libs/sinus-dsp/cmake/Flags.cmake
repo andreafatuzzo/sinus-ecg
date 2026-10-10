@@ -8,6 +8,12 @@ foreach(forbidden -ffast-math -Ofast -funsafe-math-optimizations -ffinite-math-o
   endif()
 endforeach()
 
+# MinGW: link the C++ runtime and unwinder statically, so that the executables run without the
+# toolchain's bin folder on PATH (otherwise Windows shows a modal "libc++.dll not found" dialog).
+if(MINGW)
+  add_link_options(-static)
+endif()
+
 # Library, verification code and harness.
 function(sinus_dsp_apply_flags target)
   target_compile_options(${target} PRIVATE

@@ -4,8 +4,7 @@
 // on it, SRS-035), 2 on a usage error (or if the folder cannot be listed or the results cannot be
 // written).
 #include <cstddef>
-#include <fstream>
-#include <ios>
+#include <cstdio>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -101,10 +100,16 @@ int main(int argc, char** argv) {
   const std::string text = sinus::dsp::verification::render_equivalence_report(
       set, sinus::dsp::verification::make_report_info(SINUS_DSP_BUILD_TARGET));
   {
-    std::ofstream file(arguments.results, std::ios::binary | std::ios::trunc);
-    file.write(text.data(), static_cast<std::streamsize>(text.size()));
-    file.flush();
-    if (!file) {
+    // <cstdio> instead of <fstream>: avoids a false GCC 14 -Wnull-dereference in libstdc++.
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): closed below, no RAII type in <cstdio>.
+    std::FILE* file = std::fopen(arguments.results.c_str(), "wb");
+    bool written = file != nullptr;
+    if (written) {
+      written = std::fwrite(text.data(), 1, text.size(), file) == text.size();
+      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): the close of the file opened above.
+      written = (std::fclose(file) == 0) && written;
+    }
+    if (!written) {
       std::cerr << "cannot write the results to " << arguments.results << '\n';
       return kExitUsage;
     }

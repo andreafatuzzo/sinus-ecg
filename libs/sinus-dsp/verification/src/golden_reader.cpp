@@ -9,9 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
-#include <ios>
-#include <iterator>
+#include <cstdio>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -854,16 +852,29 @@ ReadResult parse_golden_vector(std::string_view bytes) {
 }
 
 ReadResult read_golden_vector(const std::string& path) {
-  std::ifstream file(path, std::ios::binary);
-  if (!file) {
-    ReadResult result;
+  // <cstdio> instead of <fstream>: GCC 14 -O3 reports a false -Wnull-dereference inside the
+  // inlined libstdc++ stream code, and the warning stays enabled for the library's own code.
+  ReadResult result;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): closed below, no RAII type in <cstdio>.
+  std::FILE* file = std::fopen(path.c_str(), "rb");
+  if (file == nullptr) {
     result.error.reason = "cannot be read";
     return result;
   }
-  const std::string content((std::istreambuf_iterator<char>(file)),
-                            std::istreambuf_iterator<char>());
-  if (file.bad()) {
-    ReadResult result;
+  std::string content;
+  std::array<char, 65536> chunk{};
+  while (true) {
+    // NOLINTNEXTLINE(clang-analyzer-unix.Stream): a short read ends the loop (false positive).
+    const std::size_t count = std::fread(chunk.data(), 1, chunk.size(), file);
+    content.append(chunk.data(), count);
+    if (count < chunk.size()) {  // end of file or error: no further read
+      break;
+    }
+  }
+  const bool failed = std::ferror(file) != 0;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): the close of the file opened above.
+  static_cast<void>(std::fclose(file));
+  if (failed) {
     result.error.reason = "cannot be read";
     return result;
   }
