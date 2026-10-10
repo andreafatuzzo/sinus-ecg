@@ -272,6 +272,15 @@ jobs:
       - name: Equivalence with the reference (ESP32-S3)
         run: |
           python3 libs/sinus-dsp/verification/emulator_log.py "${OUT_DIR}/qemu.log" --results "${OUT_DIR}/equivalence-esp32s3.md"
+      # SRS-036: the system test judges the files of the run against the requirement
+      # (SINUS_EMULATOR_DIR: qemu.log and equivalence-esp32s3.md; SINUS_GOLDEN_DIR: the vectors).
+      - name: System test of SRS-036 (results of the emulator run)
+        run: |
+          . "${IDF_PATH}/export.sh"
+          python3 -m pip install --quiet pytest==9.1.1
+          SINUS_EMULATOR_DIR="${OUT_DIR}" SINUS_GOLDEN_DIR="${GITHUB_WORKSPACE}/golden-vectors" \
+            python3 -m pytest -c dsp/pyproject.toml -p no:cacheprovider -rs \
+            libs/sinus-dsp/tests/system/test_srs_036_emulator_equivalence.py
       - uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
