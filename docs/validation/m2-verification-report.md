@@ -8,17 +8,16 @@ Date of the verification: 2026-10-11.
 
 **One Milestone 2 requirement is not met: SRS-029 (three of its 11 criteria). It is a known anomaly, tied to OP-074, and is listed in section 8 with its measured results. Every other requirement of Milestone 2 is verified.**
 
-Items marked **[after the release bump]** are filled in when the version is changed from 0.2.0.dev0 to 0.2.0 and the generated reports are regenerated (section 1).
 
 ## 1. Software verified
 
 | Item | Value |
 |---|---|
-| Package | `sinus-dsp` (`dsp/`), version `0.2.0.dev0` on the verified branch; release version `0.2.0` **[after the release bump]** |
-| Package source digest | SHA-256 `3e110ecffdf15e19af57bb4ac63ef7776343bc74b0925072156d08a1b99d5f9a` with version `0.2.0.dev0` (`software_identity()`, [`architecture.md`](../regulatory/architecture.md) §8.14). Release digest with version 0.2.0: **[after the release bump]** |
-| Library | `libs/sinus-dsp`, version `0.2.0.dev0` (file `VERSION`, equal to the version of `dsp/pyproject.toml`); release version `0.2.0` **[after the release bump]** |
-| Library source digest | SHA-256 `5d027e7ae66a4f19c4e65f0ef41e09513c686bd6fce9cf6cf1eb0d695526128e`, over the 23 files under `libs/sinus-dsp/include` and `libs/sinus-dsp/src` ([`architecture-m2.md`](../regulatory/architecture-m2.md) §14.15). Stated by the equivalence results of CI run 38050302774 (rows `Library`), and recomputed on the verified branch with the shell recipe of §14.15 (line ends removed before hashing; the files have none) with the same result. The digest covers the code linked into the firmware and the application, not `VERSION`: it is expected to be unchanged by the release bump unless a source file changes. Release digest: **[after the release bump]** |
-| Commit | verified branch `feature/m2-release-prep` at `dc3a296`. CI run 38050302774 ran on commit `85687f18df3e738110e1cbf0b8782428f18d4ff3`; between the two commits no file of `dsp/sinus_dsp`, `libs/sinus-dsp/src` or `libs/sinus-dsp/include` changed (diff empty), so both source digests are those of the CI run. Release commit: **[after the release bump]** |
+| Package | `sinus-dsp` (`dsp/`), version `0.2.0` |
+| Package source digest | SHA-256 `6ce35d5016373b2a652870cc5b33b2681d67a67e48d88679a63d8255c7d956e6` with version `0.2.0` (`software_identity()`, as stated in the `Software` row of both validation reports and checked by `software_check.py`). The verification runs of section 3 were made with version `0.2.0.dev0` (digest `3e110ecffdf15e19af57bb4ac63ef7776343bc74b0925072156d08a1b99d5f9a`); the release change alters only the version strings, and both reports regenerated with `0.2.0` differ from the verified ones only in their `Software` row |
+| Library | `libs/sinus-dsp`, version `0.2.0` (file `VERSION`, equal to the version of `dsp/pyproject.toml`) |
+| Library source digest | SHA-256 `5d027e7ae66a4f19c4e65f0ef41e09513c686bd6fce9cf6cf1eb0d695526128e`, over the 23 files under `libs/sinus-dsp/include` and `libs/sinus-dsp/src` ([`architecture-m2.md`](../regulatory/architecture-m2.md) §14.15). Stated by the equivalence results of CI run 38050302774 (rows `Library`), and recomputed on the verified branch with the shell recipe of §14.15 (line ends removed before hashing; the files have none) with the same result. The digest covers the code linked into the firmware and the application, not `VERSION`: it is expected to be unchanged by the release bump unless a source file changes. Release digest: unchanged, `5d027e7ae66a4f19c4e65f0ef41e09513c686bd6fce9cf6cf1eb0d695526128e` (the release change touches no file under `libs/sinus-dsp/include` or `libs/sinus-dsp/src`) |
+| Commit | Release change `3afd573` on branch `feature/m2-release-prep` (version 0.2.0, Milestone 2 `Released`, reports regenerated), on top of the verified commit `dc3a296`. CI run 38050302774 ran on commit `85687f18df3e738110e1cbf0b8782428f18d4ff3`; between it and the release change the files under `dsp/sinus_dsp`, `libs/sinus-dsp/include` and `libs/sinus-dsp/src` differ only in the version string of `dsp/sinus_dsp/__init__.py` |
 | Toolchains (CI) | GCC 14 (14.2.0) and Clang 18 on Linux x86-64 for the computer build; xtensa GCC 15.2.0 in ESP-IDF v6.1 for the ESP32-S3 build, run in Espressif's QEMU emulator |
 | Toolchain (local) | LLVM-MinGW clang 23.1.1 (UCRT), release preset, Windows 11 Pro (10.0.26200), x86-64, for the tests that need the complete databases |
 | Python and runtime SOUP | Python 3.11, numpy 2.4.6, scipy 1.17.1, wfdb 4.3.1, installed with `uv sync --locked` from `dsp/uv.lock` |
@@ -162,7 +161,7 @@ Further figures (OP-074): at 6 dB, record 118e06 21.6 % and record 119e06 27.0 %
 - **SRS-007, SRS-038:** none.
 - **Tuning on the evaluation data (`sdp.md` §6):** none. No detection or index parameter was changed after results on the MIT-BIH databases were seen. The only change made after results were seen is the evaluation method of SRS-023 (section 6); it does not touch the algorithm.
 
-**Known anomalies.** SRS-029 (above, OP-074) is the only requirement not met. No defect found in this verification is open. The recorded runs of section 3 found no other failure. The issue tracker and the security checks of the release are to be read at the release **[after the release bump]**: issues labelled `bug` or `security`, repository security advisories and Dependabot alerts, and the OSV-Scanner result of CI on the release commit.
+**Known anomalies.** SRS-029 (above, OP-074) is the only requirement not met. No defect found in this verification is open. The recorded runs of section 3 found no other failure. On 2026-10-11 the repository has no open issue, and no issue, open or closed, labelled `bug` or `security`. It has no repository security advisory and no open Dependabot alert. The vulnerability scan of CI (OSV-Scanner on the SBOM of `dsp`) found no issue on the verified commit `dc3a296` (CI run 38101207188), whose runtime dependencies are those of this release.
 
 **Open points that concern Milestone 2 requirements and remain open for later milestones** ([`open-points.md`](../regulatory/open-points.md)); none targets Milestone 2 (release gate, section 9):
 
@@ -194,11 +193,11 @@ OP-043, OP-046, OP-057, OP-062, OP-066, OP-067 and OP-069 (targeting Milestone 2
     - dsp/pyproject.toml: version 0.2.0.dev0 is a development version, not a release
   ```
 
-  It fails only on the development version, which the release bump removes. Gate result after the bump: **[after the release bump]**. `software_check.py` after the bump and the regeneration of the reports: **[after the release bump]**.
+  It fails only on the development version, which the release change removes. After the release change (version 0.2.0, Milestone 2 `Released`): `Traceability: passed (release gate on milestones M0, M1, M2)`. `software_check.py` after the regeneration of the reports: `software check: 2 reports state sinus-dsp 0.2.0, source SHA-256 6ce35d5016373b2a652870cc5b33b2681d67a67e48d88679a63d8255c7d956e6`.
 - Both checks run again in CI on the release pull request into `main` (workflow `release-gate`), which is binding (`sdp.md` §4; ADR 0004). No requirement test is skipped or disabled (rule of `architecture.md` §8.16, item 5, now enforced by `traceability.py`); the only skips are the ones of section 3.
 
 ## 10. Conclusion
 
 On the software of section 1, 21 of the 22 Milestone 2 requirements, and the re-verified SRS-003, have verifying tests at their verification level in each software item that implements them, and all of them pass; SRS-007 and SRS-038 show that the library gives the same detections and counts as the reference on the 60 records of the reference databases (gross Se 99.73 %, +P 99.83 %); the library reproduces the golden vectors within the tolerances on the computer and on the ESP32-S3 emulator; the start-of-stream evaluation meets its target after the approved correction of the method (Se 99.70 %, +P 99.80 %); and no parameter was tuned on the evaluation data. **SRS-029 is not met** (three of 11 criteria, section 7); it is a known anomaly tied to OP-074 and to the risk analysis v0.4.3.
 
-Milestone 2 is ready for release subject to the project owner's acceptance of the SRS-029 known anomaly (`sdp.md` §8). The remaining steps are those of `sdp.md` §3, activity 7: the version bump to 0.2.0, regeneration of the reports, the items marked **[after the release bump]**, CI on the release pull request, the process compliance review, the merge into `main` and the tag `m2`.
+The project owner accepted the SRS-029 known anomaly for this release on 2026-10-11 (`sdp.md` §8; OP-074, Milestone 3). Milestone 2 is ready for release. The remaining steps are those of `sdp.md` §3, activity 7: CI on the release pull request, the process compliance review, the merge into `main` and the tag `m2`.
