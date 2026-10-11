@@ -81,13 +81,15 @@ The components below are chosen in [`architecture.md`](architecture.md) §9 and 
 |---|---|---|---|
 | ESP-IDF | firmware | M4 (library build checks from M2) | Espressif SDK for the ESP32-S3. Used: ADC continuous-mode driver and ADC calibration, GPIO, NimBLE Bluetooth LE host, task watchdog, and the C and C++ runtime libraries of its toolchain ([ADR 0001](../adr/0001-mcu-and-firmware-framework.md)) |
 | FreeRTOS | firmware | M4 | Real-time kernel as shipped and configured by ESP-IDF: tasks, priorities, task notifications |
-| Qt 6 | desktop | M3 | Application framework: Core, GUI, Widgets or Quick (OP-033), Bluetooth, Serial Port, Network. LGPL-3.0 modules only, linked dynamically ([ADR 0003](../adr/0003-qt-desktop-application-with-replay.md)) |
+| Qt 6 | desktop | M3 | Application framework, version 6.12.x with the exact patch pinned in the build (`architecture-m3.md` §15). Milestone 3: Qt Core (event loop, threads, strings, settings), Qt GUI (`QPainter`, fonts, accessibility bridge, platform plugins), Qt Widgets (main window, controls, the base of the waveform widget; [ADR 0009](../adr/0009-qt-widgets-with-own-waveform-drawing.md)), Qt Network (`QUdpSocket` for the test input, SRS-042); Milestone 4: Qt Bluetooth, Qt Serial Port. LGPL-3.0 modules only, linked dynamically ([ADR 0003](../adr/0003-qt-desktop-application-with-replay.md)). The third-party parts bundled in Qt Core and Qt GUI (e.g. PCRE2, double-conversion, zlib, FreeType, HarfBuzz, libpng, md4c) are reviewed with Qt; known anomalies by the Qt security advisories, reviewed by hand |
+| MinGW-w64 15.1 runtime of Qt's toolchain (libstdc++, libgcc, winpthreads) | desktop (Windows) | M3 | C++ runtime of the Windows build of the desktop application |
+| Platform libraries of Linux (X11/xcb, xkbcommon, fontconfig) | desktop (Linux) | M3 | Provided by the platform and loaded by Qt |
 | FastAPI | backend | M5 | Web API framework, with its runtime dependencies (e.g. Starlette, Pydantic) and an ASGI server; database and FHIR libraries are chosen at Milestone 5 |
 | C++ standard library and C library of the computer's toolchain | libs/sinus-dsp | M2 | Linked into the library on the computer (in CI: libstdc++, libgcc and glibc of GCC 14 on Ubuntu 24.04; with Clang 18 the same libstdc++). Used: `<cmath>` (`std::tan`, `std::cos`, `std::sqrt`, `std::floor`, `std::ceil` at configuration; `std::isfinite`, `std::fabs` per sample) and `<array>`; no allocation ([`architecture.md`](architecture.md) §9, §14.3) |
 | C++ standard library and newlib of the ESP-IDF toolchain | libs/sinus-dsp (build for the ESP32-S3); firmware | M2 (test build); M4 | The same functions, from libstdc++ and newlib of `xtensa-esp-elf` esp-15.2.0 in ESP-IDF v6.1 ([`architecture.md`](architecture.md) §14.13) |
 
 - `libs/sinus-dsp` uses only the C++ standard library and the C library of each toolchain (the two rows above); they become rows of the table above, with their review, when the library code lands (Milestone 2, group C2 of [`architecture.md`](architecture.md) §14.18).
-- The WFDB implementation of the desktop application is decided in OP-050. A third-party library would be added here.
+- The WFDB reading and writing of the desktop application is an implementation of its own, minimal and checked against the reference reader (OP-050, decided by the project owner on 2026-10-11): no SOUP.
 
 ## Development tools (not SOUP)
 
