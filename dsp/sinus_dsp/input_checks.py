@@ -1,4 +1,4 @@
-"""Input validation before filtering or detection (SRS-003, architecture §8.5).
+"""Input validation before filtering or detection (SRS-003, architecture §8.5, §13.2).
 
 Every public function that filters or detects calls :func:`validate_input` before any other
 computation, so a rejected input never produces a filtered signal or detections.
@@ -20,31 +20,26 @@ MIN_FS_HZ: Final = 125.0
 MAX_FS_HZ: Final = 1000.0
 MIN_DURATION_S: Final = 10.0
 MAINS_FREQUENCIES_HZ: Final = (50, 60)
+#: SRS-003: the largest magnitude of an accepted sample, in mV (architecture §13.2).
+MAX_ABS_SAMPLE_MV: Final = 1000.0
 
 
-def validate_input(signal_mv: npt.ArrayLike, fs_hz: float) -> FloatArray:
-    """Check a signal and its sampling frequency, and return the signal as a float64 copy.
+def validate_fs(fs_hz: float) -> float:
+    """Check a sampling frequency and return it as a ``float``.
 
-    SRS-003: the input is rejected with :class:`~sinus_dsp.errors.InvalidInputError` if it is
-    empty, contains a value that is not finite, lasts less than 10 s, or has a sampling
-    frequency that is not finite or lies outside 125 Hz to 1000 Hz (bounds included).
+    SRS-003: a sampling frequency that is not finite or lies outside 125 Hz to 1000 Hz
+    (bounds included) is rejected with :class:`~sinus_dsp.errors.InvalidInputError`.
 
-    The checks run in this order, and the first failure raises, with a message naming the
-    check and the offending value:
+    These are checks 1 and 2 of :func:`validate_input`, with the same messages:
 
     1. ``fs_hz`` is a real number (not ``bool``) and finite;
-    2. ``125.0 <= fs_hz <= 1000.0``;
-    3. the signal converts to a one-dimensional array of integer or floating-point kind;
-    4. the signal is not empty;
-    5. every sample is finite;
-    6. the signal lasts at least 10 s (``n_samples >= 10.0 * fs_hz``).
+    2. ``125.0 <= fs_hz <= 1000.0``.
 
     Args:
-        signal_mv: The signal, in mV. It is not modified.
-        fs_hz: Its sampling frequency, in Hz.
+        fs_hz: The sampling frequency, in Hz.
 
     Returns:
-        A new contiguous one-dimensional float64 array with the samples of ``signal_mv``.
+        ``float(fs_hz)``.
 
     Raises:
         InvalidInputError: At the first check that fails.
@@ -58,6 +53,44 @@ def validate_input(signal_mv: npt.ArrayLike, fs_hz: float) -> FloatArray:
         raise InvalidInputError(
             f"sampling frequency is outside {MIN_FS_HZ!r} Hz to {MAX_FS_HZ!r} Hz: {fs!r} Hz"
         )
+    return fs
+
+
+def validate_input(signal_mv: npt.ArrayLike, fs_hz: float) -> FloatArray:
+    """Check a signal and its sampling frequency, and return the signal as a float64 copy.
+
+    SRS-003: the input is rejected with :class:`~sinus_dsp.errors.InvalidInputError` if it is
+    empty, contains a value that is not finite or a sample whose magnitude exceeds 1000 mV,
+    lasts less than 10 s, or has a sampling frequency that is not finite or lies outside
+    125 Hz to 1000 Hz (bounds included).
+
+    The checks run in this order, and the first failure raises, with a message naming the
+    check and the offending value:
+
+    1. ``fs_hz`` is a real number (not ``bool``) and finite;
+    2. ``125.0 <= fs_hz <= 1000.0``;
+    3. the signal converts to a one-dimensional array of integer or floating-point kind;
+    4. the signal is not empty;
+    5. every sample is finite;
+    6. every sample has ``abs(sample) <= 1000.0``, compared on the float64 copy;
+    7. the signal lasts at least 10 s (``n_samples >= 10.0 * fs_hz``).
+
+    Checks 1 and 2 are :func:`validate_fs`. Check 6 is exact in binary64: 1000.0 and -1000.0
+    are accepted, the next float64 values beyond them are rejected. It comes after check 5,
+    so that a NaN, whose comparisons are all false, is reported as non-finite; an integer
+    input is converted to float64 (check 3) before it is compared.
+
+    Args:
+        signal_mv: The signal, in mV. It is not modified.
+        fs_hz: Its sampling frequency, in Hz.
+
+    Returns:
+        A new contiguous one-dimensional float64 array with the samples of ``signal_mv``.
+
+    Raises:
+        InvalidInputError: At the first check that fails.
+    """
+    fs = validate_fs(fs_hz)
 
     try:
         array = np.asarray(signal_mv)
@@ -84,6 +117,17 @@ def validate_input(signal_mv: npt.ArrayLike, fs_hz: float) -> FloatArray:
         raise InvalidInputError(
             f"signal contains non-finite samples: {count} of {n_samples}, "
             f"the first at index {first}"
+        )
+
+    # SRS-003: no sample beyond 1000 mV (architecture §13.2).
+    beyond = np.abs(signal) > MAX_ABS_SAMPLE_MV
+    if bool(beyond.any()):
+        count = int(np.count_nonzero(beyond))
+        first = int(np.argmax(beyond))
+        value = float(signal[first])
+        raise InvalidInputError(
+            f"signal contains samples whose magnitude exceeds {MAX_ABS_SAMPLE_MV!r} mV: "
+            f"{count} of {n_samples}, the first at index {first}, value {value!r} mV"
         )
 
     if n_samples < MIN_DURATION_S * fs:

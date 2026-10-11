@@ -33,13 +33,34 @@ from sinus_dsp.evaluation.metrics import (
     aggregate_statistics,
     record_statistics,
 )
-from sinus_dsp.evaluation.noise_stress import CLEAN_RECORDS, NoiseStressResults, snr_db
+from sinus_dsp.evaluation.noise_stress import (
+    CLEAN_RECORDS,
+    NOISE_FREE_S,
+    NOISE_RECORDS,
+    NOISY_STRETCH_S,
+    NoiseStressResults,
+    snr_db,
+)
 from sinus_dsp.evaluation.run import (
     TARGET_HUNDREDTHS_OF_PERCENT,
     RecordEvaluation,
     ValidationResults,
     meets_target,
 )
+from sinus_dsp.evaluation.signal_quality import (
+    CLEAN_MIN_USABLE_PERCENT,
+    HIGH_SNR_MIN_USABLE_PERCENT,
+    HIGH_SNRS_DB,
+    LOW_SNR_MAX_USABLE_PERCENT,
+    LOW_SNRS_DB,
+    NOISE_MAX_USABLE_PERCENT,
+    QUALITY_CRITERIA,
+    QualityResults,
+    WindowSummary,
+)
+from sinus_dsp.evaluation.start_of_stream import StartOfStreamResults
+from sinus_dsp.qrs import LEARNING_S
+from sinus_dsp.quality import BLOCK_MS, USABLE_THRESHOLD, WINDOW_BLOCKS
 from sinus_dsp.version import SoftwareIdentity
 
 _FULL_TITLE: Final = "QRS detection: EC57 beat-by-beat evaluation"
@@ -86,9 +107,15 @@ def render_full_report(results: ValidationResults) -> str:
         InvalidInputError: If ``results`` covers a subset of the records or has no noise
             stress results.
     """
-    if results.subset or results.noise_stress is None:
+    if (
+        results.subset
+        or results.noise_stress is None
+        or results.quality is None
+        or results.start_of_stream is None
+    ):
         raise InvalidInputError(
-            "the full report needs the results of the whole evaluation, with the noise stress test"
+            "the full report needs the results of the whole evaluation, with the noise stress "
+            "test, the signal quality and the start of stream"
         )
     records = _sorted_records(results.records)
     statistics = [record_statistics(record.counts) for record in records]
@@ -103,6 +130,8 @@ def render_full_report(results: ValidationResults) -> str:
         *_lowest_sections(statistics),
         *_not_scored_section(records),
         *_noise_stress_section(results.noise_stress, results.mitdb),
+        *_quality_section(results.quality, results.mitdb.database.title),
+        *_start_of_stream_section(results.start_of_stream),
     ]
     return _join(blocks)
 
@@ -129,10 +158,15 @@ def render_subset_report(results: ValidationResults) -> str:
         InvalidInputError: If ``results`` does not cover a subset of the records, or holds
             noise stress results.
     """
-    if not results.subset or results.noise_stress is not None:
+    if (
+        not results.subset
+        or results.noise_stress is not None
+        or results.quality is not None
+        or results.start_of_stream is not None
+    ):
         raise InvalidInputError(
             "the subset report needs the results of a subset of the records, without the "
-            "noise stress test"
+            "noise stress test, the signal quality and the start of stream"
         )
     records = _sorted_records(results.records)
     statistics = [record_statistics(record.counts) for record in records]
@@ -261,6 +295,11 @@ def _settings_section(results: ValidationResults) -> list[str]:
 
 def _targets_section(aggregate: AggregateStatistics) -> list[str]:
     """Section 3: the gross Se and +P against the targets."""
+    return ["## Performance targets", _targets_table(aggregate)]
+
+
+def _targets_table(aggregate: AggregateStatistics) -> str:
+    """The table of the gross Se and +P against the targets (sections 3 and 9)."""
     target = f"≥ {TARGET_HUNDREDTHS_OF_PERCENT // 100}.{TARGET_HUNDREDTHS_OF_PERCENT % 100:02d}"
     rows = [
         [
@@ -277,7 +316,7 @@ def _targets_section(aggregate: AggregateStatistics) -> list[str]:
         ],
     ]
     header = ["Statistic", "Value (%)", "Target (%)", "Result"]
-    return ["## Performance targets", _table(header, [_LEFT, _RIGHT, _LEFT, _LEFT], rows)]
+    return _table(header, [_LEFT, _RIGHT, _LEFT, _LEFT], rows)
 
 
 def _records_section(
@@ -322,13 +361,285 @@ def _records_section(
     )
     header = ["Record", "Signal", "TP", "FN", "FP", "Se (%)", "+P (%)"]
     align = [_LEFT, _LEFT, _RIGHT, _RIGHT, _RIGHT, _RIGHT, _RIGHT]
+    return ["## Results per record", _table(header, align, rows), _averages_sentence(aggregate)]
+
+
+def _averages_sentence(aggregate: AggregateStatistics) -> str:
+    """The paragraph on the averages of section 4 (and of section 9)."""
     n = aggregate.n_records
-    sentence = (
+    return (
         "The averages are the means of the defined per-record values: Se is defined for "
         f"{aggregate.n_se_defined} of {n} records, +P for {aggregate.n_ppv_defined} of "
         f"{n} records."
     )
-    return ["## Results per record", _table(header, align, rows), sentence]
+
+
+def _share(n_usable: int, n_windows: int) -> str:
+    """A share of windows in percent, from integer counts, or ``not defined``."""
+    return _NOT_DEFINED if n_windows == 0 else f"{(100 * n_usable) / n_windows:.2f}"
+
+
+def _index(value: float | None) -> str:
+    """A signal quality index with four decimals, or ``not defined``."""
+    return _NOT_DEFINED if value is None else f"{value:.4f}"
+
+
+def _minutes_seconds(seconds: int) -> str:
+    """``m:ss``: minutes without leading zero, two-digit seconds."""
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def _quality_section(quality: QualityResults, title: str) -> list[str]:
+    """Section 8: the signal quality index (SRS-029, SRS-030)."""
+    from_start = _minutes_seconds(NOISE_FREE_S)
+    stretch_min = NOISY_STRETCH_S // 60
+    rows = [
+        ["Window length", f"{WINDOW_BLOCKS * BLOCK_MS // 1000} s"],
+        ["Window spacing", f"{BLOCK_MS // 1000} s"],
+        ["Usable threshold", f"{USABLE_THRESHOLD:.2f}"],
+        [
+            "Noisy stretches",
+            f"from {from_start} to the end of each noise stress record, {stretch_min} min with "
+            f"added noise alternating with {stretch_min} min without, starting with noise",
+        ],
+    ]
+    return [
+        "## Signal quality index",
+        _table(["Item", "Value"], [_LEFT, _LEFT], rows),
+        *_quality_noise_blocks(quality, from_start, title),
+        *_quality_records_blocks(quality, from_start, title),
+        *_quality_criteria_blocks(quality, from_start),
+    ]
+
+
+def _summary_row(label: str, summary: WindowSummary) -> list[str]:
+    return [
+        label,
+        str(summary.n_windows),
+        _index(summary.median_index),
+        _share(summary.n_usable, summary.n_windows),
+    ]
+
+
+def _quality_noise_blocks(quality: QualityResults, from_start: str, title: str) -> list[str]:
+    return [
+        "Noise stress records: the windows that lie entirely in a stretch with added noise. "
+        f"Records of the {title}: the windows that start at or after "
+        f"{from_start}. Noise records: every window.",
+        "### Noise stress records",
+        _table(
+            ["Windows of", "Windows", "Median index", "Usable (%)"],
+            [_LEFT, _RIGHT, _RIGHT, _RIGHT],
+            [
+                *(
+                    _summary_row(f"{level} dB", summary)
+                    for level, summary in sorted(quality.by_snr, key=lambda entry: -entry[0])
+                ),
+                _summary_row(
+                    f"records {_english_list(CLEAN_RECORDS)}, no added noise, from {from_start}",
+                    quality.clean,
+                ),
+                *(_summary_row(f"noise record {name}", s) for name, s in quality.noise_records),
+            ],
+        ),
+    ]
+
+
+def _quality_records_blocks(quality: QualityResults, from_start: str, title: str) -> list[str]:
+    rows = [
+        [
+            entry.record,
+            str(entry.from_start.n_windows),
+            _share(entry.from_start.n_usable, entry.from_start.n_windows),
+            str(entry.fn_in_not_usable),
+            str(entry.fp_in_not_usable),
+        ]
+        for entry in quality.records
+    ]
+    n_windows = sum(entry.from_start.n_windows for entry in quality.records)
+    n_usable = sum(entry.from_start.n_usable for entry in quality.records)
+    rows.append(
+        [
+            "Total",
+            str(n_windows),
+            _share(n_usable, n_windows),
+            str(sum(entry.fn_in_not_usable for entry in quality.records)),
+            str(sum(entry.fp_in_not_usable for entry in quality.records)),
+        ]
+    )
+    return [
+        f"### Records of the {title}",
+        _table(
+            [
+                "Record",
+                f"Windows from {from_start}",
+                "Usable (%)",
+                "FN in not usable windows",
+                "FP in not usable windows",
+            ],
+            [_LEFT, _RIGHT, _RIGHT, _RIGHT, _RIGHT],
+            rows,
+        ),
+        "FN and FP are those of the results per record. Each one that lies in at least one "
+        "window marked not usable is counted once. No threshold applies to these figures.",
+    ]
+
+
+def _quality_criteria_blocks(quality: QualityResults, from_start: str) -> list[str]:
+    snr = dict(quality.by_snr)
+    noise = dict(quality.noise_records)
+    passed = dict(quality.criteria)
+
+    def share(summary: WindowSummary | None) -> str:
+        return _NOT_DEFINED if summary is None else _share(summary.n_usable, summary.n_windows)
+
+    def median(level: int) -> str:
+        summary = snr.get(level)
+        return _NOT_DEFINED if summary is None else _index(summary.median_index)
+
+    def percent(value: int) -> str:
+        return f"{value:.2f}"
+
+    levels = (24, 18, 12, 6, 0, -6)
+    rows: list[tuple[str, str, str]] = [
+        (
+            "median_non_increasing",
+            "Median index from 24 dB to -6 dB",
+            ", ".join(median(level) for level in levels),
+        ),
+        (
+            "median_lower_at_lowest_snr",
+            "Median index at -6 dB and at 24 dB",
+            f"{median(-6)}, {median(24)}",
+        ),
+        (
+            "clean_usable",
+            f"Usable windows, records {_english_list(CLEAN_RECORDS)} from {from_start} (%)",
+            share(quality.clean),
+        ),
+    ]
+    required = {
+        "median_non_increasing": "non-increasing",
+        "median_lower_at_lowest_snr": "lower at -6 dB",
+        "clean_usable": f"≥ {percent(CLEAN_MIN_USABLE_PERCENT)}",
+    }
+    for level in HIGH_SNRS_DB:
+        name = f"usable_{level}"
+        rows.append((name, f"Usable windows at {level} dB (%)", share(snr.get(level))))
+        required[name] = f"≥ {percent(HIGH_SNR_MIN_USABLE_PERCENT)}"
+    for level in LOW_SNRS_DB:
+        name = f"usable_{level}"
+        rows.append((name, f"Usable windows at {level} dB (%)", share(snr.get(level))))
+        required[name] = f"≤ {percent(LOW_SNR_MAX_USABLE_PERCENT)}"
+    for record in NOISE_RECORDS:
+        name = f"noise_{record}"
+        rows.append((name, f"Usable windows, noise record {record} (%)", share(noise.get(record))))
+        required[name] = f"≤ {percent(NOISE_MAX_USABLE_PERCENT)}"
+    table_rows = [
+        [label, value, required[name], _outcome(passed.get(name, False))]
+        for name, label, value in sorted(rows, key=lambda row: QUALITY_CRITERIA.index(row[0]))
+    ]
+    return [
+        "### Criteria",
+        _table(
+            ["Criterion", "Value", "Required", "Result"],
+            [_LEFT, _LEFT, _LEFT, _LEFT],
+            table_rows,
+        ),
+    ]
+
+
+_START_OF_STREAM_CORRECTION: Final = (
+    "Method correction. In the first run of this evaluation, each segment was processed only "
+    "up to its last sample. Detection reports a beat a fraction of a second after it, so the "
+    "beats at the end of each segment were never reported and were counted as false "
+    "negatives; the analysis of the false negatives of that run showed it. From this version, "
+    "detection continues on the record after each segment for the longest delay of a "
+    "detection, and only the reference beats and detections whose index lies in the segment "
+    "are scored. The detection algorithm is unchanged."
+)
+
+
+def _start_of_stream_section(stream: StartOfStreamResults) -> list[str]:
+    """Section 9: the start of stream (SRS-023)."""
+    starts = ", ".join(_minutes_seconds(start) for start in stream.starts_s)
+    continuation = ", ".join(
+        str(value) for value in sorted({entry.continuation_samples for entry in stream.records})
+    )
+    rows = [
+        ["Segments", f"{stream.segment_s} s each, processed on their own, starting at {starts}"],
+        ["Segments per record", str(len(stream.starts_s))],
+        ["Start-up period", f"first {LEARNING_S} s of each segment, not scored"],
+        [
+            "Continuation after each segment",
+            f"{continuation} samples, the longest delay of a detection, "
+            "or to the end of the record when it comes first",
+        ],
+        [
+            "Segments with a shorter continuation",
+            str(sum(entry.short_continuations for entry in stream.records)),
+        ],
+        ["Detections scored", "marked reliable, with the index in the segment"],
+        ["Reference beats scored", "in the segment"],
+        [
+            "Matching",
+            "EC57 beat by beat, pairing rules of the WFDB comparator bxb; "
+            f"match window {MATCH_WINDOW_MS} ms; start-up period not scored; "
+            "ventricular flutter and fibrillation episodes not scored",
+        ],
+    ]
+    statistics = stream.statistics
+    record_rows = [
+        [
+            entry.record,
+            entry.signal_name,
+            str(entry.n_segments),
+            str(entry.counts.tp),
+            str(entry.counts.fn),
+            str(entry.counts.fp),
+            _percent(record_statistics(entry.counts).se_percent),
+            _percent(record_statistics(entry.counts).ppv_percent),
+        ]
+        for entry in stream.records
+    ]
+    record_rows.append(
+        [
+            "Gross",
+            "",
+            str(sum(entry.n_segments for entry in stream.records)),
+            str(statistics.tp),
+            str(statistics.fn),
+            str(statistics.fp),
+            _percent(statistics.gross_se_percent),
+            _percent(statistics.gross_ppv_percent),
+        ]
+    )
+    record_rows.append(
+        [
+            "Average",
+            "",
+            "",
+            "",
+            "",
+            "",
+            _percent(statistics.average_se_percent),
+            _percent(statistics.average_ppv_percent),
+        ]
+    )
+    return [
+        "## Start of stream",
+        _table(["Item", "Value"], [_LEFT, _LEFT], rows),
+        _START_OF_STREAM_CORRECTION,
+        "### Results per record",
+        _table(
+            ["Record", "Signal", "Segments", "TP", "FN", "FP", "Se (%)", "+P (%)"],
+            [_LEFT, _LEFT, _RIGHT, _RIGHT, _RIGHT, _RIGHT, _RIGHT, _RIGHT],
+            record_rows,
+        ),
+        _averages_sentence(statistics),
+        "### Targets",
+        _targets_table(statistics),
+    ]
 
 
 def _lowest_sections(statistics: Sequence[RecordStatistics]) -> list[str]:

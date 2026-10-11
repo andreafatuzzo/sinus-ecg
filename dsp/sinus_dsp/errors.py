@@ -149,8 +149,9 @@ class NonFiniteOutputError(SinusError):
 
     SRS-015: a golden-vector file never holds a value that is not finite; the export fails
     with this error, naming the input, instead. With the inputs of the golden-vector set
-    this cannot happen; with a finite input of extreme amplitude the filters can overflow
-    (OP-063).
+    this cannot happen. Since the input check rejects every sample beyond 1000 mV
+    (architecture §13.2; OP-063), no accepted input can produce such a value: the check
+    stays as a guard of the file format.
 
     Attributes:
         input_id: Identifier of the input whose output is not finite.

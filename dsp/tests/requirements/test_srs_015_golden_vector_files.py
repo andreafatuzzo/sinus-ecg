@@ -1,8 +1,10 @@
 """Requirement tests of SRS-015: the golden-vector files of the export (RC-012).
 
-SRS-015 (v0.7.2): one golden-vector file for each synthetic input (2 sampling frequencies x
-3 heart rates x 3 variants) and for the first 60 s of each record of the subset of SRS-016
-(first stored signal), "if the files of all these records are available and verified against
+SRS-015 (v0.7.2), on golden-vector format version 2 (architecture, section 13.8): one
+golden-vector file for each synthetic input (2 sampling frequencies x 3 heart rates x 3
+variants, and the 8 event inputs of SRS-033) and for the first 60 s of each record of the
+subset of SRS-016 (first stored signal), "if the files of all these records are available and
+verified against
 the checksum list of SRS-001; otherwise, none of these record segments". Each file contains
 an identifier of the input, its sampling frequency in Hz, the settings used (mains
 frequency), the software version with an identifier of the source code, the input samples in
@@ -22,11 +24,11 @@ The cases of the verification of SRS-015 and their tests (the command itself is 
 - the software version and the source identifier are those of the software under test,
   checked as for SRS-012: `test_file_states_the_software_under_test` (identifier computed by
   the test with the method of architecture section 8.14);
-- the set of files matches the list: `test_export_writes_one_file_per_listed_input` (18
+- the set of files matches the list: `test_export_writes_one_file_per_listed_input` (26
   synthetic files and 6 record segments), "also when a file of one of the records fails
   verification": `test_record_segments_are_skipped_when_the_records_are_not_verified` (one
   file of one record altered or missing, or one record without any file, while the files of
-  the five others are verified: 18 files only, none of the six segments, as the clause "all
+  the five others are verified: 26 files only, none of the six segments, as the clause "all
   or none" of v0.7.2 requires), and
   `test_record_segments_need_only_the_files_of_the_six_records`;
 - the values read back equal the outputs of the conditioning and detection functions called
@@ -60,9 +62,9 @@ from sinus_dsp.filters import (
     remove_mains_interference,
 )
 from sinus_dsp.golden import GOLDEN_FILE_SUFFIX, export_golden_vectors, read_golden_vector
-from sinus_dsp.pipeline import detect_beats, run_pipeline
+from sinus_dsp.pipeline import detect_beats, detect_marked, run_pipeline
 from sinus_dsp.qrs import detect_qrs
-from sinus_dsp.synthetic import synthetic_ecg
+from sinus_dsp.synthetic import synthetic_ecg, synthetic_event_ecg
 
 pytestmark = pytest.mark.usefixtures("forbid_network")
 
@@ -74,9 +76,27 @@ SYNTHETIC = tuple(
     for variant in ("clean", "bw-mains50", "bw-mains60")
 )
 SYNTHETIC_IDS = tuple(f"syn-fs{fs}-hr{hr:03d}-{variant}" for fs, hr, variant in SYNTHETIC)
+EVENTS = ("artefact", "small-beat", "held", "rate-change")
+EVENT_IDS = tuple(f"syn-fs{fs}-event-{event}" for fs in (250, 360) for event in EVENTS)
 SEGMENT_IDS = tuple(f"mitdb-{name}-first60s" for name in SUBSET)
-ALL_IDS = SYNTHETIC_IDS + SEGMENT_IDS
+ALL_IDS = SYNTHETIC_IDS + EVENT_IDS + SEGMENT_IDS
+NOTICE = "NOTICE.md"
 SUFFIX = ".golden.txt"
+EVENT_SECONDS = {"artefact": 40, "small-beat": 40, "held": 40, "rate-change": 44}
+EVENT_PARAMETERS = {
+    "artefact": (
+        "duration_s=40;event=artefact;heart_rate_bpm=75;scaled_beat_ms=10100;scale=20.0;mains_hz=50"
+    ),
+    "small-beat": (
+        "duration_s=40;event=small-beat;heart_rate_bpm=75;scaled_beat_ms=10100;scale=0.4;mains_hz=50"
+    ),
+    "held": (
+        "duration_s=40;event=held;heart_rate_bpm=75;held_from_ms=15000;held_ms=6000;mains_hz=50"
+    ),
+    "rate-change": (
+        "duration_s=44;event=rate-change;heart_rates_bpm=75/25/75;changes_ms=11700/30900;mains_hz=50"
+    ),
+}
 QUANTIZATION_MV = 1 / 200  # one step of the fixture records (gain 200 per mV)
 WAVEFORM_TOLERANCE_MV = 1e-9
 
@@ -120,6 +140,11 @@ def _same_float64(a: Any, b: Any) -> bool:
     """Bitwise equality of two float64 arrays (so -0.0 differs from 0.0)."""
     x, y = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
     return x.shape == y.shape and x.tobytes() == y.tobytes()
+
+
+def _same_summary(a: Any, b: Any) -> bool:
+    """The summaries agree on what was written and skipped (the notice path is per folder)."""
+    return (a.written, a.skipped, a.skip_reason) == (b.written, b.skipped, b.skip_reason)
 
 
 class Export:
@@ -174,21 +199,25 @@ def test_export_writes_one_file_per_listed_input(two_exports: tuple[Export, Expo
     Input: the export on the synthetic ECG subset fixture (the six records named as the
     subset of SRS-016, their files verified against the fixture checksum list), into a new
     folder.
-    Expected: the folder holds exactly 24 files, `<input id>.golden.txt` for the 18 synthetic
-    identifiers `syn-fs<fs>-hr<hr>-<variant>` and the 6 identifiers `mitdb-<record>-first60s`
-    of records 100, 105, 108, 119, 203 and 207 (no temporary file, no subfolder);
-    `GOLDEN_FILE_SUFFIX` is `.golden.txt`; the summary lists the 24 names in the order
-    written (synthetic inputs in the order of the set, then the records in code-point order)
-    and nothing skipped (`skipped` empty, `skip_reason` None).
+    Expected: the folder holds exactly 33 files, `<input id>.golden.txt` for the 18 synthetic
+    identifiers `syn-fs<fs>-hr<hr>-<variant>`, the 8 event identifiers
+    `syn-fs<fs>-event-<event>` and the 6 identifiers `mitdb-<record>-first60s` of records 100,
+    105, 108, 119, 203 and 207, and `NOTICE.md` (no temporary file, no subfolder);
+    `GOLDEN_FILE_SUFFIX` is `.golden.txt`; the summary lists the 32 vector names in the order
+    written (synthetic inputs in the order of the set, the events, then the records in
+    code-point order) and nothing skipped (`skipped` empty, `skip_reason` None); its
+    `notice` is the path of `NOTICE.md` in the folder.
     """
     run = two_exports[0]
     expected = [input_id + SUFFIX for input_id in ALL_IDS]
 
     assert GOLDEN_FILE_SUFFIX == SUFFIX
-    assert sorted(run.files) == sorted(expected)
+    assert sorted(run.files) == sorted([*expected, NOTICE])
     assert list(run.summary.written) == expected
     assert run.summary.skipped == ()
     assert run.summary.skip_reason is None
+    assert run.summary.notice is not None
+    assert Path(run.summary.notice) == run.folder / NOTICE
 
 
 @pytest.mark.requirement("SRS-015")
@@ -197,15 +226,16 @@ def test_two_runs_give_byte_identical_files(two_exports: tuple[Export, Export]) 
 
     Input: two runs of the export, with the same software and third-party versions, on the
     synthetic set and the six fixture records, into two different folders.
-    Expected: the same 24 file names, each with the same bytes in both runs, and the same
-    summaries.
+    Expected: the same 33 file names (`NOTICE.md` included), each with the same bytes in both
+    runs, and the same `written`, `skipped` and `skip_reason` (the `notice` path differs with
+    the folder).
     """
     first, second = two_exports
 
     assert sorted(first.files) == sorted(second.files)
     differing = [name for name in first.files if first.files[name] != second.files[name]]
     assert differing == []
-    assert first.summary == second.summary
+    assert _same_summary(first.summary, second.summary)
 
 
 @pytest.mark.requirement("SRS-015")
@@ -220,8 +250,8 @@ def test_same_inputs_in_another_data_folder_give_identical_files(
     Input: a copy of the synthetic ECG subset fixture in a data folder whose path holds a
     space and non-ASCII letters, exported into an output folder in another place, also with
     a space in its path.
-    Expected: the same 24 file names with the same bytes as the reference run (the files hold
-    no path).
+    Expected: the same 33 file names with the same bytes as the reference run (the files
+    hold no path), and the same `written`, `skipped` and `skip_reason`.
     """
     copy = copy_subset_fixture(subset_ecg_fixture, tmp_path / "other data è" / "data")
     output = tmp_path / "another output" / "golden vectors"
@@ -230,7 +260,7 @@ def test_same_inputs_in_another_data_folder_give_identical_files(
         output, data_root=copy.data_root, database=_database(copy.checksum_list_sha256)
     )
 
-    assert summary == two_exports[0].summary
+    assert _same_summary(summary, two_exports[0].summary)
     assert _files(output) == two_exports[0].files
 
 
@@ -243,7 +273,8 @@ def test_existing_files_in_the_output_folder(
     Input: an output folder that holds a stale file under the name of one synthetic file, a
     stale file under the name of one record segment, and an unrelated file `notes.txt`.
     Expected: every golden-vector file has the bytes of the reference run (the stale ones
-    are replaced); `notes.txt` is left as it was; no other file is added.
+    are replaced); `notes.txt` is left as it was; no other file is added (`NOTICE.md` is
+    written).
     """
     output = tmp_path / "golden"
     output.mkdir()
@@ -272,13 +303,14 @@ def test_file_follows_the_documented_format(
     two_exports: tuple[Export, Export],
     read_golden_file: Callable[[bytes], Any],
 ) -> None:
-    """Each file follows the documented format, version 1 (architecture, section 7.3).
+    """Each file follows the documented format, version 2 (architecture, sections 7.3 and 13.8).
 
     Input: the file of the input, as written by the export.
-    Expected: the test's own reader of section 7.3 accepts it (UTF-8, line feeds, no space,
-    tab, carriage return or empty line, the 13 header keys in order with valid values, the
-    sections `[coefficients]`, `[signals]`, `[beats]`, `[reference_beats]`, `[end]` in order
-    with their column lines, row counts as in the header, the documented number syntax,
+    Expected: the test's own reader of version 2 accepts it (UTF-8, line feeds, no space,
+    tab, carriage return or empty line, the 15 header keys in order with valid values, the
+    sections `[coefficients]`, `[signals]`, `[beats]`, `[reference_beats]`, `[heart_rates]`,
+    `[quality_windows]`, `[end]` in order with their column lines, row counts as in the header,
+    the documented number syntax,
     finite floats, beats in range and in order, one line feed after `[end]` and nothing
     after it); no byte-order mark; every float is written as Python's `repr()` of its value
     (the shortest form that reads back exactly).
@@ -298,7 +330,7 @@ def test_file_contains_each_listed_item(input_id: str, parsed: dict[str, Any]) -
 
     Input: the file of the input, read by the test.
     Expected:
-    - format `sinus-golden-vector`, version 1;
+    - format `sinus-golden-vector`, version 2;
     - identifier of the input: `input_id` is the identifier of the file; `input_source` is
       `synthetic` or `mitdb`; `input_parameters` gives the generator parameters
       (`duration_s=30;heart_rate_bpm=...;...`) or
@@ -311,15 +343,27 @@ def test_file_contains_each_listed_item(input_id: str, parsed: dict[str, Any]) -
     - the stages `baseline,mains` (SRS-004, then SRS-005, the order applied) with one
       coefficient row each and the columns `input_mv,baseline_mv,mains_mv`;
     - the input samples: 30 s (7500 or 10800 rows) or 60 s (21600 rows);
-    - the detected QRS indices (`[beats]`, at least one beat) and the reference beats.
+    - the detected QRS indices (`[beats]`, at least one beat) and the reference beats;
+    - the new items of SRS-033: the mark and report sample of each detection, and header
+      counts `n_heart_rates` and `n_quality_windows` equal to the rows of the two sections
+      (at least one heart-rate event and at least one window).
+    The event inputs (`syn-fs<fs>-event-<event>`) have `input_source` `synthetic`, mains 50 Hz,
+    the `input_parameters` of architecture section 13.9, and 30..44 s of samples.
     """
     golden = parsed[input_id]
     header = golden.header
 
     assert header["format"] == "sinus-golden-vector"
-    assert header["format_version"] == "1"
+    assert header["format_version"] == "2"
     assert header["input_id"] == input_id
-    if input_id in SYNTHETIC_IDS:
+    if input_id in EVENT_IDS:
+        fs = int(input_id.split("-")[1].removeprefix("fs"))
+        event = input_id.split("-event-")[1]
+        n_samples = EVENT_SECONDS[event] * fs
+        assert header["input_source"] == "synthetic"
+        assert header["input_parameters"] == EVENT_PARAMETERS[event]
+        mains = 50
+    elif input_id in SYNTHETIC_IDS:
         fs, hr, variant = _synthetic_of(input_id)
         mains = 60 if variant == "bw-mains60" else 50
         wander, amplitude = ("0.0", "0.0") if variant == "clean" else ("1.0", "0.2")
@@ -344,6 +388,9 @@ def test_file_contains_each_listed_item(input_id: str, parsed: dict[str, Any]) -
     assert golden.beats.size > 0
     assert header["n_beats"] == str(golden.beats.size)
     assert header["n_reference_beats"] == str(golden.reference_beats.size)
+    assert golden.beat_startup.size == golden.beat_reported_at.size == golden.beats.size
+    assert header["n_heart_rates"] == str(len(golden.heart_rates)) != "0"
+    assert header["n_quality_windows"] == str(golden.window_first.size) != "0"
 
 
 @pytest.mark.requirement("SRS-015")
@@ -412,6 +459,28 @@ def _check_read_back(golden: Any) -> list[str]:
     ):
         if golden.beats.tolist() != np.asarray(computed).tolist():
             problems.append(f"beats differ from {name}")
+    detections = pipeline.detections
+    if golden.beat_startup.tolist() != np.asarray(detections.startup).tolist():
+        problems.append("marks differ from run_pipeline(input).detections.startup")
+    if golden.beat_reported_at.tolist() != np.asarray(detections.reported_at).tolist():
+        problems.append("reported_at differs from run_pipeline(input).detections.reported_at")
+    marked = detect_marked(signal, fs, mains)
+    if golden.beat_startup.tolist() != np.asarray(marked.startup).tolist():
+        problems.append("marks differ from detect_marked(input)")
+    rows = [(e.sample, e.beat_index, e.status, e.bpm) for e in pipeline.heart_rate]
+    if list(golden.heart_rates) != rows:
+        problems.append("heart-rate rows differ from run_pipeline(input).heart_rate")
+    quality = pipeline.quality
+    for name, read, computed in (
+        ("first", golden.window_first, quality.first),
+        ("last", golden.window_last, quality.last),
+        ("reported_at", golden.window_reported_at, quality.reported_at),
+        ("usable", golden.window_usable, quality.usable),
+    ):
+        if read.tolist() != np.asarray(computed).tolist():
+            problems.append(f"window {name} differs from run_pipeline(input).quality")
+    if not _same_float64(golden.window_index, quality.index):
+        problems.append("window index differs from run_pipeline(input).quality.index")
     return problems
 
 
@@ -447,7 +516,10 @@ def test_input_is_that_of_the_generator_or_of_the_record(
     """The input samples of each file are the input that SRS-015 lists.
 
     Input: the file of the input, read by the test.
-    Expected, synthetic inputs: `input_mv` equals `synthetic_ecg(fs, hr, variant).signal_mv`
+    Expected, event inputs: `input_mv` and `[reference_beats]` equal those of
+    `synthetic_event_ecg(fs, event)` (their independent construction is checked in
+    `test_srs_033_golden_vectors_real_time.py`). Expected, synthetic inputs: `input_mv`
+    equals `synthetic_ecg(fs, hr, variant).signal_mv`
     bitwise, and lies within 1e-9 mV of the test's own synthetic ECG of architecture section
     7.2; `[reference_beats]` are the r_k of the integer rule. Record segments: `input_mv`
     equals the first 21600 samples (60 s at 360 Hz) of channel 0 of the fixture record as
@@ -456,7 +528,13 @@ def test_input_is_that_of_the_generator_or_of_the_record(
     one used); `[reference_beats]` are the beat annotations of the record below sample 21600.
     """
     golden = parsed[input_id]
-    if input_id in SYNTHETIC_IDS:
+    if input_id in EVENT_IDS:
+        fs = int(input_id.split("-")[1].removeprefix("fs"))
+        generated_event = synthetic_event_ecg(fs, input_id.split("-event-")[1])
+        assert generated_event.input_id == input_id
+        assert _same_float64(golden.input_mv, generated_event.signal_mv)
+        assert golden.reference_beats.tolist() == generated_event.r_peaks.tolist()
+    elif input_id in SYNTHETIC_IDS:
         fs, hr, variant = _synthetic_of(input_id)
         mains = None if variant == "clean" else (60 if variant == "bw-mains60" else 50)
         generated = synthetic_ecg(fs, hr, variant).signal_mv
@@ -483,7 +561,9 @@ def test_reader_of_the_software_reads_back_the_same_values(
     Input: `read_golden_vector(<path of the file>)`.
     Expected: every field equals what the test's own reader reads from the same file: the
     header values, `fs_hz` as a float, `mains_hz`, `stages`, the coefficient matrices with
-    a0 = 1, the input, the two stage outputs (bitwise), the beats and the reference beats.
+    a0 = 1, the input, the two stage outputs (bitwise), the beats and the reference beats,
+    the marks and report samples, the heart-rate
+    events and the quality windows.
     """
     golden = parsed[input_id]
     vector = read_golden_vector(two_exports[0].folder / (input_id + SUFFIX))
@@ -510,6 +590,16 @@ def test_reader_of_the_software_reads_back_the_same_values(
         assert _same_float64(output, golden.stage_mv(stage))
     assert np.asarray(vector.beats).tolist() == golden.beats.tolist()
     assert np.asarray(vector.reference_beats).tolist() == golden.reference_beats.tolist()
+    assert np.asarray(vector.beat_startup).tolist() == golden.beat_startup.tolist()
+    assert np.asarray(vector.beat_reported_at).tolist() == golden.beat_reported_at.tolist()
+    assert [(e.sample, e.beat_index, e.status, e.bpm) for e in vector.heart_rates] == list(
+        golden.heart_rates
+    )
+    assert np.asarray(vector.window_first).tolist() == golden.window_first.tolist()
+    assert np.asarray(vector.window_last).tolist() == golden.window_last.tolist()
+    assert np.asarray(vector.window_reported_at).tolist() == golden.window_reported_at.tolist()
+    assert np.asarray(vector.window_usable).tolist() == golden.window_usable.tolist()
+    assert _same_float64(vector.window_index, golden.window_index)
 
 
 # --------------------------------------------------------------------------------------------
@@ -553,8 +643,9 @@ def test_record_segments_are_skipped_when_the_records_are_not_verified(
     (one bit), or with one file of one record altered (105.dat, 108.at_) or missing (203.atr,
     207.xws, 100.hea), or with every file of record 119 missing; in each case but the first
     two, the files of the other records are intact and verify.
-    Expected: the export completes; the folder holds exactly the 18 synthetic files, with the
-    bytes of the reference run, and no file of any record segment; `written` lists them in
+    Expected: the export completes; the folder holds exactly the 26 synthetic files (18 and
+    the 8 event inputs), with the bytes of the reference run, and no file of any record
+    segment and no `NOTICE.md` (`notice` is None); `written` lists them in
     order; `skipped` lists the six record-segment identifiers in code-point order of the
     record names; `skip_reason` says that the database is not verified and names the file
     concerned.
@@ -581,8 +672,9 @@ def test_record_segments_are_skipped_when_the_records_are_not_verified(
         database=_database(subset_ecg_fixture.checksum_list_sha256),
     )
 
-    synthetic_names = [input_id + SUFFIX for input_id in SYNTHETIC_IDS]
+    synthetic_names = [input_id + SUFFIX for input_id in SYNTHETIC_IDS + EVENT_IDS]
     assert list(summary.written) == synthetic_names
+    assert summary.notice is None
     assert summary.skipped == SEGMENT_IDS
     assert summary.skip_reason is not None
     assert "not verified" in summary.skip_reason
@@ -604,7 +696,8 @@ def test_record_segments_need_only_the_files_of_the_six_records(
     Input: a copy of the synthetic ECG subset fixture holding only the checksum list and the
     28 files of the six records (as the cache of the build); or a full copy in which files
     that belong to no record of the subset are altered (`RECORDS`, `x_mitdb/x_108.hea`).
-    Expected: the 24 files are written, with the bytes of the reference run; nothing skipped.
+    Expected: the 32 vector files and `NOTICE.md` are written, with the bytes of the
+    reference run; nothing skipped.
     """
     copy = copy_subset_fixture(
         subset_ecg_fixture, tmp_path / "data", only_subset=case == "only-the-six-records"
@@ -804,7 +897,8 @@ def test_record_shorter_than_60_s_gives_no_segment(
     Input: a fixture database of the six records, verified, in which record 119 has 21599
     samples at 360 Hz (one sample less than 60 s) and the others 70 s.
     Expected: `InvalidInputError` naming record 119; no file `mitdb-119-first60s.golden.txt`
-    and no temporary file in the output folder; every file present is complete (the test's
+    and no temporary file in the output folder (a `NOTICE.md` may be there: it is not a
+    vector); every vector file present is complete (the test's
     reader accepts it).
     """
     records = {name: (360, 25200, 75) for name in SUBSET}
@@ -818,7 +912,7 @@ def test_record_shorter_than_60_s_gives_no_segment(
         export_golden_vectors(output, data_root=fixture.data_root, database=_database(fixture.pin))
 
     assert "119" in str(excinfo.value)
-    names = sorted(path.name for path in output.iterdir())
+    names = sorted(path.name for path in output.iterdir() if path.name != NOTICE)
     assert f"mitdb-119-first60s{SUFFIX}" not in names
     assert all(name.endswith(SUFFIX) for name in names), names
 
@@ -849,7 +943,7 @@ def test_record_segment_files_are_complete_after_a_failed_export(
         export_golden_vectors(output, data_root=fixture.data_root, database=_database(fixture.pin))
 
     assert "203" in str(excinfo.value)
-    names = sorted(path.name for path in output.iterdir())
+    names = sorted(path.name for path in output.iterdir() if path.name != NOTICE)
     assert all(name.endswith(SUFFIX) for name in names), names
     assert not {f"mitdb-203-first60s{SUFFIX}", f"mitdb-207-first60s{SUFFIX}"} & set(names)
     for name in names:

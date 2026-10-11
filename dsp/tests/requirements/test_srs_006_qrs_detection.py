@@ -268,9 +268,9 @@ def test_flat_input_of_10_s_gives_no_detection_and_no_error(
 
 
 # Constant values beyond the verification case: zero with its sign, a value close to zero,
-# an ECG amplitude, the order of an electrode offset of either sign, and a value far beyond
-# any ECG front end.
-CONSTANT_LEVELS_MV = [-0.0, 1e-6, 5.0, 300.0, -300.0, 1e6]
+# an ECG amplitude, the order of an electrode offset of either sign, and the largest
+# magnitude that SRS-003 accepts (1000 mV).
+CONSTANT_LEVELS_MV = [-0.0, 1e-6, 5.0, 300.0, -300.0, 1000.0]
 
 
 @pytest.mark.requirement("SRS-006")
@@ -287,7 +287,7 @@ def test_constant_input_gives_no_index(
     SRS-006 (v0.7), third sentence: "For an input of constant value (a flat line), the output
     shall contain no index." It holds for every input accepted by SRS-003, not only for the
     verification case (10 s at 360 Hz and 250 Hz).
-    Input: a constant signal at -0.0, 1e-6, 5, 300, -300 and 1e6 mV; at 125 Hz and 1000 Hz
+    Input: a constant signal at -0.0, 1e-6, 5, 300, -300 and 1000 mV; at 125 Hz and 1000 Hz
     (the limits of SRS-003) and at 333.3 Hz (not a whole number); lasting 10 s (the shortest
     input accepted, ceil(10 * fs) samples) and 120 s; with the mains setting 50 Hz and 60 Hz;
     through each entry point of the detection.

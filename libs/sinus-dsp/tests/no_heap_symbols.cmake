@@ -1,0 +1,22 @@
+# Fails if the archive has an undefined symbol that allocates memory or throws.
+execute_process(COMMAND ${NM} -C --undefined-only ${ARCHIVE}
+                OUTPUT_VARIABLE undefined RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "nm failed: ${err}")
+endif()
+execute_process(COMMAND ${NM} -C --defined-only ${ARCHIVE}
+                OUTPUT_VARIABLE defined RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0 OR NOT defined MATCHES "[A-Za-z_]")
+  message(FATAL_ERROR "no defined symbol in ${ARCHIVE}")
+endif()
+string(REPLACE "\n" ";" lines "${undefined}")
+set(pattern "(^|[ :])(operator new|operator delete|malloc|calloc|realloc|free|__cxa_allocate_exception|__cxa_throw)([^A-Za-z0-9_]|$)")
+set(found "")
+foreach(line IN LISTS lines)
+  if(line MATCHES "${pattern}")
+    list(APPEND found "${line}")
+  endif()
+endforeach()
+if(found)
+  message(FATAL_ERROR "forbidden symbol in ${ARCHIVE}: ${found}")
+endif()

@@ -9,6 +9,10 @@ The detector uses only the current and past samples, with a bounded look-back, a
 decisions on candidate peaks in time order, so that a streaming implementation evaluates the
 same procedure sample by sample. It reports the positions of the QRS complexes in the time
 base of its input.
+
+SRS-022: the detection trace (architecture §13.3) records, for every detection, its mark
+(start-up or reliable), the sample at which the procedure reports it, the peak of the
+integrated signal it comes from and the rule that found it, without changing any decision.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ import numpy as np
 import numpy.typing as npt
 from scipy import signal as _signal
 
-from sinus_dsp._types import FloatArray, IndexArray
+from sinus_dsp._types import BoolArray, FloatArray, IndexArray
 from sinus_dsp._units import ceil_samples_ms, round_samples, round_samples_ms
 from sinus_dsp.errors import InvalidInputError
 from sinus_dsp.filters import apply_sos, butterworth2_highpass_sos, butterworth2_lowpass_sos
@@ -40,6 +44,12 @@ RELEARN_AFTER_S: Final = 8
 SEARCH_BACK_FACTOR: Final = 1.66
 RR_AVERAGE_COUNT: Final = 8
 MIN_INTEGRATED: Final = 1e-4  # (mV/s)^2
+
+# SRS-022: the rule that found a detection (architecture §13.3).
+PATH_NORMAL: Final = "normal"  # classified at its confirmation (§8.7.3, step 1 of the procedure)
+PATH_SEARCH_BACK: Final = "search_back"  # accepted by search-back (§8.7.3, step 3)
+PATH_LEARNING: Final = "learning"  # classified during an initialisation (§8.7.3)
+DETECTION_PATHS: Final = (PATH_NORMAL, PATH_SEARCH_BACK, PATH_LEARNING)
 
 
 @dataclass(frozen=True)
@@ -62,6 +72,47 @@ class QrsSignals:
     bandpassed_mv: FloatArray
     derivative_mv_per_s: FloatArray
     integrated: FloatArray  # (mV/s)^2
+
+
+@dataclass(frozen=True)
+class Detections:
+    """The detections of one input, with their marks, report samples and paths.
+
+    SRS-022: each detection is marked start-up if its index lies in the stretch of ``L``
+    learning samples of the latest initialisation at its acceptance (``[0, L - 1]`` for the
+    first one), and reliable otherwise (architecture §13.3). The marks change no detection
+    and no index: ``indices`` equals the output of :func:`detect_qrs` on the same input.
+
+    The arrays have one element per detection, in the order reported, except
+    ``initialisations``.
+
+    Attributes:
+        indices: The fiducial points, strictly increasing, int64.
+        startup: ``True`` for the mark start-up, ``False`` for the mark reliable.
+        reported_at: The sample ``n`` of the procedure at which each detection is reported;
+            non-decreasing, with ``indices[i] <= reported_at[i] < n_samples``. int64.
+        peaks: The peak ``m`` of the integrated signal of each detection, int64.
+        paths: The rule that found each detection, one of :data:`DETECTION_PATHS`.
+        initialisations: The sample of every initialisation, increasing; the first one is
+            ``L - 1``. int64.
+    """
+
+    indices: IndexArray
+    startup: BoolArray
+    reported_at: IndexArray
+    peaks: IndexArray
+    paths: tuple[str, ...]
+    initialisations: IndexArray
+
+
+@dataclass(frozen=True)
+class QrsTrace:
+    """Everything the detector computes for one conditioned input (architecture §13.3)."""
+
+    fs_hz: float
+    samples: DetectorSamples
+    signals: QrsSignals
+    detections: Detections
 
 
 def detector_samples(fs_hz: float) -> DetectorSamples:
@@ -190,8 +241,24 @@ def _peak_features(m: int, signals: QrsSignals, samples: DetectorSamples) -> _Pe
     )
 
 
+def _startup_mark(index: int, init_n: int, learning: int) -> bool:
+    """Whether a detection at ``index`` is marked start-up (SRS-022, architecture §13.3).
+
+    ``init_n`` is the sample of the latest initialisation when the detection is accepted, and
+    ``learning`` the learning samples ``L``: the detection is start-up if its index lies in the
+    stretch ``[max(0, init_n - L + 1), init_n]`` from which that initialisation learned its
+    levels, whatever the position of its peak.
+    """
+    return max(0, init_n - learning + 1) <= index <= init_n
+
+
 class _Decisions:
-    """The adaptive thresholds and the decisions on the confirmed peaks."""
+    """The adaptive thresholds and the decisions on the confirmed peaks.
+
+    Besides the decisions, it keeps the trace of the detections (SRS-022, architecture
+    §13.3): for each accepted peak, its mark, the sample at which it is accepted and the
+    current path; and the sample of every initialisation. The trace changes no decision.
+    """
 
     def __init__(self, samples: DetectorSamples, signals: QrsSignals) -> None:
         self._samples = samples
@@ -208,6 +275,13 @@ class _Decisions:
         self.init_n: int | None = None
         self.peaks: deque[_Peak] = deque()
         self.output: list[int] = []
+        # The trace: one element per detection (parallel to ``output``), and the initialisations.
+        self.path = PATH_NORMAL
+        self.output_startup: list[bool] = []
+        self.output_reported_at: list[int] = []
+        self.output_peaks: list[int] = []
+        self.output_paths: list[str] = []
+        self.initialisations: list[int] = []
 
     @property
     def initialised(self) -> bool:
@@ -228,8 +302,8 @@ class _Decisions:
         while self.peaks[0].m < oldest:
             self.peaks.popleft()
 
-    def _accept(self, peak: _Peak, weight: float) -> None:
-        """Make ``peak`` a QRS, with a signal-level update of the given weight."""
+    def _accept(self, peak: _Peak, weight: float, n: int) -> None:
+        """Make ``peak`` a QRS at sample ``n``, with a signal-level update of the given weight."""
         self.spki = weight * peak.peak_i + (1.0 - weight) * self.spki
         self.spkf = weight * peak.peak_f + (1.0 - weight) * self.spkf
         if self.last is not None and self.rr_flag:
@@ -238,13 +312,19 @@ class _Decisions:
         self.rr_flag = True
         self.candidate = None
         self.output.append(peak.f)
+        # SRS-022: the trace of the detection; the mark uses the latest initialisation.
+        assert self.init_n is not None
+        self.output_startup.append(_startup_mark(peak.f, self.init_n, self._samples.learning))
+        self.output_reported_at.append(n)
+        self.output_peaks.append(peak.m)
+        self.output_paths.append(self.path)
 
     def _noise(self, peak: _Peak) -> None:
         self.npki = 0.125 * peak.peak_i + 0.875 * self.npki
         self.npkf = 0.125 * peak.peak_f + 0.875 * self.npkf
 
-    def classify(self, peak: _Peak) -> None:
-        """Classify a confirmed peak: ignored, QRS, T wave or noise."""
+    def classify(self, peak: _Peak, n: int) -> None:
+        """Classify a confirmed peak at sample ``n``: ignored, QRS, T wave or noise."""
         last = self.last
         refractory = self._samples.refractory
         # 1. Refractory period, on the peak position and on the reported index.
@@ -259,7 +339,7 @@ class _Decisions:
             ):
                 self._noise(peak)  # T wave
                 return
-            self._accept(peak, 0.125)
+            self._accept(peak, 0.125, n)
             return
         # 3. Noise peak; the largest one since the last QRS is the search-back candidate.
         self._noise(peak)
@@ -279,7 +359,9 @@ class _Decisions:
             and candidate.peak_i > 0.5 * self.threshold_i1
             and candidate.peak_f > 0.5 * self.threshold_f1
         ):
-            self._accept(candidate, 0.25)
+            self.path = PATH_SEARCH_BACK
+            self._accept(candidate, 0.25, n)
+            self.path = PATH_NORMAL
 
     def relearn_due(self, n: int) -> bool:
         """Whether no QRS was found for the re-learning time before ``n``."""
@@ -301,13 +383,20 @@ class _Decisions:
         self.candidate = None
         self.rr_flag = False
         self.init_n = n
+        self.initialisations.append(n)
         # The last QRS is kept, for the refractory period and the output spacing.
+        self.path = PATH_LEARNING
         for peak in [p for p in self.peaks if low <= p.m <= n]:
-            self.classify(peak)
+            self.classify(peak, n)
+        self.path = PATH_NORMAL
 
 
-def _detect(x: FloatArray, fs_hz: float) -> IndexArray:
-    """Detect the QRS complexes of a conditioned signal that has already been checked."""
+def _trace(x: FloatArray, fs_hz: float) -> QrsTrace:
+    """Detect the QRS complexes of a conditioned signal that has already been checked.
+
+    The per-sample procedure of architecture §8.7.3, unchanged, with the bookkeeping of the
+    trace of §13.3 (SRS-022).
+    """
     samples = detector_samples(fs_hz)
     signals = _signals(x, fs_hz, samples.window)
     integrated = signals.integrated.tolist()
@@ -324,7 +413,7 @@ def _detect(x: FloatArray, fs_hz: float) -> IndexArray:
                 peak = _peak_features(m, signals, samples)
                 decisions.store(peak)
                 if decisions.initialised:
-                    decisions.classify(peak)
+                    decisions.classify(peak, n)
         previous = y_n
         # 2. First initialisation, at the end of the learning period.
         if n == learning - 1:
@@ -336,11 +425,47 @@ def _detect(x: FloatArray, fs_hz: float) -> IndexArray:
             if decisions.relearn_due(n):
                 decisions.initialise(n)
 
-    return np.array(decisions.output, dtype=np.int64)
+    detections = Detections(
+        indices=np.array(decisions.output, dtype=np.int64),
+        startup=np.array(decisions.output_startup, dtype=np.bool_),
+        reported_at=np.array(decisions.output_reported_at, dtype=np.int64),
+        peaks=np.array(decisions.output_peaks, dtype=np.int64),
+        paths=tuple(decisions.output_paths),
+        initialisations=np.array(decisions.initialisations, dtype=np.int64),
+    )
+    return QrsTrace(fs_hz=fs_hz, samples=samples, signals=signals, detections=detections)
+
+
+def trace_qrs(conditioned_mv: npt.ArrayLike, fs_hz: float) -> QrsTrace:
+    """Detect the QRS complexes of a conditioned ECG, with the trace of every detection.
+
+    SRS-006: the detections are those of :func:`detect_qrs`. SRS-022: each detection carries
+    its mark, start-up if its index lies in a stretch from which the detector learns its
+    signal levels (the first ``L`` samples, ``L`` = 2 s, or the ``L`` samples up to a
+    re-learning), reliable otherwise; the marks change no detection and no index.
+
+    The trace also gives, for each detection, the sample at which the procedure reports it,
+    the peak of the integrated signal it comes from and the rule that found it
+    (:data:`DETECTION_PATHS`), the sample of every initialisation, the parameters in samples
+    and the intermediate signals (architecture §13.3).
+
+    Args:
+        conditioned_mv: The ECG after signal conditioning, in mV. It is not modified.
+        fs_hz: Its sampling frequency, in Hz.
+
+    Returns:
+        The sampling frequency, the parameters in samples, the intermediate signals and the
+        detections.
+
+    Raises:
+        InvalidInputError: If the input is rejected by the input checks.
+    """
+    x = validate_input(conditioned_mv, fs_hz)
+    return _trace(x, float(fs_hz))
 
 
 def detect_qrs(conditioned_mv: npt.ArrayLike, fs_hz: float) -> IndexArray:
-    """Detect the QRS complexes of a conditioned ECG.
+    """Detect the QRS complexes of a conditioned ECG: ``trace_qrs(...).detections.indices``.
 
     SRS-006: returns the sample indices of the detected QRS complexes in the time base of
     the input (index 0 is the first input sample), strictly increasing and at least 200 ms
@@ -359,5 +484,4 @@ def detect_qrs(conditioned_mv: npt.ArrayLike, fs_hz: float) -> IndexArray:
     Raises:
         InvalidInputError: If the input is rejected by the input checks.
     """
-    x = validate_input(conditioned_mv, fs_hz)
-    return _detect(x, float(fs_hz))
+    return trace_qrs(conditioned_mv, fs_hz).detections.indices

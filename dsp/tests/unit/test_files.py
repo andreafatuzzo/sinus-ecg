@@ -2,7 +2,7 @@
 
 They also check the rule of architecture §8.1 on private names: the package has one atomic
 writer, and no module imports a private name of a module that is not a private module, except
-``qrs._detect`` in ``pipeline``.
+``qrs._trace`` in ``pipeline`` (``qrs._detect`` until architecture v0.3, §13.3).
 """
 
 import ast
@@ -174,7 +174,7 @@ def _is_str_replace(node: ast.Call) -> bool:
 
 
 def test_private_names_are_imported_only_from_private_modules() -> None:
-    """Architecture §8.1: the one exception is ``qrs._detect``, imported by ``pipeline``."""
+    """Architecture §8.1, §13.3: the one exception is ``qrs._trace``, imported by ``pipeline``."""
     found: list[tuple[str, str, str]] = []
     for name, tree in _modules():
         for node in ast.walk(tree):
@@ -186,7 +186,7 @@ def test_private_names_are_imported_only_from_private_modules() -> None:
             for alias in node.names:
                 if alias.name.startswith("_"):
                     found.append((name, source, alias.name))
-    assert found == [("sinus_dsp.pipeline", "sinus_dsp.qrs", "_detect")]
+    assert found == [("sinus_dsp.pipeline", "sinus_dsp.qrs", "_trace")]
 
 
 def test_the_writers_of_files_use_the_helper() -> None:

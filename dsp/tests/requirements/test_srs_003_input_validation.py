@@ -310,3 +310,149 @@ def test_input_of_10_s_is_accepted_by_the_pipeline(
     assert result.beats.dtype == np.int64
     assert result.beats.ndim == 1
     assert np.all((result.beats >= 0) & (result.beats < n_samples))
+
+
+JUST_ABOVE_BOUND = math.nextafter(1000.0, math.inf)
+OVER_BOUND_VALUES = [
+    pytest.param(JUST_ABOVE_BOUND, id="nextafter-1000"),
+    pytest.param(-JUST_ABOVE_BOUND, id="-nextafter-1000"),
+    pytest.param(1000.1, id="1000.1"),
+    pytest.param(-1000.1, id="-1000.1"),
+    pytest.param(1e6, id="1e6"),
+    pytest.param(-1e300, id="-1e300"),
+]
+
+
+@pytest.mark.requirement("SRS-003")
+def test_the_bound_is_the_smallest_float_above_1000() -> None:
+    """The rejected test value is the smallest float64 above 1000 mV.
+
+    Input: `math.nextafter(1000.0, inf)`.
+    Expected: it is greater than 1000.0 and nothing lies between it and 1000.0.
+    """
+    assert JUST_ABOVE_BOUND > 1000.0
+    assert math.nextafter(JUST_ABOVE_BOUND, -math.inf) == 1000.0
+
+
+@pytest.mark.requirement("SRS-003")
+@pytest.mark.parametrize("operation", ALL_OPERATIONS)
+@pytest.mark.parametrize("value", OVER_BOUND_VALUES)
+@pytest.mark.parametrize("position", ["first", "middle", "last"])
+def test_sample_above_1000_mv_is_rejected(
+    operation: Operation,
+    value: float,
+    position: str,
+    make_synthetic_ecg: Callable[..., Any],
+) -> None:
+    """An input with one sample of magnitude above 1000 mV is rejected everywhere.
+
+    Input: a synthetic ECG of 20 s at 360 Hz (otherwise valid) in which one sample (the
+    first, the middle or the last) is the smallest float64 above 1000 mV, its negative, or a
+    larger magnitude (1000.1, 1e6, -1e300).
+    Expected: `InvalidInputError` with a message; no filtered signal and no detections.
+    """
+    signal = make_synthetic_ecg(360, 75, n_samples=7200).signal_mv
+    index = {"first": 0, "middle": signal.size // 2, "last": signal.size - 1}[position]
+    signal[index] = value
+    _assert_rejected(operation, signal, 360.0)
+
+
+@pytest.mark.requirement("SRS-003")
+@pytest.mark.parametrize("operation", ALL_OPERATIONS)
+@pytest.mark.parametrize("value", [1001, -1001, 10**12])
+def test_integer_sample_above_1000_mv_is_rejected(
+    operation: Operation, value: int, make_synthetic_ecg: Callable[..., Any]
+) -> None:
+    """An integer input with a sample beyond 1000 mV is rejected like a float one.
+
+    Input: an int64 array of 3600 samples at 360 Hz, all zero except one sample of 1001,
+    -1001 or 10**12.
+    Expected: `InvalidInputError` with a message.
+    """
+    signal = np.zeros(3600, dtype=np.int64)
+    signal[1800] = value
+    _assert_rejected(operation, signal, 360.0)
+
+
+@pytest.mark.requirement("SRS-003")
+@pytest.mark.parametrize("operation", ALL_OPERATIONS)
+def test_bound_applies_to_the_magnitude_at_both_signs_in_one_input(
+    operation: Operation, make_synthetic_ecg: Callable[..., Any]
+) -> None:
+    """A valid +1000 mV sample does not hide an invalid sample elsewhere.
+
+    Input: a synthetic ECG of 20 s at 360 Hz with +1000.0 mV at the first sample and the
+    smallest float above 1000 mV, negated, at the last.
+    Expected: `InvalidInputError`.
+    """
+    signal = make_synthetic_ecg(360, 75, n_samples=7200).signal_mv
+    signal[0] = 1000.0
+    signal[-1] = -JUST_ABOVE_BOUND
+    _assert_rejected(operation, signal, 360.0)
+
+
+@pytest.mark.requirement("SRS-003")
+@pytest.mark.parametrize("operation", FILTERS)
+@pytest.mark.parametrize("value", [1000.0, -1000.0])
+def test_samples_of_exactly_1000_mv_are_accepted_by_the_filters(
+    operation: Operation, value: float, make_synthetic_ecg: Callable[..., Any]
+) -> None:
+    """A sample equal to +1000 mV or -1000 mV is within the bound and is filtered.
+
+    Input: a synthetic ECG of 10 s at 360 Hz with samples equal to 1000.0 (or -1000.0) at
+    the first, the middle and the last position.
+    Expected: no error; a finite float64 signal of 3600 samples.
+    """
+    signal = make_synthetic_ecg(360, 75, n_samples=3600).signal_mv
+    signal[[0, 1800, 3599]] = value
+
+    filtered = operation(signal, 360.0)
+
+    assert filtered.dtype == np.float64
+    assert filtered.shape == (3600,)
+    assert np.all(np.isfinite(filtered))
+
+
+@pytest.mark.requirement("SRS-003")
+@pytest.mark.parametrize("operation", DETECTORS)
+@pytest.mark.parametrize("value", [1000.0, -1000.0])
+def test_samples_of_exactly_1000_mv_are_accepted_by_the_detection(
+    operation: Operation, value: float, make_synthetic_ecg: Callable[..., Any]
+) -> None:
+    """A sample equal to +1000 mV or -1000 mV is within the bound and is searched for QRS.
+
+    Input: as for the filters (10 s at 360 Hz, three samples equal to the bound).
+    Expected: no error; a one-dimensional int64 array of indices inside the input.
+    """
+    signal = make_synthetic_ecg(360, 75, n_samples=3600).signal_mv
+    signal[[0, 1800, 3599]] = value
+
+    beats = operation(signal, 360.0)
+
+    assert beats.dtype == np.int64
+    assert beats.ndim == 1
+    assert np.all((beats >= 0) & (beats < 3600))
+
+
+@pytest.mark.requirement("SRS-003")
+@pytest.mark.parametrize("operation", PIPELINES)
+@pytest.mark.parametrize("value", [1000.0, -1000.0])
+def test_samples_of_exactly_1000_mv_are_accepted_by_the_pipeline(
+    operation: Operation, value: float, make_synthetic_ecg: Callable[..., Any]
+) -> None:
+    """A sample equal to +1000 mV or -1000 mV runs the whole chain.
+
+    Input: as for the filters (10 s at 360 Hz, three samples equal to the bound).
+    Expected: no error; both filtered signals finite with 3600 samples; indices int64 inside
+    the input.
+    """
+    signal = make_synthetic_ecg(360, 75, n_samples=3600).signal_mv
+    signal[[0, 1800, 3599]] = value
+
+    result = operation(signal, 360.0)
+
+    for filtered in (result.baseline_mv, result.mains_mv):
+        assert filtered.shape == (3600,)
+        assert np.all(np.isfinite(filtered))
+    assert result.beats.dtype == np.int64
+    assert np.all((result.beats >= 0) & (result.beats < 3600))

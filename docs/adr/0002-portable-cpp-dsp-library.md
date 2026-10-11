@@ -1,6 +1,6 @@
 # ADR 0002: One portable C++17 signal-processing library, verified against the Python reference with golden vectors
 
-- **Status:** Accepted
+- **Status:** Accepted; precision rule amended by [ADR 0008](0008-arithmetic-of-the-real-time-library.md)
 - **Date:** 2026-09-29
 - **Deciders:** project owner (a single C++17 library shared by the firmware and the desktop application, with the Python code as reference); tech lead (constraints, causal reference, golden-vector format)
 - **Related:** SRS-004, SRS-005, SRS-006, SRS-015; RC-012; HAZ-001, HAZ-002; OP-005, OP-043, OP-049, OP-051; [`architecture.md`](../regulatory/architecture.md) §5, §7

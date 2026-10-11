@@ -77,7 +77,7 @@ class Record:
         return int(self.signal_mv.shape[0])
 
 
-def load_record(record_path: Path, channel: int = 0, annotator: str = "atr") -> Record:
+def load_record(record_path: Path, channel: int = 0, annotator: str | None = "atr") -> Record:
     """Load one channel of a record and its annotations.
 
     SRS-002: returns the signal of the channel in mV, its sampling frequency in Hz, the beat
@@ -92,7 +92,9 @@ def load_record(record_path: Path, channel: int = 0, annotator: str = "atr") -> 
     Args:
         record_path: Path of the record without extension, e.g. ``data/mitdb/100``.
         channel: Number of the channel, from 0 to the number of signals minus 1.
-        annotator: Extension of the annotation file.
+        annotator: Extension of the annotation file, or ``None`` to read no annotation
+            file: the beat arrays and the other annotations are then empty (architecture
+            §13.7.1; the noise records of the Noise Stress Test Database have none).
 
     Returns:
         The record.
@@ -121,6 +123,18 @@ def load_record(record_path: Path, channel: int = 0, annotator: str = "atr") -> 
             f"channel {channel} of record {path} is not in mV: its units are {units!r}"
         )
     signal_mv: FloatArray = np.array(signals.p_signal[:, 0], dtype=np.float64, order="C", copy=True)
+
+    if annotator is None:
+        return Record(
+            name=Path(record_path).name,
+            channel=channel,
+            signal_name=str(signals.sig_name[0]),
+            fs_hz=float(signals.fs),
+            signal_mv=signal_mv,
+            beat_samples=np.array([], dtype=np.int64),
+            beat_symbols=(),
+            other_annotations=(),
+        )
 
     annotations = wfdb.rdann(path, annotator)
     samples = [int(sample) for sample in annotations.sample]
@@ -162,3 +176,12 @@ def load_record(record_path: Path, channel: int = 0, annotator: str = "atr") -> 
         beat_symbols=tuple(beat_symbols),
         other_annotations=tuple(other_annotations),
     )
+
+
+def load_signal(record_path: Path, channel: int = 0) -> Record:
+    """Load one channel of a record that has no annotation file.
+
+    Equal to ``load_record(record_path, channel, None)`` (architecture §13.7.1): the beat
+    arrays and the other annotations of the result are empty.
+    """
+    return load_record(record_path, channel, None)

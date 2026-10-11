@@ -263,6 +263,11 @@ def _levels(decisions: Any) -> tuple[float, float, float, float]:
     return (decisions.spki, decisions.npki, decisions.spkf, decisions.npkf)
 
 
+def _classify(decisions: Any, peak: Any) -> None:
+    """Classify ``peak`` at the sample after its maximum, as if it were confirmed there."""
+    decisions.classify(peak, peak.m + 1)
+
+
 def test_thresholds() -> None:
     decisions = _decisions()
     decisions.spki, decisions.npki = 10.0, 2.0
@@ -274,7 +279,7 @@ def test_thresholds() -> None:
 def test_first_qrs_updates_the_signal_levels_and_adds_no_interval() -> None:
     decisions = _decisions()
     peak = _peak(1000)
-    decisions.classify(peak)
+    _classify(decisions, peak)
     assert decisions.output == [960]
     assert decisions.spki == 0.125 * 4.0 + 0.875 * 8.0
     assert decisions.spkf == 0.125 * 0.4 + 0.875 * 0.8
@@ -286,9 +291,9 @@ def test_first_qrs_updates_the_signal_levels_and_adds_no_interval() -> None:
 
 def test_consecutive_qrs_add_intervals_between_their_peak_positions() -> None:
     decisions = _decisions()
-    decisions.classify(_peak(1000, f=955))
-    decisions.classify(_peak(1300, f=1262))
-    decisions.classify(_peak(1580, f=1540))
+    _classify(decisions, _peak(1000, f=955))
+    _classify(decisions, _peak(1300, f=1262))
+    _classify(decisions, _peak(1580, f=1540))
     assert decisions.output == [955, 1262, 1540]
     assert list(decisions.rr_intervals) == [300, 280]
 
@@ -296,52 +301,52 @@ def test_consecutive_qrs_add_intervals_between_their_peak_positions() -> None:
 def test_only_the_eight_most_recent_intervals_are_kept() -> None:
     decisions = _decisions()
     m = 1000
-    decisions.classify(_peak(m))
+    _classify(decisions, _peak(m))
     for step in range(300, 311):  # 11 intervals: 300 .. 310
         m += step
-        decisions.classify(_peak(m))
+        _classify(decisions, _peak(m))
     assert list(decisions.rr_intervals) == list(range(303, 311))
     assert len(decisions.output) == 12
 
 
 def test_refractory_on_the_peak_position() -> None:
     decisions = _decisions()
-    decisions.classify(_peak(1000, f=960))
+    _classify(decisions, _peak(1000, f=960))
     levels = _levels(decisions)
-    decisions.classify(_peak(1000 + 71, f=960 + 100))  # m closer than R = 72
+    _classify(decisions, _peak(1000 + 71, f=960 + 100))  # m closer than R = 72
     assert decisions.output == [960]
     assert _levels(decisions) == levels  # ignored: no level changes
     assert decisions.candidate is None  # and not a candidate
-    decisions.classify(_peak(1000 + 72, f=960 + 100))
+    _classify(decisions, _peak(1000 + 72, f=960 + 100))
     assert decisions.output == [960, 1060]
 
 
 def test_refractory_on_the_fiducial() -> None:
     decisions = _decisions()
-    decisions.classify(_peak(1000, f=960))
+    _classify(decisions, _peak(1000, f=960))
     levels = _levels(decisions)
-    decisions.classify(_peak(1000 + 100, f=960 + 71))  # m far enough, f closer than R
+    _classify(decisions, _peak(1000 + 100, f=960 + 71))  # m far enough, f closer than R
     assert decisions.output == [960]
     assert _levels(decisions) == levels
     assert decisions.candidate is None
-    decisions.classify(_peak(1000 + 100, f=960 + 72))
+    _classify(decisions, _peak(1000 + 100, f=960 + 72))
     assert decisions.output == [960, 1032]
 
 
 def test_refractory_ignores_even_a_weak_peak() -> None:
     decisions = _decisions()
-    decisions.classify(_peak(1000))
+    _classify(decisions, _peak(1000))
     levels = _levels(decisions)
-    decisions.classify(_peak(1050, peak_i=0.5, peak_f=0.05))
+    _classify(decisions, _peak(1050, peak_i=0.5, peak_f=0.05))
     assert _levels(decisions) == levels
     assert decisions.candidate is None
 
 
 def test_t_wave_is_a_noise_peak_and_not_a_candidate() -> None:
     decisions = _decisions()
-    decisions.classify(_peak(1000, slope=50.0))
+    _classify(decisions, _peak(1000, slope=50.0))
     spki, spkf = decisions.spki, decisions.spkf
-    decisions.classify(_peak(1100, slope=24.9))  # within TW = 130, slope below half
+    _classify(decisions, _peak(1100, slope=24.9))  # within TW = 130, slope below half
     assert decisions.output == [960]
     assert decisions.npki == 0.125 * 4.0
     assert decisions.npkf == 0.125 * 0.4
@@ -352,26 +357,26 @@ def test_t_wave_is_a_noise_peak_and_not_a_candidate() -> None:
 
 def test_t_wave_rule_needs_a_slope_strictly_below_half() -> None:
     decisions = _decisions()
-    decisions.classify(_peak(1000, slope=50.0))
-    decisions.classify(_peak(1100, slope=25.0))
+    _classify(decisions, _peak(1000, slope=50.0))
+    _classify(decisions, _peak(1100, slope=25.0))
     assert decisions.output == [960, 1060]
 
 
 def test_t_wave_rule_applies_only_inside_the_window() -> None:
     decisions = _decisions()
-    decisions.classify(_peak(1000, slope=50.0))
-    decisions.classify(_peak(1000 + 130, slope=1.0))  # exactly TW after the last QRS
+    _classify(decisions, _peak(1000, slope=50.0))
+    _classify(decisions, _peak(1000 + 130, slope=1.0))  # exactly TW after the last QRS
     assert decisions.output == [960, 1090]
     inside = _decisions()
-    inside.classify(_peak(1000, slope=50.0))
-    inside.classify(_peak(1000 + 129, slope=1.0))
+    _classify(inside, _peak(1000, slope=50.0))
+    _classify(inside, _peak(1000 + 129, slope=1.0))
     assert inside.output == [960]
 
 
 def test_t_wave_rule_compares_with_the_last_qrs_slope() -> None:
     decisions = _decisions()
-    decisions.classify(_peak(1000, slope=10.0))
-    decisions.classify(_peak(1100, slope=6.0))  # above half of 10
+    _classify(decisions, _peak(1000, slope=10.0))
+    _classify(decisions, _peak(1100, slope=6.0))  # above half of 10
     assert decisions.output == [960, 1060]
 
 
@@ -384,7 +389,7 @@ def test_peak_not_above_both_thresholds_is_noise_and_a_candidate(
 ) -> None:
     decisions = _decisions()
     peak = _peak(1000, peak_i=peak_i, peak_f=peak_f)
-    decisions.classify(peak)
+    _classify(decisions, peak)
     assert decisions.output == []
     assert decisions.npki == 0.125 * peak_i
     assert decisions.npkf == 0.125 * peak_f
@@ -399,21 +404,21 @@ def test_candidate_is_the_largest_noise_peak() -> None:
     larger = _peak(1200, peak_i=1.5, peak_f=0.1)
     smaller = _peak(1400, peak_i=1.2, peak_f=0.1)
     equal = _peak(1600, peak_i=1.5, peak_f=0.1)
-    decisions.classify(first)
+    _classify(decisions, first)
     assert decisions.candidate is first
-    decisions.classify(larger)
+    _classify(decisions, larger)
     assert decisions.candidate is larger
-    decisions.classify(smaller)
+    _classify(decisions, smaller)
     assert decisions.candidate is larger
-    decisions.classify(equal)
+    _classify(decisions, equal)
     assert decisions.candidate is larger
 
 
 def test_a_qrs_clears_the_candidate() -> None:
     decisions = _decisions()
-    decisions.classify(_peak(1000, peak_i=1.0, peak_f=0.1))
+    _classify(decisions, _peak(1000, peak_i=1.0, peak_f=0.1))
     assert decisions.candidate is not None
-    decisions.classify(_peak(1300))
+    _classify(decisions, _peak(1300))
     assert decisions.candidate is None
     assert decisions.output == [1260]
 
@@ -663,7 +668,7 @@ def test_unconditioned_fast_rhythm_still_gives_one_detection_per_beat(
     assert int(np.max(np.abs(found - r_peaks))) <= qrs.detector_samples(fs_hz).band_delay
 
 
-@pytest.mark.parametrize("level", [0.0, 0.7, -2.5, 1e6])
+@pytest.mark.parametrize("level", [0.0, 0.7, -2.5, 1000.0, -1000.0])
 @pytest.mark.parametrize("fs_hz", [125.0, 360.0, 1000.0])
 def test_flat_input_gives_an_empty_array(level: float, fs_hz: float) -> None:
     found = qrs.detect_qrs(np.full(int(10 * fs_hz), level), fs_hz)
@@ -678,6 +683,8 @@ def test_detect_qrs_validates_its_input() -> None:
         qrs.detect_qrs(np.full(3600, np.nan), FS_360)
     with pytest.raises(InvalidInputError, match="sampling frequency"):
         qrs.detect_qrs(np.zeros(3600), float("nan"))
+    with pytest.raises(InvalidInputError, match="magnitude exceeds 1000.0 mV"):
+        qrs.detect_qrs(np.full(3600, 1e6), FS_360)
 
 
 def test_detect_qrs_does_not_modify_its_input_and_is_repeatable(synthetic_ecg: Any) -> None:

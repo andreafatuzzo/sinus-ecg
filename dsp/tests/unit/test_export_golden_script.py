@@ -14,7 +14,7 @@ import pytest
 from sinus_dsp import golden
 from sinus_dsp.errors import InvalidInputError, MalformedFileError, NonFiniteOutputError
 from sinus_dsp.golden import ExportSummary
-from sinus_dsp.synthetic import synthetic_set
+from sinus_dsp.synthetic import synthetic_event_set, synthetic_set
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "export_golden.py"
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -145,7 +145,7 @@ def test_real_export_without_the_database(
     output = tmp_path / "golden"
     argv = ["--output", str(output), "--data-dir", str(tmp_path / "no-data")]
     assert script.main(argv) == 0
-    names = [f"{ecg.input_id}.golden.txt" for ecg in synthetic_set()]
+    names = [f"{ecg.input_id}.golden.txt" for ecg in (*synthetic_set(), *synthetic_event_set())]
     assert capsys.readouterr().out.splitlines() == [
         *(f"written: {output / name}" for name in names),
         "skipped: mitdb-100-first60s, mitdb-105-first60s, mitdb-108-first60s, "

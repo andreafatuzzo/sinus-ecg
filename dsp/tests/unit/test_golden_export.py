@@ -5,6 +5,7 @@ list. Most tests use a fake loader that returns records built from the synthetic
 reads WFDB records written with ``wfdb``.
 """
 
+import dataclasses
 import hashlib
 import subprocess
 import sys
@@ -29,11 +30,13 @@ from sinus_dsp.golden import (
     render_golden_vector,
 )
 from sinus_dsp.pipeline import run_pipeline
-from sinus_dsp.synthetic import synthetic_ecg, synthetic_set
+from sinus_dsp.synthetic import synthetic_ecg, synthetic_event_set, synthetic_set
 from sinus_dsp.version import SoftwareIdentity, software_identity
 
 DSP_DIR = Path(__file__).resolve().parents[2]
-SYNTHETIC_FILES = [f"{ecg.input_id}.golden.txt" for ecg in synthetic_set()]
+SYNTHETIC_FILES = [
+    f"{ecg.input_id}.golden.txt" for ecg in (*synthetic_set(), *synthetic_event_set())
+]
 FIXTURE_FS_HZ = 250.0
 SEGMENT = 15000  # 60 s at 250 Hz
 RECORD_SAMPLES = 15500  # 62 s at 250 Hz
@@ -115,7 +118,7 @@ def database(tmp_path: Path, pin_database: PinDatabase) -> tuple[Path, Database]
 
 
 def names_in(folder: Path) -> list[str]:
-    return sorted(path.name for path in folder.iterdir())
+    return sorted(path.name for path in folder.iterdir() if path.name != "NOTICE.md")
 
 
 # --- interface ---------------------------------------------------------------------------------
@@ -231,7 +234,10 @@ def test_segments_follow_the_synthetic_files_in_code_point_order(
     segments = ["mitdb-100-first60s.golden.txt", "mitdb-119-first60s.golden.txt"]
     segments.append("mitdb-207-first60s.golden.txt")
     assert summary == ExportSummary(
-        written=(*SYNTHETIC_FILES, *segments), skipped=(), skip_reason=None
+        written=(*SYNTHETIC_FILES, *segments),
+        skipped=(),
+        skip_reason=None,
+        notice=tmp_path / "out" / "NOTICE.md",
     )
     assert loader.calls == [(root / "mitdb" / name, 0) for name in ("100", "119", "207")]
     assert names_in(tmp_path / "out") == sorted([*SYNTHETIC_FILES, *segments])
@@ -279,7 +285,7 @@ def test_the_software_identity_is_taken_once(
         tmp_path / "out", data_root=root, database=fixture, loader=FakeLoader()
     )
     assert len(calls) == 1
-    assert len(summary.written) == 24
+    assert len(summary.written) == 32
     for name in summary.written:
         vector = read_golden_vector(tmp_path / "out" / name)
         assert (vector.software_version, vector.source_sha256) == ("9.9.9.dev0", "f" * 64)
@@ -295,8 +301,9 @@ def test_two_exports_write_byte_identical_files(
     second = export_golden_vectors(
         tmp_path / "b", data_root=root, database=fixture, loader=FakeLoader()
     )
-    assert first == second
-    for name in first.written:
+    assert first.notice == tmp_path / "a" / "NOTICE.md"
+    assert dataclasses.replace(first, notice=None) == dataclasses.replace(second, notice=None)
+    for name in (*first.written, "NOTICE.md"):
         assert (tmp_path / "a" / name).read_bytes() == (tmp_path / "b" / name).read_bytes()
 
 
@@ -437,16 +444,58 @@ def test_errors_of_the_loader_propagate(
 
 
 def test_a_non_finite_output_stops_the_export(
-    database: tuple[Path, Database], tmp_path: Path
+    database: tuple[Path, Database], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # No accepted input gives a non-finite output since the 1000 mV bound (architecture
+    # §13.2), so the vector of record 108 gets one by hand, after the real computation.
     root, fixture = database
-    loader = FakeLoader(constant={"108": 1e308})
+    original = golden.golden_vector
+
+    def with_infinity(input_id: str, *args: Any, **kwargs: Any) -> golden.GoldenVector:
+        vector = original(input_id, *args, **kwargs)
+        if input_id != "mitdb-108-first60s":
+            return vector
+        baseline = vector.stage_outputs_mv[0].copy()
+        baseline[7] = np.inf
+        return dataclasses.replace(
+            vector, stage_outputs_mv=(baseline, *vector.stage_outputs_mv[1:])
+        )
+
+    monkeypatch.setattr(golden, "golden_vector", with_infinity)
     with pytest.raises(NonFiniteOutputError) as caught:
-        export_golden_vectors(tmp_path / "out", data_root=root, database=fixture, loader=loader)
+        export_golden_vectors(
+            tmp_path / "out", data_root=root, database=fixture, loader=FakeLoader()
+        )
     assert caught.value.input_id == "mitdb-108-first60s"
     assert names_in(tmp_path / "out") == sorted(
         [*SYNTHETIC_FILES, "mitdb-100-first60s.golden.txt", "mitdb-105-first60s.golden.txt"]
     )
+
+
+@pytest.mark.parametrize("level", [1e308, -1000.0000000000001])
+def test_a_record_beyond_1000_mv_stops_the_export(
+    database: tuple[Path, Database], tmp_path: Path, level: float
+) -> None:
+    """The input check rejects the segment (architecture §13.2); earlier files stay."""
+    root, fixture = database
+    loader = FakeLoader(constant={"108": level})
+    with pytest.raises(InvalidInputError, match="magnitude exceeds 1000.0 mV"):
+        export_golden_vectors(tmp_path / "out", data_root=root, database=fixture, loader=loader)
+    assert names_in(tmp_path / "out") == sorted(
+        [*SYNTHETIC_FILES, "mitdb-100-first60s.golden.txt", "mitdb-105-first60s.golden.txt"]
+    )
+
+
+def test_a_record_at_1000_mv_is_exported(database: tuple[Path, Database], tmp_path: Path) -> None:
+    root, fixture = database
+    loader = FakeLoader(constant={"108": -1000.0})
+    summary = export_golden_vectors(
+        tmp_path / "out", data_root=root, database=fixture, loader=loader
+    )
+    assert "mitdb-108-first60s.golden.txt" in summary.written
+    vector = read_golden_vector(tmp_path / "out" / "mitdb-108-first60s.golden.txt")
+    assert bool(np.all(vector.input_mv == -1000.0))
+    assert vector.beats.shape == (0,)
 
 
 def test_an_unwritable_output_folder_raises_os_error(tmp_path: Path) -> None:
@@ -501,3 +550,25 @@ def test_records_read_with_the_default_loader(tmp_path: Path, pin_database: PinD
         result = run_pipeline(record.signal_mv[:SEGMENT], record.fs_hz, 60)
         assert vector.beats.tobytes() == result.beats.tobytes()
         assert vector.beats.shape[0] > 50
+
+
+def test_the_notice_is_written_with_the_record_segments(
+    database: tuple[Path, Database], tmp_path: Path
+) -> None:
+    from sinus_dsp.golden import NOTICE_TEXT
+
+    root, fixture = database
+    summary = export_golden_vectors(
+        tmp_path / "out", data_root=root, database=fixture, loader=FakeLoader()
+    )
+    assert summary.notice == tmp_path / "out" / "NOTICE.md"
+    assert summary.notice.read_bytes() == NOTICE_TEXT.encode("utf-8")
+    assert "NOTICE.md" not in summary.written
+    assert NOTICE_TEXT.startswith("# Notice\n\nThe files `mitdb-100-first60s.golden.txt`")
+    assert NOTICE_TEXT.endswith("generated by Sinus and outputs computed from them.\n")
+
+
+def test_no_notice_without_record_segments(tmp_path: Path) -> None:
+    summary = export_golden_vectors(tmp_path / "out", data_root=tmp_path / "no-data")
+    assert summary.notice is None
+    assert not (tmp_path / "out" / "NOTICE.md").exists()

@@ -1,6 +1,6 @@
 # ADR 0004: Test tagging and traceability gates
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR 0006](0006-verification-per-software-item.md)
 - **Date:** 2026-09-29
 - **Deciders:** project owner (the rules: implemented ⇒ tested, release gate, verification-level check, SBOM); tech lead (conventions and implementation)
 - **Related:** [`architecture.md`](../regulatory/architecture.md) §8.14 (the release gate also rejects a development version of the package, OP-061) and §8.16 (corrections and clarifications of the script found by its unit tests, OP-052; disabled tests, OP-066)

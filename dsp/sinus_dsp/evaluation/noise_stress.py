@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from sinus_dsp._units import round_samples
 from sinus_dsp.data.physionet import VerificationResult
 from sinus_dsp.errors import InvalidInputError
 from sinus_dsp.evaluation.metrics import AggregateStatistics, RecordCounts, aggregate_statistics
@@ -25,6 +26,7 @@ from sinus_dsp.evaluation.run import (
     RecordLoader,
     evaluate_records,
 )
+from sinus_dsp.input_checks import validate_fs
 
 #: SRS-014: the 12 noise stress records, by record and by decreasing SNR.
 NOISE_STRESS_RECORDS: Final = (
@@ -44,6 +46,17 @@ NOISE_STRESS_RECORDS: Final = (
 
 #: SRS-014: the MIT-BIH Arrhythmia records without added noise, the reference for comparison.
 CLEAN_RECORDS: Final = ("118", "119")
+
+#: SRS-029: the three noise records of the Noise Stress Test Database (baseline wander,
+#: electrode motion, muscle artefact); they have no annotation file.
+NOISE_RECORDS: Final = ("bw", "em", "ma")
+
+#: SRS-029: no noise is added in the first 5 min of a noise stress record.
+NOISE_FREE_S: Final = 300
+#: SRS-029: a noisy stretch starts every 4 min ...
+NOISE_PERIOD_S: Final = 240
+#: SRS-029: ... and lasts 2 min.
+NOISY_STRETCH_S: Final = 120
 
 # A noise stress record name: the record number, "e" (electrode motion noise), then the SNR
 # in dB, with "_" in place of a minus sign.
@@ -170,3 +183,28 @@ def _clean_counts(mitdb_records: Sequence[RecordEvaluation]) -> list[RecordCount
             )
         counts.append(found[0].counts)
     return counts
+
+
+def noisy_stretches(n_samples: int, fs_hz: float) -> tuple[tuple[int, int], ...]:
+    """Return the stretches of a noise stress record to which noise was added.
+
+    SRS-029 (architecture §13.7.1): stretch ``i`` starts at sample
+    ``round_samples(300 + 240 * i, fs_hz)`` and ends at
+    ``min(round_samples(420 + 240 * i, fs_hz) - 1, n_samples - 1)``, both included, for every
+    ``i`` whose start is below ``n_samples``. For 650000 samples at 360 Hz these are seven
+    stretches, the first ``(108000, 151199)`` and the last ``(626400, 649999)``.
+
+    Raises:
+        InvalidInputError: If ``n_samples`` is not a non-negative integer or ``fs_hz`` is not
+            a valid sampling frequency (``validate_fs``).
+    """
+    if isinstance(n_samples, bool) or not isinstance(n_samples, int) or n_samples < 0:
+        raise InvalidInputError(f"n_samples is not a non-negative integer: {n_samples!r}")
+    fs = validate_fs(fs_hz)
+    stretches: list[tuple[int, int]] = []
+    index = 0
+    while (start := round_samples(NOISE_FREE_S + NOISE_PERIOD_S * index, fs)) < n_samples:
+        end = round_samples(NOISE_FREE_S + NOISY_STRETCH_S + NOISE_PERIOD_S * index, fs) - 1
+        stretches.append((start, min(end, n_samples - 1)))
+        index += 1
+    return tuple(stretches)

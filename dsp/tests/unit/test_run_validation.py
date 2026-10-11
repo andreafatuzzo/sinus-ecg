@@ -29,7 +29,7 @@ from sinus_dsp.data.physionet import (
     describe_verification,
     fetch_https,
 )
-from sinus_dsp.data.records import Record, load_record
+from sinus_dsp.data.records import Record, load_record, load_signal
 from sinus_dsp.errors import DataVerificationError, InvalidInputError, MalformedFileError
 from sinus_dsp.evaluation import run as run_module
 from sinus_dsp.evaluation.metrics import RecordCounts
@@ -42,7 +42,8 @@ from sinus_dsp.evaluation.run import (
     run_validation,
     write_validation_report,
 )
-from sinus_dsp.pipeline import detect_beats
+from sinus_dsp.pipeline import detect_beats, detect_marked
+from sinus_dsp.quality import quality_windows
 from sinus_dsp.version import SoftwareIdentity, software_identity
 
 Detector = Callable[[npt.NDArray[np.float64], float, int], npt.NDArray[np.int64]]
@@ -55,9 +56,16 @@ MITDB_COUNTS = {
 }
 
 
-@pytest.mark.parametrize("module", ["run", "noise_stress", "report"])
+@pytest.fixture(autouse=True)
+def _stub_new_steps(stub_new_run_steps: object) -> None:
+    """The 20 Hz fixture records are too short for the new steps; those have their own tests."""
+
+
+@pytest.mark.parametrize(
+    "module", ["run", "noise_stress", "report", "signal_quality", "start_of_stream"]
+)
 def test_each_module_can_be_imported_first(module: str) -> None:
-    """``run`` imports ``noise_stress`` and ``report`` only when it calls them (no cycle)."""
+    """``run`` imports its sibling modules only when it calls them (no cycle)."""
     code = (
         f"import sys, sinus_dsp.evaluation.{module}; "
         "print(sorted(name for name in sys.modules if name.startswith('sinus_dsp.evaluation.')))"
@@ -71,7 +79,8 @@ def test_each_module_can_be_imported_first(module: str) -> None:
     )
     loaded = completed.stdout.strip()
     if module == "run":
-        assert "noise_stress" not in loaded and "report" not in loaded
+        for sibling in ("noise_stress", "report", "signal_quality", "start_of_stream"):
+            assert sibling not in loaded
 
 
 def nstdb_counts(name: str) -> RecordCounts:
@@ -152,6 +161,9 @@ def test_defaults() -> None:
         "settings": EvaluationSettings(),
         "detector": detect_beats,
         "loader": load_record,
+        "marked_detector": detect_marked,
+        "quality": quality_windows,
+        "noise_loader": load_signal,
         "fetch": fetch_https,
     }
     assert write_validation_report.__kwdefaults__ == run_validation.__kwdefaults__
