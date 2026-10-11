@@ -1,0 +1,7 @@
+# LeakSanitizer suppressions of the desktop tests (architecture-m3.md 15.14), read through
+# LSAN_OPTIONS set by tests/CMakeLists.txt in the asan-ubsan build. Only leaks inside Qt's system
+# libraries are suppressed, never one in the application's code; each entry gives its reason.
+
+# fontconfig keeps its configuration and font cache for the life of the process; Qt's font
+# database (used by the offscreen platform) never calls FcFini, so the memory is still held at exit.
+leak:libfontconfig.so
