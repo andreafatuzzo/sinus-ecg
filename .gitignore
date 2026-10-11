@@ -25,3 +25,6 @@ firmware/**/sdkconfig.old
 .DS_Store
 Thumbs.db
 
+
+# Log written by aqtinstall in its working folder
+aqtinstall.log

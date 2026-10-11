@@ -92,8 +92,9 @@ TEST(SourceDigest, MethodMatchesTheShellCommandOnAFixtureTree) {
   write_file(root / "desktop/src/.hidden/x.cpp", "int h;\n");
   write_file(root / "desktop/src/.i.cpp", "int i;\n");
   write_file(root / "desktop/tests/t.cpp", "int t;\n");
-  // find desktop/src -type f -not -path '*/.*' -print0 | LC_ALL=C sort -z \
-  //   | xargs -0 sha256sum --text | sha256sum --text   (a.cpp in its LF form)
+  // The shell command of 15.12 (a.cpp in its LF form), one pipeline:
+  //   find desktop/src -type f -not -path '*/.*' -print0 | LC_ALL=C sort -z |
+  //   xargs -0 sha256sum --text | sha256sum --text
   EXPECT_EQ(desktop_digest(root),
             "3ccc2f158b9b27997e27786f05cb4d20aeadea762add14b95fadcabad3c86fc7");
   fs::remove_all(root, error);

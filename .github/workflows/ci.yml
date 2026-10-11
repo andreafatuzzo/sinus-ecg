@@ -332,7 +332,7 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: ${{ runner.temp }}/qt
-          key: qt-linux-${{ hashFiles('desktop/qt/version.txt', 'desktop/qt/*-linux-*.sha256', 'desktop/qt/install_qt.py') }}
+          key: qt-linux-${{ hashFiles('desktop/qt/version.txt', 'desktop/qt/*-linux-*.sha256', 'desktop/qt/install_qt.py', 'tools/cpp/uv.lock') }}
       - name: Qt install and check of the archives
         id: qt
         run: >-
@@ -421,7 +421,7 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: ${{ runner.temp }}/qt
-          key: qt-windows-${{ hashFiles('desktop/qt/version.txt', 'desktop/qt/*-windows-*.sha256', 'desktop/qt/install_qt.py') }}
+          key: qt-windows-${{ hashFiles('desktop/qt/version.txt', 'desktop/qt/*-windows-*.sha256', 'desktop/qt/install_qt.py', 'tools/cpp/uv.lock') }}
       - name: Qt and its toolchain, install and check of the archives
         id: qt
         run: >-
@@ -432,6 +432,7 @@ jobs:
         run: |
           echo "CMAKE_PREFIX_PATH=${{ steps.qt.outputs.qt-prefix }}" >> "${GITHUB_ENV}"
           echo "CXX=${{ steps.qt.outputs.toolchain-bin }}/clang++.exe" >> "${GITHUB_ENV}"
+          echo "CC=${{ steps.qt.outputs.toolchain-bin }}/clang.exe" >> "${GITHUB_ENV}"
           echo "${{ steps.qt.outputs.qt-prefix }}/bin" >> "${GITHUB_PATH}"
           echo "${{ steps.qt.outputs.toolchain-bin }}" >> "${GITHUB_PATH}"
       - name: LLVM-MinGW of Qt, preset release
