@@ -115,7 +115,7 @@ jobs:
   # its group. SRS-035: the equivalence check on the vectors of the job dsp decides this job. The
   # compilers are those of
   # the runner image (GCC 14 and Clang 18); the development tools are pinned by
-  # libs/sinus-dsp/tools/uv.lock.
+  # tools/cpp/uv.lock.
   libs:
     needs: dsp
     runs-on: ubuntu-24.04
@@ -132,23 +132,23 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-          cache-dependency-glob: libs/sinus-dsp/tools/uv.lock
-      - run: uv sync --locked --project tools
+          cache-dependency-glob: tools/cpp/uv.lock
+      - run: uv sync --locked --project ../../tools/cpp
       - uses: actions/download-artifact@v8.0.1
         with:
           name: golden-vectors
           path: ${{ github.workspace }}/golden-vectors
       - name: clang-format
         run: >-
-          uv run --project tools clang-format --dry-run --Werror
+          uv run --project ../../tools/cpp clang-format --dry-run --Werror
           $(find include src tests verification -name '*.cpp' -o -name '*.hpp' -o -name '*.cc' -o -name '*.h')
       - name: GCC 14, preset release
         env:
           CXX: g++-14
         run: |
-          uv run --project tools cmake --fresh --preset release
-          uv run --project tools cmake --build --preset release
-          uv run --project tools ctest --preset release
+          uv run --project ../../tools/cpp cmake --fresh --preset release
+          uv run --project ../../tools/cpp cmake --build --preset release
+          uv run --project ../../tools/cpp ctest --preset release
       # SRS-035: a missing or failing file gives a non-zero exit status and fails the job; the
       # results are uploaded after the check, also when it failed.
       - name: Equivalence with the reference (GCC 14, release)
@@ -164,7 +164,7 @@ jobs:
             ${{ github.workspace }}/golden-vectors/NOTICE.md
           if-no-files-found: warn
       - name: SBOM (GCC 14, release)
-        run: uv run --project tools cmake --build --preset release --target sinus_dsp_sbom
+        run: uv run --project ../../tools/cpp cmake --build --preset release --target sinus_dsp_sbom
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: sbom-libs
@@ -174,37 +174,37 @@ jobs:
         env:
           CXX: g++-14
         run: |
-          uv run --project tools cmake --fresh --preset asan-ubsan
-          uv run --project tools cmake --build --preset asan-ubsan
-          uv run --project tools ctest --preset asan-ubsan
+          uv run --project ../../tools/cpp cmake --fresh --preset asan-ubsan
+          uv run --project ../../tools/cpp cmake --build --preset asan-ubsan
+          uv run --project ../../tools/cpp ctest --preset asan-ubsan
       - name: Clang 18, preset release
         env:
           CXX: clang++-18
         run: |
-          uv run --project tools cmake --fresh --preset release
-          uv run --project tools cmake --build --preset release
-          uv run --project tools ctest --preset release
+          uv run --project ../../tools/cpp cmake --fresh --preset release
+          uv run --project ../../tools/cpp cmake --build --preset release
+          uv run --project ../../tools/cpp ctest --preset release
       - name: Clang 18, preset asan-ubsan
         env:
           CXX: clang++-18
         run: |
-          uv run --project tools cmake --fresh --preset asan-ubsan
-          uv run --project tools cmake --build --preset asan-ubsan
-          uv run --project tools ctest --preset asan-ubsan
+          uv run --project ../../tools/cpp cmake --fresh --preset asan-ubsan
+          uv run --project ../../tools/cpp cmake --build --preset asan-ubsan
+          uv run --project ../../tools/cpp ctest --preset asan-ubsan
       - name: clang-tidy (GCC build, preset tidy)
         env:
           CXX: g++-14
         run: |
-          uv run --project tools cmake --fresh --preset tidy
-          uv run --project tools cmake --build --preset tidy
+          uv run --project ../../tools/cpp cmake --fresh --preset tidy
+          uv run --project ../../tools/cpp cmake --build --preset tidy
       - name: Coverage (GCC, preset coverage)
         env:
           CXX: g++-14
         run: |
-          uv run --project tools cmake --fresh --preset coverage
-          uv run --project tools cmake --build --preset coverage
-          uv run --project tools ctest --preset coverage
-          uv run --project tools gcovr --root . --filter 'include/' --filter 'src/' --filter 'build/coverage/generated/' --gcov-executable gcov-14 --print-summary --txt "${RUNNER_TEMP}/coverage-libs.txt" build/coverage
+          uv run --project ../../tools/cpp cmake --fresh --preset coverage
+          uv run --project ../../tools/cpp cmake --build --preset coverage
+          uv run --project ../../tools/cpp ctest --preset coverage
+          uv run --project ../../tools/cpp gcovr --root . --filter 'include/' --filter 'src/' --filter 'build/coverage/generated/' --gcov-executable gcov-14 --print-summary --txt "${RUNNER_TEMP}/coverage-libs.txt" build/coverage
       - uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
