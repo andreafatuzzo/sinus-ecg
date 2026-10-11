@@ -1,14 +1,16 @@
 #pragma once
 
-// SRS-017, SRS-018, SRS-031, SRS-032: the processing chain, its input checks and its restart
-// (architecture-m2.md 14.4, 14.5, 14.10): signal conditioning, detection, heart rate and signal
-// quality, in this order within a sample.
+// SRS-017, SRS-018, SRS-031, SRS-032, SRS-044: the processing chain, its input checks and its
+// restart (architecture-m2.md 14.4, 14.5, 14.10; architecture-m3.md 16.6): signal conditioning,
+// display low-pass, detection, heart rate and signal quality, in this order within a sample.
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 #include "sinus/dsp/conditioner.hpp"
 #include "sinus/dsp/config.hpp"
+#include "sinus/dsp/display_lowpass.hpp"
 #include "sinus/dsp/heart_rate.hpp"
 #include "sinus/dsp/limits.hpp"
 #include "sinus/dsp/qrs_detector.hpp"
@@ -20,6 +22,9 @@ namespace sinus::dsp {
 struct SampleOutput {
   float baseline_mv = 0.0F;
   float conditioned_mv = 0.0F;
+  // SRS-044: the display value of index (this sample - M), architecture-m3.md 16.4; a quiet NaN
+  // when the display stage is off (Config::display_lowpass false).
+  float display_mv = 0.0F;
   std::size_t detection_count = 0;  // detections reported at this sample (architecture-m2.md 14.7)
   std::array<Detection, kMaxDetectionsPerSample> detections{};
   std::size_t heart_rate_count = 0;  // heart-rate events at this sample (14.8)
@@ -41,10 +46,14 @@ class Chain {
   [[nodiscard]] Status process(float sample_mv, SampleOutput& out) noexcept;
   [[nodiscard]] bool configured() const noexcept { return configured_; }
   [[nodiscard]] const Config& config() const noexcept { return config_; }
+  // SRS-044: M, the delay of the display value in samples (architecture-m3.md 16.4); 0 when not
+  // configured. Given whether the display stage is on or off.
+  [[nodiscard]] std::uint32_t display_delay_samples() const noexcept;
 
  private:
   Config config_{};
   Conditioner conditioner_;
+  DisplayLowpass display_;
   QrsDetector detector_;
   HeartRateTracker heart_rate_;
   SignalQuality quality_;

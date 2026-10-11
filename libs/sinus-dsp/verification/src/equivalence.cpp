@@ -1,5 +1,5 @@
-// SRS-034: equivalence of the real-time library with the reference on the golden vectors
-// (architecture-m2.md 14.11, 14.12).
+// SRS-034, SRS-044: equivalence of the real-time library with the reference on the golden vectors
+// (architecture-m2.md 14.11, 14.12; architecture-m3.md 16.7).
 #include "sinus/dsp/verification/equivalence.hpp"
 
 #include <algorithm>
@@ -109,13 +109,29 @@ std::string count_difference(std::size_t library, std::size_t file) {
 }
 
 OutputResult compare_signal(std::string_view output, const std::vector<double>& library,
-                            const std::vector<double>& file) {
+                            const std::vector<double>& file,
+                            double tolerance = kConditioningToleranceMv) {
   Largest largest;
   const std::size_t n = std::min(library.size(), file.size());
   for (std::size_t i = 0; i < n; ++i) {
     largest.offer(std::fabs(library.at(i) - file.at(i)), i);
   }
-  return numeric_result(output, largest, kConditioningToleranceMv);
+  return numeric_result(output, largest, tolerance);
+}
+
+// SRS-044: first the delay, a structural difference with no sample; then every sample of the
+// display output (architecture-m3.md 16.7).
+OutputResult compare_display(const LibraryOutputs& library, const GoldenVector& vector) {
+  constexpr std::string_view output_name = "display_mv";
+  if (library.display_delay_samples != vector.display_delay_samples) {
+    OutputResult result;
+    result.output = std::string(output_name);
+    result.difference = "delay " + std::to_string(library.display_delay_samples) + ", file " +
+                        std::to_string(vector.display_delay_samples);
+    result.tolerance = kDisplayToleranceMv;
+    return result;
+  }
+  return compare_signal(output_name, library.display_mv, vector.display_mv, kDisplayToleranceMv);
 }
 
 // The sample of the first element that only the longer list has.
@@ -267,6 +283,8 @@ LibraryOutputs run_library(const GoldenVector& vector) {
   auto out = std::make_unique<SampleOutput>();
   result.baseline_mv.reserve(vector.input_mv.size());
   result.conditioned_mv.reserve(vector.input_mv.size());
+  result.display_mv.reserve(vector.input_mv.size());
+  result.display_delay_samples = chain->display_delay_samples();  // SRS-044
   for (std::size_t n = 0; n < vector.input_mv.size(); ++n) {
     result.status = chain->process(static_cast<float>(vector.input_mv.at(n)), *out);
     if (result.status != Status::kOk) {
@@ -275,6 +293,7 @@ LibraryOutputs run_library(const GoldenVector& vector) {
     }
     result.baseline_mv.push_back(static_cast<double>(out->baseline_mv));
     result.conditioned_mv.push_back(static_cast<double>(out->conditioned_mv));
+    result.display_mv.push_back(static_cast<double>(out->display_mv));
     collect_events(*out, result);
   }
   return result;
@@ -287,6 +306,7 @@ std::vector<OutputResult> compare_outputs(const GoldenVector& vector,
       compare_signal("baseline_mv", library.baseline_mv, vector.stage_outputs_mv.at(0)));
   results.push_back(
       compare_signal("mains_mv", library.conditioned_mv, vector.stage_outputs_mv.at(1)));
+  results.push_back(compare_display(library, vector));
   results.push_back(compare_beats(library.beats, vector.beats));
   results.push_back(compare_report_samples(library.beats, vector.beats));
   results.push_back(compare_heart_rates(library.heart_rates, vector.heart_rates));

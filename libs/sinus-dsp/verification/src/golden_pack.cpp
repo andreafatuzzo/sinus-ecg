@@ -1,5 +1,5 @@
-// SRS-036: the binary pack of the golden vectors and the streaming equivalence check on it
-// (architecture-m2.md 14.13).
+// SRS-036, SRS-044: the binary pack of the golden vectors, version 2, and the streaming
+// equivalence check on it (architecture-m2.md 14.13; architecture-m3.md 16.7).
 #include "sinus/dsp/verification/golden_pack.hpp"
 
 #include <algorithm>
@@ -19,6 +19,7 @@
 #include "sinus/dsp/chain.hpp"
 #include "sinus/dsp/config.hpp"
 #include "sinus/dsp/heart_rate.hpp"
+#include "sinus/dsp/limits.hpp"
 #include "sinus/dsp/qrs_detector.hpp"
 #include "sinus/dsp/status.hpp"
 #include "sinus/dsp/verification/equivalence.hpp"
@@ -30,8 +31,8 @@ namespace sinus::dsp::verification {
 
 namespace {
 
-constexpr std::array<char, 4> kFileMagic{'G', 'V', 'F', '2'};
-constexpr std::size_t kSampleBytes = 4 + 8 + 8;
+constexpr std::array<char, 4> kFileMagic{'G', 'V', 'F', '3'};
+constexpr std::size_t kSampleBytes = 4 + 8 + 8 + 8;  // input, baseline, mains, display
 constexpr std::size_t kCoefficientRowBytes = 1 + 1 + (5 * 8);
 constexpr std::size_t kMaxText = 0xFFFF;
 constexpr std::size_t kChunk = 4096;
@@ -109,6 +110,13 @@ std::string vector_problem(const GoldenVector& v) {
       v.stage_outputs_mv.at(1).size() != v.input_mv.size()) {
     return "an output does not have one value per input sample";
   }
+  if (v.display_mv.size() != v.input_mv.size()) {
+    return "the display output does not have one value per input sample";
+  }
+  if (v.display_delay_samples < 1 || v.display_delay_samples > kDisplayMaxDelaySamples ||
+      v.display_taps.size() != (2 * std::size_t{v.display_delay_samples}) + 1) {
+    return "the display delay is outside 1 to 30 or the taps are not 2M + 1";
+  }
   for (const std::string* s :
        {&v.input_id, &v.input_source, &v.input_parameters, &v.software_version, &v.source_sha256}) {
     if (s->size() > kMaxText) {
@@ -147,10 +155,15 @@ void write_file(const GoldenVector& v, Writer& w) {
       }
     }
   }
+  w.u32(v.display_delay_samples);  // SRS-044
+  for (const double h : v.display_taps) {
+    w.f64(h);
+  }
   for (std::size_t n = 0; n < v.input_mv.size(); ++n) {
     w.f32(static_cast<float>(v.input_mv.at(n)));
     w.f64(v.stage_outputs_mv.at(0).at(n));
     w.f64(v.stage_outputs_mv.at(1).at(n));
+    w.f64(v.display_mv.at(n));
   }
   for (const BeatRow& b : v.beats) {
     w.u64(b.index);
@@ -292,14 +305,14 @@ struct Largest {
   }
 };
 
-OutputResult signal_result(const char* name, const Largest& largest) {
+OutputResult signal_result(const char* name, const Largest& largest, double tolerance) {
   OutputResult result;
   result.output = name;
   result.largest = largest.value;
   result.has_sample = largest.has;
   result.sample = largest.sample;
-  result.tolerance = kConditioningToleranceMv;
-  result.pass = !largest.has || largest.value <= kConditioningToleranceMv;
+  result.tolerance = tolerance;
+  result.pass = !largest.has || largest.value <= tolerance;
   return result;
 }
 
@@ -405,12 +418,20 @@ bool check_one(Reader& r, Chain& chain, SampleOutput& out, FileResult& result, s
   result.software_version = h.software_version;
   result.source_sha256 = h.source_sha256;
   r.skip(static_cast<std::uint64_t>(h.coefficient_rows) * kCoefficientRowBytes);
+  // SRS-044: M, then the taps, which the check does not compare (architecture-m3.md 16.7).
+  const std::uint32_t display_delay = r.u32();
+  if (!r.failed() && (display_delay < 1 || display_delay > kDisplayMaxDelaySamples)) {
+    error = "bad display delay in " + h.input_id;
+    return false;
+  }
+  r.skip(((2 * static_cast<std::uint64_t>(display_delay)) + 1) * 8U);
 
   Status status = chain.configure(Config{h.fs_hz, static_cast<int>(h.mains)});
   std::uint64_t failed_at = 0;
   LibraryOutputs library;
   Largest baseline;
   Largest mains;
+  Largest display;
   for (std::uint32_t n = 0; n < h.samples && !r.failed(); ++n) {
     std::array<std::uint8_t, kSampleBytes> bytes{};
     if (!r.take(bytes.data(), bytes.size()) || status != Status::kOk) {
@@ -427,6 +448,8 @@ bool check_one(Reader& r, Chain& chain, SampleOutput& out, FileResult& result, s
     mains.offer(
         std::fabs(static_cast<double>(out.conditioned_mv) - to_f64(decode(bytes.data() + 12, 8))),
         n);
+    display.offer(
+        std::fabs(static_cast<double>(out.display_mv) - to_f64(decode(bytes.data() + 20, 8))), n);
     // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     collect_events(out, library);
   }
@@ -444,12 +467,18 @@ bool check_one(Reader& r, Chain& chain, SampleOutput& out, FileResult& result, s
                     " at sample " + std::to_string(failed_at);
     return true;
   }
-  // The signals were compared above, as they were read. compare_outputs compares the events; its
-  // two signal results, on empty signals, are replaced by the streamed ones.
+  // The signals were compared above, as they were read. compare_outputs compares the events and
+  // the display delay (a structural difference, SRS-044); its signal results, on empty signals,
+  // are replaced by the streamed ones.
   reference.stage_outputs_mv.resize(2);
+  reference.display_delay_samples = display_delay;
+  library.display_delay_samples = chain.display_delay_samples();
   result.outputs = compare_outputs(reference, library);
-  result.outputs.at(0) = signal_result("baseline_mv", baseline);
-  result.outputs.at(1) = signal_result("mains_mv", mains);
+  result.outputs.at(0) = signal_result("baseline_mv", baseline, kConditioningToleranceMv);
+  result.outputs.at(1) = signal_result("mains_mv", mains, kConditioningToleranceMv);
+  if (result.outputs.at(2).difference.empty()) {
+    result.outputs.at(2) = signal_result("display_mv", display, kDisplayToleranceMv);
+  }
   return true;
 }
 

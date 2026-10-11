@@ -1,7 +1,7 @@
 #pragma once
 
-// SRS-017: the configuration of the real-time library and its check (architecture-m2.md 14.4,
-// 14.5).
+// SRS-017, SRS-044: the configuration of the real-time library and its check (architecture-m2.md
+// 14.4, 14.5; architecture-m3.md 16.6).
 
 #include <cstdint>
 
@@ -11,7 +11,8 @@ namespace sinus::dsp {
 
 struct Config {
   double sampling_frequency_hz = 0.0;
-  int mains_frequency_hz = 0;  // 50 or 60
+  int mains_frequency_hz = 0;   // 50 or 60
+  bool display_lowpass = true;  // SRS-044: the display stage on (true) or off
 };
 
 // SRS-017: kOk, or the first failing check, in this order: kInvalidSamplingFrequency (not finite,

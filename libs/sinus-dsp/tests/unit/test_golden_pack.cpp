@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "sinus/dsp/chain.hpp"
+#include "sinus/dsp/display_lowpass.hpp"
 #include "sinus/dsp/status.hpp"
 #include "sinus/dsp/verification/equivalence.hpp"
 #include "sinus/dsp/verification/golden_pack.hpp"
@@ -54,6 +55,11 @@ GoldenVector library_vector(const std::string& id) {
   const LibraryOutputs run = sinus::dsp::verification::run_library(v);
   EXPECT_EQ(run.status, sinus::dsp::Status::kOk);
   v.stage_outputs_mv = {run.baseline_mv, run.conditioned_mv};
+  v.display_delay_samples = run.display_delay_samples;
+  sinus::dsp::DisplayTaps taps{};
+  const std::size_t n_taps = sinus::dsp::display_lowpass_taps(kFs, taps);
+  v.display_taps.assign(taps.begin(), taps.begin() + static_cast<std::ptrdiff_t>(n_taps));
+  v.display_mv = run.display_mv;
   v.beats = run.beats;
   v.heart_rates = run.heart_rates;
   v.windows = run.windows;
@@ -104,7 +110,7 @@ TEST(GoldenPack, HeaderLayout) {
   const std::string bytes = pack_of(expected_set());
   ASSERT_GT(bytes.size(), 56U);
   EXPECT_EQ(bytes.substr(0, 8), "SINUSGVP");
-  EXPECT_EQ(static_cast<unsigned char>(bytes.at(8)), 1U);  // version, little-endian
+  EXPECT_EQ(static_cast<unsigned char>(bytes.at(8)), 2U);  // version, little-endian
   EXPECT_EQ(static_cast<unsigned char>(bytes.at(9)), 0U);
   EXPECT_EQ(static_cast<unsigned char>(bytes.at(12)), 32U);  // number of files
   std::uint64_t payload = 0;
@@ -112,7 +118,7 @@ TEST(GoldenPack, HeaderLayout) {
     payload |= static_cast<std::uint64_t>(static_cast<unsigned char>(bytes.at(16 + i))) << (8U * i);
   }
   EXPECT_EQ(payload, bytes.size() - 56U);
-  EXPECT_EQ(bytes.substr(56, 4), "GVF2");
+  EXPECT_EQ(bytes.substr(56, 4), "GVF3");
 }
 
 TEST(GoldenPack, SizeOfOneFile) {
@@ -122,7 +128,8 @@ TEST(GoldenPack, SizeOfOneFile) {
   const std::size_t texts = 5 * 2 + v.input_id.size() + v.input_source.size() +
                             v.input_parameters.size() + v.software_version.size() +
                             v.source_sha256.size();
-  const std::size_t expected = 56 + 4 + texts + 8 + 4 + 5 * 4 + 3 * 42 + v.input_mv.size() * 20 +
+  const std::size_t expected = 56 + 4 + texts + 8 + 4 + 5 * 4 + 3 * 42 + 4 +
+                               v.display_taps.size() * 8 + v.input_mv.size() * 28 +
                                v.beats.size() * 17 + v.heart_rates.size() * 25 +
                                v.windows.size() * 33;
   EXPECT_EQ(bytes.size(), expected);
@@ -161,7 +168,7 @@ TEST(GoldenPack, BadMagicAndVersionAreRefused) {
   MemorySource a(wrong_magic);
   EXPECT_FALSE(verify_pack(a).ok);
   std::string wrong_version = bytes;
-  wrong_version.at(8) = 2;
+  wrong_version.at(8) = 1;  // a pack of version 1 is refused
   MemorySource b(wrong_version);
   EXPECT_FALSE(verify_pack(b).ok);
   EXPECT_FALSE(check(wrong_version).outcome.ok);
@@ -175,7 +182,7 @@ TEST(GoldenPack, TheLibraryAgreesWithItselfOnEveryFile) {
   EXPECT_TRUE(sinus::dsp::verification::set_passed(result.set));
   for (const FileResult& file : result.set.files) {
     EXPECT_EQ(file.status, FileStatus::kCompared) << file.input_id;
-    ASSERT_EQ(file.outputs.size(), 6U) << file.input_id;
+    ASSERT_EQ(file.outputs.size(), 7U) << file.input_id;
     for (const OutputResult& output : file.outputs) {
       EXPECT_EQ(output.largest, 0.0) << file.input_id << " " << output.output;
     }
@@ -187,6 +194,7 @@ TEST(GoldenPack, TheResultsAreThoseOfTheTextCheck) {
   GoldenVector v = library_vector(std::string(sinus::dsp::verification::expected_inputs().at(3)));
   v.stage_outputs_mv.at(0).at(700) += 1.5e-5;
   v.stage_outputs_mv.at(1).at(900) += 3e-5;
+  v.display_mv.at(1100) -= 2.5e-5;
   v.heart_rates.at(2).bpm += 5e-5;
   v.windows.at(0).index += 0.002;
   std::string bytes;
@@ -212,6 +220,8 @@ TEST(GoldenPack, TheResultsAreThoseOfTheTextCheck) {
   EXPECT_TRUE(output_of(*file, "baseline_mv").pass);
   EXPECT_FALSE(output_of(*file, "mains_mv").pass);
   EXPECT_EQ(output_of(*file, "mains_mv").sample, 900U);
+  EXPECT_FALSE(output_of(*file, "display_mv").pass);
+  EXPECT_EQ(output_of(*file, "display_mv").sample, 1100U);
 }
 
 TEST(GoldenPack, AValueChangedBeyondItsToleranceFailsAndNamesFileOutputAndSample) {
@@ -320,6 +330,72 @@ TEST(GoldenPack, TheWriterRefusesWhatTheTargetCannotRead) {
   const auto outcome = build_pack({long_text}, bytes);
   EXPECT_FALSE(outcome.ok);
   EXPECT_NE(outcome.error.find("c:"), std::string::npos);
+}
+
+TEST(GoldenPackDisplay, ADisplayValueBeyondTheToleranceFailsAndNamesTheSample) {
+  std::vector<GoldenVector> set = expected_set();
+  set.at(9).display_mv.at(777) += 2.1e-5;
+  const PackCheck result = check(pack_of(set));
+  ASSERT_TRUE(result.outcome.ok) << result.outcome.error;
+  const FileResult& file = result.set.files.at(9);
+  EXPECT_FALSE(file.passed());
+  const std::string name = "display_mv";
+  EXPECT_FALSE(output_of(file, name).pass);
+  EXPECT_EQ(output_of(file, name).sample, 777U);
+  EXPECT_EQ(output_of(file, name).tolerance, 2e-5);
+  EXPECT_TRUE(output_of(file, "mains_mv").pass);
+  EXPECT_TRUE(result.set.files.at(10).passed());
+}
+
+TEST(GoldenPackDisplay, ADifferentDelayIsAStructuralDifference) {
+  // A delay of 9 with its 19 taps: the pack is well formed, the delay is not the library's 8.
+  std::vector<GoldenVector> set = expected_set();
+  set.at(1).display_delay_samples = 9;
+  set.at(1).display_taps.assign(19, 0.0);
+  const PackCheck result = check(pack_of(set));
+  ASSERT_TRUE(result.outcome.ok) << result.outcome.error;
+  const OutputResult& display = output_of(result.set.files.at(1), "display_mv");
+  EXPECT_FALSE(display.pass);
+  EXPECT_EQ(display.difference, "delay 8, file 9");
+  EXPECT_FALSE(display.has_sample);
+  EXPECT_TRUE(result.set.files.at(2).passed());  // the next file is still read correctly
+}
+
+TEST(GoldenPackDisplay, ADelayOutsideOneToThirtyIsAMalformedPack) {
+  const GoldenVector v =
+      library_vector(std::string(sinus::dsp::verification::expected_inputs().at(0)));
+  std::string bytes;
+  ASSERT_TRUE(build_pack({v}, bytes).ok);
+  const std::size_t texts = 5 * 2 + v.input_id.size() + v.input_source.size() +
+                            v.input_parameters.size() + v.software_version.size() +
+                            v.source_sha256.size();
+  const std::size_t at = 56 + 4 + texts + 8 + 4 + 5 * 4 + 3 * 42;  // the uint32 M
+  ASSERT_EQ(static_cast<unsigned char>(bytes.at(at)), 8U);
+  for (const char m : {char{0}, char{31}}) {
+    std::string wrong = bytes;
+    wrong.at(at) = m;
+    const PackCheck result = check(wrong);
+    EXPECT_FALSE(result.outcome.ok) << static_cast<int>(m);
+    EXPECT_NE(result.outcome.error.find("display delay"), std::string::npos);
+  }
+}
+
+TEST(GoldenPackDisplay, TheWriterRefusesADisplayItCannotPack) {
+  std::string bytes;
+  GoldenVector short_display = library_vector("d");
+  short_display.display_mv.pop_back();
+  EXPECT_FALSE(build_pack({short_display}, bytes).ok);
+  GoldenVector few_taps = library_vector("e");
+  few_taps.display_taps.pop_back();
+  EXPECT_FALSE(build_pack({few_taps}, bytes).ok);
+  GoldenVector no_delay = library_vector("f");
+  no_delay.display_delay_samples = 0;
+  no_delay.display_taps.assign(1, 1.0);
+  EXPECT_FALSE(build_pack({no_delay}, bytes).ok);
+  GoldenVector long_delay = library_vector("g");
+  long_delay.display_delay_samples = 31;
+  long_delay.display_taps.assign(63, 0.0);
+  EXPECT_FALSE(build_pack({long_delay}, bytes).ok);
 }
 
 TEST(MemorySource, ReadsInOrderAndRefusesPastTheEnd) {

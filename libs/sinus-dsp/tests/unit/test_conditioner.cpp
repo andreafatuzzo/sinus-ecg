@@ -52,7 +52,7 @@ TEST(Conditioner, FirstSampleGivesExactlyZeroForAnyOffset) {
     for (const float level : {0.37F, -2.5F, 999.0F, 0.0F}) {
       Conditioner c;
       ASSERT_EQ(c.configure(Config{fs, 50}), Status::kOk);
-      ConditionedSample s{1.0F, 1.0F};
+      ConditionedSample s{1.0F, 1.0F, 1.0};
       ASSERT_EQ(c.process(level, s), Status::kOk);
       EXPECT_EQ(s.baseline_mv, 0.0F) << fs << " " << level;
       EXPECT_EQ(s.conditioned_mv, 0.0F) << fs << " " << level;
@@ -62,7 +62,7 @@ TEST(Conditioner, FirstSampleGivesExactlyZeroForAnyOffset) {
 
 TEST(Conditioner, NotConfiguredGivesNoOutput) {
   Conditioner c;
-  ConditionedSample s{1.0F, 1.0F};
+  ConditionedSample s{1.0F, 1.0F, 1.0};
   EXPECT_EQ(c.process(0.5F, s), Status::kNotConfigured);
   EXPECT_EQ(s.baseline_mv, 0.0F);
   EXPECT_EQ(s.conditioned_mv, 0.0F);
@@ -131,7 +131,17 @@ TEST(Conditioner, MainsStageReceivesTheUnroundedBaselineOutput) {
     ASSERT_EQ(c.process(input[i], s), Status::kOk);
     ASSERT_EQ(s.baseline_mv, static_cast<float>(b)) << i;
     ASSERT_EQ(s.conditioned_mv, static_cast<float>(y)) << i;
+    // The binary64 value of the mains stage, of which conditioned_mv is the rounding (the input of
+    // the display stage).
+    ASSERT_EQ(s.conditioned_f64_mv, y) << i;
   }
+}
+
+TEST(Conditioner, NotConfiguredGivesNoBinary64Value) {
+  Conditioner c;
+  ConditionedSample s{1.0F, 1.0F, 1.0};
+  EXPECT_EQ(c.process(0.5F, s), Status::kNotConfigured);
+  EXPECT_EQ(s.conditioned_f64_mv, 0.0);
 }
 
 }  // namespace
