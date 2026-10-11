@@ -1,0 +1,8 @@
+# Adaptations of the Qt layers (architecture-m3.md 15.15), with their reasons.
+InheritParentConfig: true
+# Qt objects are created with new and given to a parent QObject, which owns and deletes them.
+Checks: >-
+  -cppcoreguidelines-owning-memory
+CheckOptions:
+  # Overrides of Qt's virtual functions keep Qt's names (paintEvent, sizeHint, ...).
+  - { key: readability-identifier-naming.FunctionIgnoredRegexp, value: '^[a-z]+([A-Z][a-z0-9]*)+$' }
