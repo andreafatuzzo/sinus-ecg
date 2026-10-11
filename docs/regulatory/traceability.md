@@ -94,7 +94,6 @@ Outcome of `--release-gate` on milestones M0, M1, M2, M3: **fail**
 - SRS-052 (M3, In progress): no verifying test in desktop
 - SRS-053 (M3, In progress): no verifying test in desktop
 - SRS-054 (M3, In progress): no verifying test in dsp
-- OP-033: open point still targets M3; close or retarget it
 - OP-040: open point still targets M3; close or retarget it
 - OP-050: open point still targets M3; close or retarget it
 - OP-075: open point still targets M3; close or retarget it
@@ -108,4 +107,4 @@ Outcome of `--release-gate` on milestones M0, M1, M2, M3: **fail**
 - Implemented requirements without tests: none
 - Unknown IDs referenced in code/tests: none
 - Open points citing undefined IDs: none
-- Open points still open: 37 (see `open-points.md`)
+- Open points still open: 36 (see `open-points.md`)

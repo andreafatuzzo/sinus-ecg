@@ -1,6 +1,6 @@
 # ADR 0003: Qt 6 desktop application with replay
 
-- **Status:** Accepted
+- **Status:** Accepted; user-interface technology decided by [ADR 0009](0009-qt-widgets-with-own-waveform-drawing.md)
 - **Date:** 2026-09-29
 - **Deciders:** project owner (a Qt 6 desktop application with replay, no web or mobile application; closes OP-006); tech lead (structure, licensing constraint, criteria for OP-033)
 - **Related:** HAZ-006, HAZ-007, HAZ-013; RC-005, RC-007, RC-008, RC-015; OP-007, OP-015, OP-033, OP-037, OP-038, OP-040, OP-050; [`architecture.md`](../regulatory/architecture.md) §3.1, §6.2; [`usability.md`](../regulatory/usability.md) §1.4
