@@ -4,9 +4,9 @@ _Inspired by IEC 62304 §8.1.2. Every new runtime dependency must be added here 
 
 | Name | Component | Version constraint | Version reviewed | Purpose | Known anomalies reviewed |
 |---|---|---|---|---|---|
-| Python (CPython) | dsp | 3.11 (`dsp/.python-version`; `requires-python = ">=3.11"`) | 3.11.16 and 3.11.17 | Interpreter and standard library: SHA-256 of the data files and of the package source (`hashlib`), download over HTTPS (`urllib.request`), correctly rounded sums and the trigonometric functions of the filter design (`math`); `tomllib` and `ast` in the scripts | 2026-10-05: no anomaly that affects Sinus ([review](#python-cpython-311)) |
-| NumPy | dsp | `>=1.26` | 2.4.6 | Array math for signal processing | 2026-10-05: no anomaly that affects Sinus; one machine-dependent behaviour, without effect on any result ([review](#numpy-246)) |
-| SciPy | dsp | `>=1.11` | 1.17.1 | Filter application: `scipy.signal.sosfilt` and `scipy.signal.lfilter` (the coefficients are computed by Sinus) | 2026-10-05: no anomaly that affects Sinus ([review](#scipy-1171)) |
+| Python (CPython) | dsp | 3.14 (`dsp/.python-version`; `requires-python = ">=3.14"`) | 3.14.4 | Interpreter and standard library: SHA-256 of the data files and of the package source (`hashlib`), download over HTTPS (`urllib.request`), correctly rounded sums and the trigonometric functions of the filter design (`math`); `tomllib` and `ast` in the scripts | 2026-10-05 for 3.11; the move to 3.14 (OP-065) keeps that review as the basis, see the change note below ([review](#python-cpython-review-of-the-311-series)) |
+| NumPy | dsp | `>=1.26` | 2.5.3 | Array math for signal processing | 2026-10-05: no anomaly that affects Sinus; one machine-dependent behaviour, without effect on any result ([review](#numpy-253)) |
+| SciPy | dsp | `>=1.11` | 1.18.1 | Filter application: `scipy.signal.sosfilt` and `scipy.signal.lfilter` (the coefficients are computed by Sinus) | 2026-10-05: no anomaly that affects Sinus ([review](#scipy-1181)) |
 | wfdb | dsp | `>=4.1` | 4.3.1 | Reading PhysioNet WFDB records and annotations | 2026-10-05: no anomaly that affects Sinus ([review](#wfdb-431)) |
 
 The first review of known anomalies (OP-009 in [`open-points.md`](open-points.md)) is recorded [below](#known-anomalies-review). Vulnerabilities found in SOUP are handled as described in [`cybersecurity.md`](cybersecurity.md) §7, and a vulnerability whose triage concludes that it affects Sinus is recorded in the last column.
@@ -15,7 +15,9 @@ This table lists the **direct** runtime dependencies and the interpreter. The ex
 
 ## Known anomalies review
 
-**Scope.** The versions that `dsp/uv.lock` selects for Python 3.11, the configuration that CI and the validation reports use (the reports state it in their `Runtime` row, [`architecture.md`](architecture.md) §8.14). For Python 3.12 and later the lock selects NumPy 2.5.3 and SciPy 1.18.1; their release notes were read as part of this review, but that configuration is not the one that is verified.
+**Scope.** The versions that `dsp/uv.lock` selects for Python 3.14, the configuration that CI and the validation reports use (the reports state it in their `Runtime` row, [`architecture.md`](architecture.md) §8.14).
+
+**Change note (2026-10-11, OP-065).** The reference environment moved from Python 3.11 to Python 3.14 (the newest version for which every locked package has wheels for Windows and Linux on x86-64). The lock now selects NumPy 2.5.3 (was 2.4.6), SciPy 1.18.1 (was 1.17.1) and contourpy 1.4.0 (was 1.3.3 for Python 3.11), the versions whose release notes the review of 2026-10-05 had already read; no other locked version changed. The anomaly texts below are those of the review of 2026-10-05: the sections of NumPy and SciPy apply to the newer releases because the review covered their release notes, and the section of Python is the review of the 3.11 series, which has not been repeated for 3.14 (OP-081).
 
 **Sources, for every item:**
 - **Known vulnerabilities:** the OSV database (`osv.dev`), which collects the PyPA advisory database and the GitHub advisory database, queried on 2026-10-05 for each of the 36 packages of the runtime closure in `dsp/uv.lock` at its locked version (the 33 packages that a Python 3.11 environment installs on Windows, 32 on Linux, which does not install `tzdata`; and NumPy 2.5.3, SciPy 1.18.1 and contourpy 1.4.0, selected for later Python versions). **No known vulnerability.** As a control, the same query returned the published advisories for older versions of NumPy, aiohttp and urllib3.
@@ -24,7 +26,7 @@ This table lists the **direct** runtime dependencies and the interpreter. The ex
 
 Each review below states what Sinus uses, what was reviewed, and the anomalies relevant to that use, with the reason why they do or do not affect Sinus. None needs a change to [`risk-analysis.md`](risk-analysis.md).
 
-### Python (CPython) 3.11
+### Python (CPython), review of the 3.11 series
 
 - **Used by Sinus:** `hashlib.sha256` (verification of the data files, §8.3 of [`architecture.md`](architecture.md), and the source digest, §8.14); `urllib.request` (download over HTTPS, redirects followed, §8.3); `math.fsum`, `math.tan`, `math.cos` (§8.2, §8.6); float formatting and `repr` (reports, golden vectors); `os.replace` and `os.walk`; in the scripts, `argparse`, `tomllib` and `ast`.
 - **Reviewed:** the release status of the 3.11 series, and the security fixes of 3.11.17 (2026-10-01), the release after 3.11.16. Python 3.11 receives security fixes only, until October 2027 (PEP 664). `dsp/.python-version` names the minor version only, so CI and local environments use the latest 3.11 build that their version of uv provides (3.11.16 on the development machine on 2026-10-05).
@@ -34,7 +36,7 @@ Each review below states what Sinus uses, what was reviewed, and the anomalies r
   - `math.tan` and `math.cos` call the platform's mathematical library, whose results may differ in the last place between platforms. Known and handled: the CI environment is the authority for the stored subset report ([`architecture.md`](architecture.md) §8.11).
   - The patch level is not pinned, and the 3.11 series ends in October 2027. NumPy 2.4 and SciPy 1.17 are the last series that support Python 3.11 (see below), so a later defect fix in them would need a newer Python. Not an anomaly of the current versions; the choice of a newer Python is OP-065.
 
-### NumPy 2.4.6
+### NumPy 2.5.3
 
 - **Used by Sinus:** creation and conversion of 1-D `float64` and `int64` arrays (`array`, `asarray`, `ascontiguousarray`, `zeros`, `full`, `arange`, `vstack`); `abs`, `max`, `argmax`, `argmin`, `isfinite`, `count_nonzero`; element-wise arithmetic; `exp` and `sin` only in the synthetic test signals of `sinus_dsp.synthetic`. No file input or output, no pickling, no linear algebra, no random numbers, no sums with `numpy.sum` or `numpy.mean` (§8.2).
 - **Reviewed:** release notes of 2.4.6 and of the later releases 2.5.0 to 2.5.3. 2.4.6 is the last release of the 2.4 series and of any series that supports Python 3.11 (2.5 requires Python 3.12). Open issues labelled as bugs that concern `argmax`, `argmin`, `max`, `isfinite`, `count_nonzero`, `exp`, `sin` and `vstack`.
@@ -44,7 +46,7 @@ Each review below states what Sinus uses, what was reviewed, and the anomalies r
   - **Machine-dependent results of `exp` and `sin`.** NumPy selects at run time between a baseline implementation of the `float64` `exp` and `sin` and an implementation for AVX2 and FMA3 processors (`numpy.lib.introspect.opt_func_info`, checked on 2026-10-05), so their results may differ in the last bits between machines. Sinus uses them only to build the synthetic inputs of the golden vectors ([`architecture.md`](architecture.md) §7.2), which are regenerated in the CI run that uses them and compared with the C++ library within the tolerances of OP-005 (§7.5). No report value depends on them. No effect on any result.
   - **Machine-dependent results of `convolve`** (added on 2026-10-08). `scipy.signal.lfilter` with FIR coefficients calls `numpy.convolve`, which computes each output as a dot product through the BLAS library bundled with NumPy (OpenBLAS 0.3.31, which selects its kernel for the processor at run time, `numpy.show_config()`); its summation order is not sequential, so the derivative and the integrated signal of the detection ([`architecture.md`](architecture.md) §8.7.1) may differ in the last bits between machines (checked on 2026-10-08: about 1e-15 relative to a sequential sum). A detection decision changes only on a near tie at that level. Known and handled as for `math` above: the CI environment is the authority for the stored subset report ([`architecture.md`](architecture.md) §8.2, §8.11), and the C++ library is compared within tolerances. No effect on any reported result.
 
-### SciPy 1.17.1
+### SciPy 1.18.1
 
 - **Used by Sinus:** `scipy.signal.sosfilt` with an initial state (`zi`) and `scipy.signal.lfilter` with FIR coefficients (`a = [1.0]`), on 1-D `float64` arrays. The coefficients are computed in closed form by Sinus ([`architecture.md`](architecture.md) §8.6, §8.7); no SciPy filter-design function and no `lfilter_zi` or `sosfilt_zi` runs.
 - **Reviewed:** release notes and issue lists of 1.17.1, 1.18.0 and 1.18.1. 1.17.1 is the last release of any series that supports Python 3.11 (1.18 requires Python 3.12). Open issues that mention `sosfilt` or `lfilter`.

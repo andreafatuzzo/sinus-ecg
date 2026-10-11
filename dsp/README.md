@@ -6,7 +6,7 @@
 
 ## Requirements
 
-- [uv](https://docs.astral.sh/uv/). It installs Python 3.11 (pinned in `.python-version`) and every dependency at the version locked in `uv.lock`.
+- [uv](https://docs.astral.sh/uv/). It installs Python 3.14 (pinned in `.python-version`) and every dependency at the version locked in `uv.lock`.
 - For the validation: about 170 MB of disk space for the two databases, and a network connection for their first download.
 
 ## Set up

@@ -1,6 +1,6 @@
 # Software development plan
 
-_Inspired by IEC 62304 §5.1. Version 0.6, 2026-10-10. Status: draft; the changes of version 0.6 (Milestone 2 release: C++ tools in use, known anomalies at a release) were approved by the project owner on 2026-10-11; version 0.5.1 is editorial; the changes of version 0.5 (Milestone 2: verification per software item, version of the C++ items, C++ tools) were approved by the project owner on 2026-10-08; those of version 0.4 were approved on 2026-10-03, those of versions 0.4.2 and 0.4.3 on 2026-10-06._
+_Inspired by IEC 62304 §5.1. Version 0.6.1, 2026-10-11. Status: draft; version 0.6.1 records the move of the reference environment to Python 3.14 decided by the project owner on 2026-10-11 (OP-065); the changes of version 0.6 (Milestone 2 release: C++ tools in use, known anomalies at a release) were approved by the project owner on 2026-10-11; version 0.5.1 is editorial; the changes of version 0.5 (Milestone 2: verification per software item, version of the C++ items, C++ tools) were approved by the project owner on 2026-10-08; those of version 0.4 were approved on 2026-10-03, those of versions 0.4.2 and 0.4.3 on 2026-10-06._
 
 > Sinus is not a medical device and claims no compliance with IEC 62304. This plan borrows the standard's structure so that the project is developed the way medical device software is.
 >
@@ -21,6 +21,7 @@ _Inspired by IEC 62304 §5.1. Version 0.6, 2026-10-10. Status: draft; the change
 | 0.5 | 2026-10-08 | Milestone 2 (approved by the project owner on 2026-10-08). §3.1, §6: a requirement implemented by several software items has a verifying test in each of them (ADR 0006). §4: every software item has the version of the milestone register; the C++ library states it in its `VERSION` file and identifies its code with a source digest of its own (`architecture.md` §14.15); the pins of the C++ build (tools project, GoogleTest, ESP-IDF image). §5.2: the C++ tools chosen for Milestone 2 with their versions, the coding standard of ADR 0007. §6: the equivalence level states its tolerances and CI jobs |
 | 0.5.1 | 2026-10-08 | Editorial: §3 activity 3 names the detailed-design file of each milestone (`architecture-m1.md`, `architecture-m2.md`) |
 | 0.6 | 2026-10-10 | Milestone 2 release (approved by the project owner on 2026-10-11). §5.1: the C++ build, compilers, formatting, static analysis, tests, sanitizers, ESP32-S3 build and emulator, and the SBOM of the library move from the planned tools, now run in CI; ADR 0007 accepted (OP-043 closed). §6: the output of the tests that need the complete databases is recorded in the milestone verification report (OP-069). §8: rule on known anomalies at a release (listed in the verification report, tied to an open point and the risk analysis, accepted by the project owner) |
+| 0.6.1 | 2026-10-11 | §1 and §5.1: the reference environment uses Python 3.14 instead of 3.11, decided by the project owner on 2026-10-11 (OP-065); the third-party versions are in `soup.md` |
 
 ## 1. Purpose and scope
 
@@ -28,7 +29,7 @@ This plan defines how the Sinus software is specified, built, verified, released
 
 | Software item | Location | Language and platform | Milestones |
 |---|---|---|---|
-| DSP reference implementation and validation pipeline | `dsp/` | Python 3.11 | M1 (reference, validation, golden vectors); M6 (HRV, beat classification) |
+| DSP reference implementation and validation pipeline | `dsp/` | Python 3.14 | M1 (reference, validation, golden vectors); M6 (HRV, beat classification) |
 | Portable real-time signal-processing library | `libs/sinus-dsp/` | C++17, CMake; host and ESP32-S3 | M2 |
 | Desktop application | `desktop/` | C++17, Qt 6 (user-interface technology: OP-033) | M3 (replay, test input); M4 (device) |
 | Firmware | `firmware/` | C++17 on ESP-IDF with FreeRTOS; ESP32-S3 | M4 |
@@ -129,7 +130,7 @@ The same rules apply to work drafted with AI assistance (§5.3).
 | Python style and lint | ruff (format and lint), configured in `dsp/pyproject.toml` |
 | Python types | mypy `--strict` on `sinus_dsp` |
 | Tests | pytest with `--strict-markers` |
-| Environment | uv, Python 3.11 pinned in `dsp/.python-version` |
+| Environment | uv, Python 3.14 pinned in `dsp/.python-version` |
 | CI | GitHub Actions (`.github/workflows/ci.yml`) |
 | Traceability | `dsp/scripts/traceability.py`: generated matrix, `--check` on every push (including the version rule of §4), `--release-gate` on pull requests into `main` ([ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md)) |
 | Software identity of the reports | `dsp/scripts/software_check.py`, on pull requests into `main`: every report in `docs/validation/` states the software being released (§4; [`architecture.md`](architecture.md) §8.14) |

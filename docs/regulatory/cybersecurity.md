@@ -172,7 +172,7 @@ Beat classification (Milestone 6) adds no new interface. Its datasets are verifi
 |---|---|---|
 | Scan of the SBOM in CI (§7.2) | Every component of each SBOM generated in CI (`dsp`: the runtime packages of `dsp/uv.lock`) on the branch being built, so also what the next release will contain | Every push and pull request |
 | Dependabot alerts (repository setting) | The packages of `dsp/uv.lock` on the default branch, `main`, including the development tools, and the actions that the workflows reference by version; GitHub raises an alert when its advisory database lists a vulnerability for a version in use | Continuously, without a CI run |
-| Vendor advisories | Components outside the SBOM: the Python interpreter (security releases of the 3.11 series, [`soup.md`](soup.md)); from later milestones ESP-IDF, Qt and the backend frameworks | At each milestone, and when a triage needs them |
+| Vendor advisories | Components outside the SBOM: the Python interpreter (security releases of the 3.14 series, [`soup.md`](soup.md)); from later milestones ESP-IDF, Qt and the backend frameworks | At each milestone, and when a triage needs them |
 | Private vulnerability reporting (repository setting) | Reports from anyone, as described in [`SECURITY.md`](../../SECURITY.md) | When a report arrives |
 
 ### 7.2 Scan of the SBOM in CI
