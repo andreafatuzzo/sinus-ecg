@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.4.4, 2026-10-10. Status: approved by the project owner up to v0.4.4 (the dates are in the revision history); v0.4.1 is editorial._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.5, 2026-10-11. Status: approved by the project owner up to v0.4.4 (the dates are in the revision history); v0.4.1 is editorial; v0.5 (Milestone 3 architecture of the desktop application, §15, and ADR 0009) proposed, pending approval._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;
@@ -12,7 +12,7 @@ This document describes **how** Sinus is built:
 
 Significant decisions are recorded as architecture decision records in [`docs/adr/`](../adr/README.md), and this document cites them.
 
-The detailed design of each requirement (module, interface, algorithm with references, parameters, edge cases) is added milestone by milestone, in one file per milestone that keeps the section numbers of the whole architecture: Milestone 1 in [`architecture-m1.md`](architecture-m1.md) (§8, which builds on the equivalence principle and the golden-vector format of §7); Milestone 2 in [`architecture-m2.md`](architecture-m2.md), the reference side (`dsp`) in §13 and the real-time library (`libs/sinus-dsp`) in §14. A reference to a section, such as "`architecture.md` §8.7", points to the file that holds that section.
+The detailed design of each requirement (module, interface, algorithm with references, parameters, edge cases) is added milestone by milestone, in one file per milestone that keeps the section numbers of the whole architecture: Milestone 1 in [`architecture-m1.md`](architecture-m1.md) (§8, which builds on the equivalence principle and the golden-vector format of §7); Milestone 2 in [`architecture-m2.md`](architecture-m2.md), the reference side (`dsp`) in §13 and the real-time library (`libs/sinus-dsp`) in §14; Milestone 3 in [`architecture-m3.md`](architecture-m3.md), the architecture of the desktop application in §15, the display low-pass and the mains tolerance in §16 and the detailed design of the desktop application in §17. A reference to a section, such as "`architecture.md` §8.7", points to the file that holds that section.
 
 ## Conventions
 
@@ -20,7 +20,7 @@ The detailed design of each requirement (module, interface, algorithm with refer
 - Interfaces between software items are identified as `IF-1`, `IF-2`, … These IDs are stable and never reused.
 - Identifiers in code carry their unit when the type does not: suffixes `_mv`, `_hz`, `_s`, `_ms`, `_bpm`, `_samples` (e.g. `fs_hz`, `delay_samples`), in Python and in C++.
 - Every placeholder cites its open point. The detailed design of the items introduced by later milestones is written at the start of their milestone (`sdp.md` §3, activity 3); this version fixes only what the architecture needs now.
-- The architecture is this file and one detailed-design file per milestone. Section numbers are shared: §1 to §7 and §9 to §12 are in this file, §8 in `architecture-m1.md`, §13 and §14 in `architecture-m2.md`.
+- The architecture is this file and one detailed-design file per milestone. Section numbers are shared: §1 to §7 and §9 to §12 are in this file, §8 in `architecture-m1.md`, §13 and §14 in `architecture-m2.md`, §15 to §17 in `architecture-m3.md`.
 
 ## Revision history
 
@@ -49,6 +49,7 @@ The full text of each earlier entry is in the version history of the repository.
 | 0.4.2 | 2026-10-09 | §13.1 module dependencies: `quality.quality_windows` imports `pipeline` inside the function, because `pipeline` imports `quality`; found while implementing §13.6. Approved by the project owner on 2026-10-09 |
 | 0.4.3 | 2026-10-09 | **Design change decided by the project owner on 2026-10-09** (SRS-023, §13.7.2, §13.7.4, §13.7.5): method correction of the start-of-stream evaluation, found by analysing the false negatives of its first run. Detection continues on the record after each 60 s segment for the documented maximum delay of a detection (§13.4), or to the end of the record when it comes first; only the reference beats and detections whose index lies in the segment are scored; new `continuation_samples`, fields `continuation_samples` and `short_continuations` of `StartOfStreamRecord`, three report rows and a method-correction paragraph in section 9. The detection algorithm does not change. **Readings found while implementing, recorded as design, no change of behaviour:** `evaluation.run.checked_record_names` public (§13.7.2); helpers `summarize_pooled`, `windows_from`, `record_quality`, `build_quality_results`, `evaluate_quality` (§13.7.3); an SNR without windows fails both median criteria (§13.7.3); a missing median written `not defined` and the order -6 dB then 24 dB in the criteria table (§13.7.5); line named when a reliable detection has no row in `[heart_rates]` (§13.8); `NOTICE.md` written before the first record segment and kept after a failed export (§13.8, §14.12); re-learning of `artefact` at 18.49 s at 250 Hz (§13.9). Approved by the project owner on 2026-10-09 |
 | 0.4.4 | 2026-10-10 | **Readings and deviations found while implementing §14 (groups C1 to C7), recorded at the Milestone 2 release as design; no change of the library's behaviour, of a tolerance or of a requirement.** Build (§14.2, §14.3): floating-point arithmetic only in `.cpp` files, so that `-ffp-contract=off` always applies; static C++ runtime on MinGW; `asan-ubsan` without UBSan's `vptr` check (`-fno-rtti`, ADR 0007); clang-tidy configuration (`#pragma once` check off, header filter with both separators, target and include folders for Clang). Interfaces (§14.3, §14.4): private headers `compensated_sum`, `interval_estimate`, `search_back_limit`, `array_index`, no `ring.hpp`, `QrsDetectorProbe` for the unit tests, detector capacities in `limits.hpp`, start of the band-pass of a detector used alone. Tolerances (§14.11): amplitude range of the 2e-5 mV conditioning tolerance (guaranteed up to 50 mV; golden inputs within 20 mV). Equivalence check (§14.12): `equivalence_folder`, `<cstdio>`, a non-finite difference fails, texts of structural differences, `At sample` per output, tolerance texts, rows of files not compared, export option `--output`, artifacts. ESP32-S3 (§14.13): source lists without `CONFIGURE_DEPENDS` in script mode, build-target header, pack details, flash padding, SRS-036 system-test step. Harness (§14.14): static twin, default path of the skip hook. Traceability (§13.12): per-item rule texts, including the release gate on single-item requirements. Editorial: ADRs 0006 to 0008 shown as accepted (§5, §11); closed open points and the new OP-075 (SBOM) and OP-076 (versioning) of the later items cited (§8.14, §12, §14.1, §14.15, §14.16). Approved by the project owner on 2026-10-11, with the amplitude range of the SRS-034 conditioning tolerance stated in §14.11 and no change to SRS-034 |
+| 0.5 | 2026-10-11 | Milestone 3 architecture of the desktop application, new §15 in [`architecture-m3.md`](architecture-m3.md), for `srs.md` v0.9 (SRS-039 to SRS-054) and the decisions of the project owner of 2026-10-11: [ADR 0009](../adr/0009-qt-widgets-with-own-waveform-drawing.md) (Qt Widgets, waveform drawn by the application; OP-033 closed); layout of `desktop/`, tools moved to `tools/cpp/`, one `.clang-format` and a base `.clang-tidy` at the repository root; build against the library; stream frame format version 1 (IF-5, sample frames of IF-4); threading and data flow with a fake clock; processing per continuous segment; display pipeline (sweep, 0.5 s delay, late marks, hollow start-up marks); outline of the status and heart-rate rules; replay, test input, recording (WFDB, metadata and events as header comments); identity and SBOM (OP-075, OP-076); fixed elements and accessibility; Qt 6.12 pinning, Windows toolchain, CI jobs `desktop` and `desktop-windows`; coding rules and tests; feasibility of SRS-044 (linear-phase FIR, all criteria met); implementation groups D1 to D9. New OP-082 (test-input recording range) and OP-083 (mains frequency of other WFDB records) proposed. §2, §4.1, §4.3, §6.2, §9, §11, §12 aligned. Editorial: the reference environment of `dsp` is Python 3.14 (§2, §9; OP-065 closed, results unchanged). Detailed designs follow in §16 (SRS-044, SRS-054) and §17 (desktop) |
 
 ## 1. System context
 
@@ -82,10 +83,10 @@ flowchart LR
 
 | Item | Location | Language and platform | Milestones | Responsibility |
 |---|---|---|---|---|
-| **dsp**: reference implementation and validation pipeline | `dsp/` | Python 3.11 (NumPy, SciPy, wfdb) | M1; M2; M6 | Offline reference of signal conditioning and beat detection (M1), of the start-up marks, heart rate and signal quality index (M2); download and verification of the reference databases; EC57 evaluation, noise stress, start of real recordings, signal quality validation and reports; golden-vector export; later HRV and beat classification |
-| **libs/sinus-dsp**: portable real-time signal-processing library | `libs/sinus-dsp/` | C++17, CMake; builds for the computer (host) and for the ESP32-S3 | M2 | The single real-time implementation of signal conditioning, beat detection, heart-rate tracking and signal quality, linked into the firmware and the desktop application |
+| **dsp**: reference implementation and validation pipeline | `dsp/` | Python 3.14 (NumPy, SciPy, wfdb) | M1; M2; M3; M6 | Offline reference of signal conditioning and beat detection (M1), of the start-up marks, heart rate and signal quality index (M2), of the display low-pass and the check of the mains filter under a deviation of the mains frequency (M3, §16); download and verification of the reference databases; EC57 evaluation, noise stress, start of real recordings, signal quality validation and reports; golden-vector export; later HRV and beat classification |
+| **libs/sinus-dsp**: portable real-time signal-processing library | `libs/sinus-dsp/` | C++17, CMake; builds for the computer (host) and for the ESP32-S3 | M2; M3 | The single real-time implementation of signal conditioning, beat detection, heart-rate tracking and signal quality (M2) and of the display low-pass (M3, §16), linked into the firmware and the desktop application |
 | **firmware** | `firmware/` | C++17 on ESP-IDF with FreeRTOS; ESP32-S3 | M4 | Acquisition at 360 Hz, electrode contact, device state supervision, streaming over Bluetooth LE |
-| **desktop**: desktop application | `desktop/` | C++17, Qt 6 (user-interface technology: OP-033); Windows, macOS, Linux | M3; M4 | Live view, signal status, recording, replay, test input, connection to the device |
+| **desktop**: desktop application | `desktop/` | C++17, Qt 6 Widgets ([ADR 0009](../adr/0009-qt-widgets-with-own-waveform-drawing.md)); Windows and Linux (macOS: OP-080) | M3; M4 | Live view, signal status, recording, replay, UDP test input (M3); connection to the device, serial test input (M4). Architecture in §15 |
 | **backend** | `backend/` | Python, FastAPI | M5 | Storage of sessions for their owner, review data, HL7 FHIR R4 export |
 
 - **dsp** is not part of the runtime system: it runs offline on a developer's computer and in CI. It is still treated as Class B software (`safety-class.md`), because it produces the validation evidence of RC-001 and RC-004 and the reference of RC-012.
@@ -93,7 +94,7 @@ flowchart LR
 - The **firmware** and the **desktop application** each separate the code that depends on hardware or on Qt from a core that depends on neither, and that core is built and tested on the host (§6).
 - The **backend** does no signal processing (§6.3, §10).
 
-Decisions: [ADR 0001](../adr/0001-mcu-and-firmware-framework.md) (ESP32-S3, ESP-IDF, FreeRTOS, C++17), [ADR 0002](../adr/0002-portable-cpp-dsp-library.md) (one portable C++17 library, Python reference, golden vectors), [ADR 0003](../adr/0003-qt-desktop-application-with-replay.md) (Qt 6 desktop application with replay), [ADR 0005](../adr/0005-device-sampling-rate-360-hz.md) (360 Hz).
+Decisions: [ADR 0001](../adr/0001-mcu-and-firmware-framework.md) (ESP32-S3, ESP-IDF, FreeRTOS, C++17), [ADR 0002](../adr/0002-portable-cpp-dsp-library.md) (one portable C++17 library, Python reference, golden vectors), [ADR 0003](../adr/0003-qt-desktop-application-with-replay.md) (Qt 6 desktop application with replay), [ADR 0009](../adr/0009-qt-widgets-with-own-waveform-drawing.md) (Qt Widgets, waveform drawn by the application), [ADR 0005](../adr/0005-device-sampling-rate-360-hz.md) (360 Hz).
 
 ## 3. Allocation of functions to software items
 
@@ -153,13 +154,13 @@ A discrepancy is counted and recorded with the session. It is not shown as a res
 | IF-2 | dsp → libs/sinus-dsp tests | D14: golden vectors | Text files, format §7.3 (version 1, Milestone 1) and §13.8 (version 2, from Milestone 2) | M1 (export); M2 (use) | SRS-015, SRS-033; §7, §13.8 |
 | IF-3 | libs/sinus-dsp → firmware, desktop | D3, D4, D5, D13 | In-process C++17 API | M2 | §5 |
 | IF-4 | firmware → desktop | D1 (acquired samples, sample counter, packet sequence number, electrode contact, motion reference if present), D15 (device state), device-side results (§3.1) | Bluetooth LE GATT notifications; security in `cybersecurity.md` (OP-044) | M4 | §6.1 |
-| IF-5 | test input → desktop | D1, in the frame format of IF-4 | Serial port or UDP (local host only by default); only for sources that are not worn (OP-038) | M3 | §6.2 |
+| IF-5 | test input → desktop | D1, in the frame format of IF-4 | UDP datagrams from the local host only, frame format version 1 (M3, SRS-042); serial port (M4, OP-038); only for sources that are not worn | M3; M4 | §6.2, §15.4, §15.10 |
 | IF-6 | files on the computer | D2 (reference records), D7 (session recordings) | WFDB: header, signal and annotation files. Written by the desktop, read by the desktop (replay) and by dsp (offline analysis, US-3) | M3 | §6.2, OP-050 |
 | IF-7 | desktop → backend | D7 with the derived D4 and D5; D9 on retrieval | HTTPS REST API | M5 | §6.3, `cybersecurity.md` |
 | IF-8 | backend → external system | D11 | HL7 FHIR R4 JSON (content: OP-027) | M5 | §6.3 |
 | IF-9 | dsp → `docs/validation/` | D10 | Markdown reports, regenerated by script, never edited by hand | M1 | SRS-009, SRS-012, SRS-014, SRS-016 |
 
-The byte layout of IF-4 and IF-5 frames and the REST resources of IF-7 are designed at the start of Milestones 3 to 5. The architecture fixes their content (this table) and the rules of §4.2.
+The byte layout of the sample frames of IF-5 and IF-4 is §15.4 (frame format version 1, Milestone 3); the further frame types of IF-4 (device state, device-side results) are added at Milestone 4, and the REST resources of IF-7 are designed at Milestone 5. The architecture fixes their content (this table) and the rules of §4.2.
 
 ### 4.2 Common data conventions
 
@@ -178,7 +179,7 @@ The byte layout of IF-4 and IF-5 frames and the REST resources of IF-7 are desig
   2. For each record: load, check the input, condition, detect.
   3. It matches the detections with the reference annotations, computes the statistics and writes the report (IF-9).
   4. The same chain exports the golden vectors (IF-2).
-- **Replay (M3, US-9).** The desktop reads a verified reference record or a recorded session (IF-6). It emits D1 frames tagged "replay: <name>" at the original sampling rate, paced by a monotonic clock. From there, the frames follow the live path.
+- **Replay (M3, US-9).** The desktop reads a verified reference record or a recorded session (IF-6). It emits D1 frames tagged "replay: <name>" at 1, 2, 5 or 10 times the original rate (SRS-039), paced by a monotonic clock (§15.9). From there, the frames follow the live path.
 - **Live (M4, US-2, US-4).**
   1. On the device: acquisition task → processing task (device-side results) → transmission task → Bluetooth LE (IF-4).
   2. On the desktop, the stream decoder checks sequence numbers and the sample counter and marks gaps.
@@ -264,21 +265,23 @@ Not in Milestone 2: the polyphase decimator for the device's oversampled ADC, wh
 
 ### 6.2 Desktop application (Milestones 3 and 4)
 
+The Milestone 3 architecture of the desktop application (layout, threading, frame format, display, recording, build, CI, tests, implementation plan) is §15 in [`architecture-m3.md`](architecture-m3.md); its detailed design is §17. This section keeps the outline.
+
 **Layers.**
 
 | Layer | Depends on | Content |
 |---|---|---|
-| `core` | C++17 and libs/sinus-dsp only (no Qt) | Stream frame model and the source interface; frame decoder with continuity check and gap marking; one processing chain per continuous segment; signal status (FB-05, OP-020); heart-rate display rules (FB-08, OP-021); cross-check of the device-side results; recording model |
-| `io` | Qt | Sources: Bluetooth LE central (Qt Bluetooth, M4), serial port and UDP test inputs (Qt Serial Port, Qt Network, M3), replay (WFDB reader paced by a monotonic clock, M3). WFDB writer. WFDB implementation: OP-050 |
-| `ui` | Qt Widgets or Qt Quick (OP-033) | Views and their presenters or view models. They render snapshots of the core state at the display rate and do no processing |
+| `core` | C++17 and libs/sinus-dsp only (no Qt) | Stream frame model, frame codec and the source interface; continuity check and gap marking; one processing chain per continuous segment; display model and drawing input; signal status (FB-05, SRS-045); heart-rate display rules (FB-08, SRS-046); replay with its pacing on an injectable clock (M3); WFDB reader and writer (OP-050); recording model; cross-check of the device-side results (M4) |
+| `io` | Qt | Sources that need Qt: UDP test input (Qt Network, M3); Bluetooth LE central (Qt Bluetooth, M4) and serial test input (Qt Serial Port, M4); worker threads; settings |
+| `ui` | Qt Widgets ([ADR 0009](../adr/0009-qt-widgets-with-own-waveform-drawing.md)) | Main window, top bar, waveform widget drawn with `QPainter`, text panels, About box. They render snapshots of the core state at the display rate and do no processing |
 
 **Rules.**
 - `core` is tested on the host with GoogleTest without Qt. Test folders: `desktop/tests/`, per ADR 0004.
-- **Threading.** Sources and processing run outside the user-interface thread. The user interface reads snapshots at a fixed refresh rate. Queued Qt signal-slot connections cross the threads.
+- **Threading.** Sources and processing run outside the user-interface thread. Frames reach the processing thread through a bounded queue of `core`; the user interface reads snapshots at a fixed refresh rate and sends commands through a queue of `core` (§15.5).
 - **Sources.** All sources (device, replay, test input) implement the same interface and emit the same frames, tagged with the data source. Recordings of replayed or test data are marked as such (RC-015).
 - **Replay** reads reference records only from the local copy verified by dsp (IF-1).
-- **Test inputs** are off by default. UDP listens on the local host only unless the user changes it (`cybersecurity.md`).
-- **Qt licensing.** Only Qt modules available under the LGPL-3.0 are used, linked dynamically, so that the application can be distributed with its Apache-2.0 code. Modules offered only under GPL or commercial terms (for example the chart modules) are not used. The waveform is drawn by the application. The licence of each module is checked when Qt is entered in the SOUP list.
+- **Test inputs** are off at every start. UDP accepts datagrams from the local host only (SRS-042, `cybersecurity.md`).
+- **Qt licensing.** Only Qt modules available under the LGPL-3.0 are used, linked dynamically, so that the application can be distributed with its Apache-2.0 code. Modules offered only under GPL or commercial terms (for example the chart modules) are not used. The waveform is drawn by the application (ADR 0009). The licence of each module is checked when Qt is entered in the SOUP list.
 
 ### 6.3 Backend (Milestone 5)
 
@@ -450,10 +453,10 @@ In [`architecture-m1.md`](architecture-m1.md), with the same section numbers (§
 
 | Item | Runtime SOUP | Recorded |
 |---|---|---|
-| dsp | Python 3.11 (interpreter and standard library), NumPy, SciPy, wfdb | [`soup.md`](soup.md) |
+| dsp | Python 3.14 (interpreter and standard library), NumPy, SciPy, wfdb | [`soup.md`](soup.md) |
 | libs/sinus-dsp | None beyond the C++ standard library and the C library of each toolchain: on the computer those of the compiler (GCC 14 with libstdc++ and glibc in CI), on the ESP32-S3 libstdc++ and newlib of the ESP-IDF v6.1 toolchain (§14.13). Used: `<cmath>` (`std::tan`, `std::cos`, `std::sqrt`, `std::floor`, `std::ceil` at configuration; `std::isfinite`, `std::fabs` per sample), no allocation | Planned in [`soup.md`](soup.md); a row with its review when the library code lands (group C2) |
 | firmware | ESP-IDF (drivers, ADC calibration, NimBLE Bluetooth LE host, C and C++ runtime libraries), FreeRTOS as shipped with ESP-IDF | At Milestone 4 |
-| desktop | Qt 6 (LGPL-3.0 modules only, §6.2); WFDB implementation (OP-050) | At Milestone 3 |
+| desktop | Qt 6.12 (one exact patch version, §15.14), LGPL-3.0 modules only: Qt Core, Qt GUI, Qt Widgets, Qt Network in M3 (Qt Serial Port and Qt Bluetooth in M4), with the third-party libraries that these modules ship and the platform plugin; the C++ and C runtime libraries of each toolchain (Qt's MinGW-w64 15.1 toolchain on Windows, GCC 14 with libstdc++ and glibc on Linux); the system libraries that Qt loads on Linux (X11/xcb, fontconfig), provided by the platform; the libs/sinus-dsp library (own item, not SOUP). The WFDB reader and writer are own code (OP-050), not SOUP. Qt Test is a test tool | Planned in [`soup.md`](soup.md); the rows and their review land with group D3 (§15.18) |
 | backend | FastAPI and its runtime dependencies; database and FHIR libraries chosen at Milestone 5 | At Milestone 5 |
 
 Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, GoogleTest, pytest, linters, formatters, SBOM generators, vulnerability scanners) are not SOUP (`sdp.md` §7). The SBOM of each item is described in [`cybersecurity.md`](cybersecurity.md) §6.
@@ -479,16 +482,17 @@ Planned SOUP is listed in `soup.md`. Development tools (compilers, CMake, Google
 |---|---|
 | [0001](../adr/0001-mcu-and-firmware-framework.md) | ESP32-S3 with ESP-IDF and FreeRTOS, firmware in C++17 |
 | [0002](../adr/0002-portable-cpp-dsp-library.md) | One portable C++17 real-time library; Python reference; equivalence on golden vectors |
-| [0003](../adr/0003-qt-desktop-application-with-replay.md) | Qt 6 desktop application with replay; Widgets or Qt Quick deferred (OP-033) |
+| [0003](../adr/0003-qt-desktop-application-with-replay.md) | Qt 6 desktop application with replay; the user-interface technology, left open (OP-033), is decided by ADR 0009 |
 | [0004](../adr/0004-test-tagging-and-traceability-gates.md) | Test tagging and traceability gates |
 | [0005](../adr/0005-device-sampling-rate-360-hz.md) | Device sampling rate 360 Hz |
 | [0006](../adr/0006-verification-per-software-item.md) | Verification per software item: a requirement implemented by several items has a verifying test in each (accepted; amends ADR 0004) |
 | [0007](../adr/0007-cpp-coding-standard-and-static-analysis.md) | C++ coding standard, formatting and static analysis (accepted; OP-043, closed) |
 | [0008](../adr/0008-arithmetic-of-the-real-time-library.md) | Arithmetic of the real-time library: binary64 signal conditioning, binary32 elsewhere (accepted; amends ADR 0002) |
+| [0009](../adr/0009-qt-widgets-with-own-waveform-drawing.md) | Qt Widgets with a waveform drawn by the application; no chart module or third-party plotting library (accepted; closes OP-033) |
 
 ## 12. Open points referenced
 
-OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-038, OP-041, OP-043, OP-044, OP-046, OP-047, OP-049, OP-050, OP-051, OP-052, OP-056, OP-057, OP-061, OP-062, OP-063, OP-064, OP-066, OP-067, OP-069, OP-070, OP-071, OP-072, OP-075, OP-076. See [`open-points.md`](open-points.md). Closed open points stay listed. Since v0.3: OP-021 and OP-032 are closed (their Milestone 2 parts specified by `srs.md` v0.8 and designed in §13.5 and §13.6); OP-049 and OP-063 are designed in §13.4 and §13.2; OP-069 in §13.10. Since v0.4: the tolerances of OP-005 in §14.11, the memory limit of OP-049 in §14.10, OP-043 in ADR 0007 and §14.2, OP-046 for the library in §14.16, OP-057 in §14.3, OP-062 for the library in §14.15, OP-066 in §13.12, OP-067 in §14.12; OP-051 (closed) is cited for the emulator (§14.13), OP-014 for the processing time on the ESP32-S3. Since v0.4.4 (Milestone 2 release): OP-043, OP-057, OP-066, OP-067 and OP-069 are closed; OP-046 and OP-062 are closed for the library, and their parts for the later items continue as OP-075 (SBOM of the desktop application, the firmware and the backend; §14.16) and OP-076 (versioning and identification of the desktop application and the firmware; §8.14, §14.15).
+OP-005, OP-007, OP-014, OP-016, OP-018, OP-020, OP-021, OP-022, OP-026, OP-027, OP-031, OP-032, OP-033, OP-035, OP-036, OP-037, OP-038, OP-040, OP-041, OP-043, OP-044, OP-046, OP-047, OP-049, OP-050, OP-051, OP-052, OP-056, OP-057, OP-061, OP-062, OP-063, OP-064, OP-065, OP-066, OP-067, OP-069, OP-070, OP-071, OP-072, OP-074, OP-075, OP-076, OP-078, OP-080, OP-081, OP-082, OP-083. See [`open-points.md`](open-points.md). Closed open points stay listed. Since v0.3: OP-021 and OP-032 are closed (their Milestone 2 parts specified by `srs.md` v0.8 and designed in §13.5 and §13.6); OP-049 and OP-063 are designed in §13.4 and §13.2; OP-069 in §13.10. Since v0.4: the tolerances of OP-005 in §14.11, the memory limit of OP-049 in §14.10, OP-043 in ADR 0007 and §14.2, OP-046 for the library in §14.16, OP-057 in §14.3, OP-062 for the library in §14.15, OP-066 in §13.12, OP-067 in §14.12; OP-051 (closed) is cited for the emulator (§14.13), OP-014 for the processing time on the ESP32-S3. Since v0.4.4 (Milestone 2 release): OP-043, OP-057, OP-066, OP-067 and OP-069 are closed; OP-046 and OP-062 are closed for the library, and their parts for the later items continue as OP-075 (SBOM of the desktop application, the firmware and the backend; §14.16) and OP-076 (versioning and identification of the desktop application and the firmware; §8.14, §14.15). Since v0.5 (Milestone 3): OP-065 is closed (reference environment on Python 3.14, §2, §9) and OP-081 tracks the anomaly review of the CPython 3.14 series in `soup.md`; OP-033 is closed by ADR 0009; the desktop parts of OP-075 and OP-076 are designed in §15.12; OP-050 in §15.9 and §15.11 (own reader and writer); OP-070 is specified by SRS-044 and its feasibility shown in §15.17; OP-078 (contact and device state) and OP-080 (macOS) are cited for what Milestone 3 leaves out (§15.4, §15.14); OP-082 (range of the test-input recordings) and OP-083 (mains frequency of a replayed record that is neither a reference record nor a recorded session) are opened by §15.11 and §15.9.
 
 ## 13. Milestone 2 detailed design of `dsp`
 
@@ -497,3 +501,15 @@ In [`architecture-m2.md`](architecture-m2.md), with the same section numbers (§
 ## 14. Milestone 2 detailed design of `libs/sinus-dsp`
 
 In [`architecture-m2.md`](architecture-m2.md), with the same section numbers (§14.1 to §14.18).
+
+## 15. Milestone 3 architecture of the desktop application
+
+In [`architecture-m3.md`](architecture-m3.md), with the same section numbers (§15.1 to §15.18).
+
+## 16. Milestone 3 display low-pass and mains tolerance (SRS-044, SRS-054)
+
+In [`architecture-m3.md`](architecture-m3.md); written after §15 is approved.
+
+## 17. Milestone 3 detailed design of the desktop application
+
+In [`architecture-m3.md`](architecture-m3.md); written after §16.
