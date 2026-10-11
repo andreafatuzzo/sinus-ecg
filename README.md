@@ -217,4 +217,4 @@ Code (firmware, DSP library and reference, desktop application, backend) is lice
 
 ## Status
 
-🚧 Early development: Milestones 0 (foundations), 1 (Python reference) and 2 (portable C++ DSP library) released.
+🚧 Early development: Milestones 0 (foundations), 1 (Python reference) and 2 (portable C++ DSP library) released; Milestone 3 (Qt desktop application with replay) in progress.
