@@ -6,13 +6,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <limits>
 #include <memory>
-#include <set>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -23,7 +20,6 @@
 #include "sinus/dsp/signal_quality.hpp"
 #include "sinus/dsp/status.hpp"
 #include "sinus/dsp/verification/golden_reader.hpp"
-#include "sinus/dsp/verification/golden_set.hpp"
 
 namespace sinus::dsp::verification {
 
@@ -253,46 +249,13 @@ bool has_stages(const GoldenVector& vector) {
          vector.stages.at(1) == kMains;
 }
 
-std::string reader_detail(const ReadError& error) {
-  std::string detail = "rejected: ";
-  if (error.has_line) {
-    detail += "line " + std::to_string(error.line) + ": ";
-  }
-  return detail + error.reason;
-}
-
-bool ends_with(std::string_view text, std::string_view suffix) noexcept {
-  return text.size() >= suffix.size() && text.substr(text.size() - suffix.size()) == suffix;
-}
-
-// The identifiers of the *.golden.txt files of a folder.
-bool list_golden_files(const std::string& folder, std::set<std::string>& ids) {
-  std::error_code error;
-  std::filesystem::directory_iterator it(folder, error);
-  if (error) {
-    return false;
-  }
-  for (; it != std::filesystem::directory_iterator(); it.increment(error)) {
-    if (error) {
-      return false;
-    }
-    const std::string name = it->path().filename().string();
-    if (it->is_regular_file(error) && ends_with(name, kGoldenFileSuffix)) {
-      ids.insert(name.substr(0, name.size() - kGoldenFileSuffix.size()));
-    }
-  }
-  return !error;
-}
-
-FileResult problem_result(const std::string& input_id, FileStatus status, std::string detail) {
-  FileResult result;
-  result.input_id = input_id;
-  result.status = status;
-  result.detail = std::move(detail);
-  return result;
-}
-
 }  // namespace
+
+void collect_events(const SampleOutput& out, LibraryOutputs& result) {
+  collect_detections(out, result);
+  collect_heart_rates(out, result);
+  collect_window(out, result);
+}
 
 LibraryOutputs run_library(const GoldenVector& vector) {
   LibraryOutputs result;
@@ -312,9 +275,7 @@ LibraryOutputs run_library(const GoldenVector& vector) {
     }
     result.baseline_mv.push_back(static_cast<double>(out->baseline_mv));
     result.conditioned_mv.push_back(static_cast<double>(out->conditioned_mv));
-    collect_detections(*out, result);
-    collect_heart_rates(*out, result);
-    collect_window(*out, result);
+    collect_events(*out, result);
   }
   return result;
 }
@@ -366,42 +327,6 @@ FileResult check_vector(const std::string& input_id, const GoldenVector& vector)
     return result;
   }
   result.outputs = compare_outputs(vector, library);
-  return result;
-}
-
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): the file name and its path.
-FileResult check_file(const std::string& input_id, const std::string& path) {
-  const ReadResult read = read_golden_vector(path);
-  if (!read.ok) {
-    return problem_result(input_id, FileStatus::kRejected, reader_detail(read.error));
-  }
-  return check_vector(input_id, read.vector);
-}
-
-SetResult check_folder(const std::string& folder) {
-  SetResult result;
-  std::set<std::string> present;
-  result.folder_listed = list_golden_files(folder, present);
-  if (!result.folder_listed) {
-    return result;
-  }
-  std::set<std::string> expected;
-  for (const std::string_view id : expected_inputs()) {
-    const std::string name(id);
-    expected.insert(name);
-    if (present.count(name) == 0) {
-      result.files.push_back(problem_result(name, FileStatus::kMissing, "missing"));
-    } else {
-      result.files.push_back(check_file(
-          name,
-          (std::filesystem::path(folder) / (name + std::string(kGoldenFileSuffix))).string()));
-    }
-  }
-  for (const std::string& name : present) {
-    if (expected.count(name) == 0) {
-      result.files.push_back(problem_result(name, FileStatus::kUnexpected, "unexpected"));
-    }
-  }
   return result;
 }
 

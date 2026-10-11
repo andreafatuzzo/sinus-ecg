@@ -14,7 +14,10 @@ if(MINGW)
   add_link_options(-static)
 endif()
 
-# Library, verification code and harness.
+# Library, verification code and harness. They build with -fno-rtti (ADR 0007) while the tests use
+# RTTI, so the asan-ubsan preset (CMakePresets.json) passes -fno-sanitize=vptr: GCC's vptr check
+# needs typeinfo of polymorphic classes (ByteSource) that no-RTTI objects do not emit. All other
+# UBSan checks and ASan stay on for every target.
 function(sinus_dsp_apply_flags target)
   target_compile_options(${target} PRIVATE
     -fno-exceptions -fno-rtti -ffp-contract=off

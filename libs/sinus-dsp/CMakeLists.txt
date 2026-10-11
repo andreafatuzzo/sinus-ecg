@@ -99,6 +99,9 @@ add_custom_target(sinus_dsp_sbom DEPENDS "${SINUS_DSP_SBOM}")
 # The verification code and the equivalence tool (architecture-m2.md 14.12).
 add_subdirectory(verification)
 
+# The C interface and the shared library for the evaluation on the whole databases (14.14).
+add_subdirectory(harness)
+
 if(SINUS_DSP_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
