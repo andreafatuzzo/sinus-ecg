@@ -59,8 +59,12 @@ def test_result_fields_and_types(synthetic_ecg: Any) -> None:
         "detections",
         "heart_rate",
         "quality",
+        "display_delay_samples",
+        "display_taps",
+        "display_mv",
     ]
     assert type(result.fs_hz) is float
+    assert type(result.display_delay_samples) is int
     assert type(result.mains_hz) is int
     assert result.input_mv.dtype == np.float64
     with pytest.raises(dataclasses.FrozenInstanceError):

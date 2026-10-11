@@ -115,7 +115,10 @@ def baseline_sos(fs_hz: float) -> FloatArray:
 def mains_sos(fs_hz: float, mains_hz: int) -> FloatArray:
     """Sections of the mains interference filter: notch at ``mains_hz``, Q = 30.
 
-    SRS-005: the design of the mains interference filter, for 50 Hz or 60 Hz.
+    SRS-005: the design of the mains interference filter, for 50 Hz or 60 Hz. SRS-054: this
+    notch is what removes a mains interference whose frequency deviates from the setting by
+    up to 0.5 Hz (it attenuates such a deviation by about 6 dB only; detection still meets
+    its criteria, architecture §16.9).
 
     Raises:
         InvalidInputError: If ``mains_hz`` is neither 50 nor 60.

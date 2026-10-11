@@ -73,6 +73,9 @@ def small_vector(**changes: Any) -> GoldenVector:
         window_reported_at=np.array([3], dtype=np.int64),
         window_index=np.array([0.75]),
         window_usable=np.array([True]),
+        display_delay_samples=1,
+        display_taps=np.array([0.25, 0.5, 0.25]),
+        display_mv=np.array([0.0, 0.5, -1.5, 2.0]),
     )
     if "beats" in changes and "beat_startup" not in changes:
         # Beats given alone: all start-up, reported at their own sample, nothing reliable.
@@ -88,7 +91,7 @@ def small_vector(**changes: Any) -> GoldenVector:
 
 SMALL_TEXT = """\
 format=sinus-golden-vector
-format_version=2
+format_version=3
 input_id=t_1-A
 input_source=synthetic
 input_parameters=a=1;b=0.5
@@ -102,17 +105,23 @@ n_beats=2
 n_reference_beats=3
 n_heart_rates=1
 n_quality_windows=1
+display_delay_samples=1
 [coefficients]
 stage,section,b0,b1,b2,a1,a2
 baseline,0,0.5,-1.0,0.5,-0.25,0.125
 mains,0,1.0,2.0,3.0,4.0,5.0
 mains,1,6.0,-7.5,8e-05,9e+20,-0.0
+[display_coefficients]
+tap,h
+0,0.25
+1,0.5
+2,0.25
 [signals]
-input_mv,baseline_mv,mains_mv
-0.1,0.30000000000000004,1.7976931348623157e+308
--0.0,1.0,-1e-05
-1e+16,-2.5,0.0
-5e-324,3.0,123456.789
+input_mv,baseline_mv,mains_mv,display_mv
+0.1,0.30000000000000004,1.7976931348623157e+308,0.0
+-0.0,1.0,-1e-05,0.5
+1e+16,-2.5,0.0,-1.5
+5e-324,3.0,123456.789,2.0
 [beats]
 sample_index,mark,reported_at
 1,startup,2
@@ -158,7 +167,7 @@ def assert_same_array(got: Any, want: npt.NDArray[Any]) -> None:
 
 def test_constants() -> None:
     assert FORMAT_NAME == "sinus-golden-vector"
-    assert FORMAT_VERSION == 2
+    assert FORMAT_VERSION == 3
     assert GOLDEN_SEGMENT_S == 60
     assert GOLDEN_FILE_SUFFIX == ".golden.txt"
 
@@ -224,6 +233,7 @@ def test_exact_read_back_of_edge_values() -> None:
         stage_outputs_mv=(values[::-1].copy(), -values),
         beats=np.array([], dtype=np.int64),
         reference_beats=np.array([n - 1], dtype=np.int64),
+        display_mv=values[::-1] * 0.5,
         coefficients=(
             np.array([[5e-324, -0.0, 1.7976931348623157e308, 1.0, 0.1, 1 / 3]]),
             np.array([[2.225073858507201e-308, 1.0000000000000002, -1e-07, 1.0, 1e23, 0.0]]),
@@ -234,7 +244,7 @@ def test_exact_read_back_of_edge_values() -> None:
     assert_same_vector(parsed, vector)
     assert bool(np.signbit(parsed.input_mv[EDGE_VALUES.index(-0.0)]))
     lines = text.split("\n")
-    row = lines[lines.index("input_mv,baseline_mv,mains_mv") + 1]
+    row = lines[lines.index("input_mv,baseline_mv,mains_mv,display_mv") + 1]
     assert row.startswith("5e-324,")
 
 
@@ -257,13 +267,13 @@ def test_every_number_of_a_real_vector_follows_the_syntax() -> None:
     assert "" not in lines
     signals = lines.index("[signals]")
     beats = lines.index("[beats]")
-    for line in lines[17:19]:
+    for line in lines[18:20]:
         stage, section, *values = line.split(",")
         assert stage in STAGES and section == "0"
         assert all(FLOAT_SYNTAX.fullmatch(value) for value in values)
     for line in lines[signals + 2 : beats]:
         fields = line.split(",")
-        assert len(fields) == 3
+        assert len(fields) == 4
         assert all(FLOAT_SYNTAX.fullmatch(field) for field in fields)
     reference = lines.index("[reference_beats]")
     heart_rates = lines.index("[heart_rates]")
@@ -300,7 +310,7 @@ def test_any_number_of_valid_stages_round_trips() -> None:
     )
     text = render_golden_vector(vector)
     assert "\nstages=a,b_2,c\n" in text
-    assert "\ninput_mv,a_mv,b_2_mv,c_mv\n" in text
+    assert "\ninput_mv,a_mv,b_2_mv,c_mv,display_mv\n" in text
     assert "\nb_2,1,0.5,0.5,0.5,0.5,0.5\n" in text
     assert_same_vector(parse_golden_vector(text, "t"), vector)
     single = small_vector(
@@ -347,6 +357,8 @@ def test_beats_of_other_integer_kinds_are_written() -> None:
         {"input_mv": np.array([0.1, float("inf"), 0.0, 0.0])},
         {"stage_outputs_mv": (np.zeros(4), np.array([0.0, 0.0, float("-inf"), 0.0]))},
         {"input_mv": np.array([0.0, 0.0, float("nan"), 0.0], dtype=np.float32)},
+        {"display_taps": np.array([0.25, float("inf"), 0.25])},
+        {"display_mv": np.array([0.0, float("nan"), 0.0, 0.0])},
     ],
 )
 def test_non_finite_values_are_never_written(changes: dict[str, Any]) -> None:
@@ -471,6 +483,21 @@ MAINS_ROWS = small_vector().coefficients[1]
         ({"reference_beats": np.array([3, 0])}, "reference_beats: sample 0 at index 1 is not at"),
         ({"reference_beats": np.array([4])}, "reference_beats: sample 4 at index 0 is outside"),
         ({"reference_beats": np.array([True])}, "reference_beats is not"),
+        ({"display_delay_samples": 0}, "display_delay_samples is outside 1 to 30"),
+        ({"display_delay_samples": 31}, "display_delay_samples is outside 1 to 30"),
+        ({"display_delay_samples": True}, "display_delay_samples is not an integer"),
+        ({"display_delay_samples": 1.0}, "display_delay_samples is not an integer"),
+        (
+            {"display_delay_samples": 2},
+            "display_taps has 3 taps, 2 * display_delay_samples + 1 is 5",
+        ),
+        ({"display_taps": np.array([0.5, 0.5])}, "display_taps has 2 taps"),
+        ({"display_taps": np.zeros(0)}, "display_taps is empty"),
+        ({"display_taps": np.zeros(3, dtype=np.float32)}, "display_taps is not"),
+        ({"display_taps": [0.25, 0.5, 0.25]}, "display_taps is not"),
+        ({"display_mv": np.zeros(5)}, "display_mv has 5 samples, the input 4"),
+        ({"display_mv": np.zeros(4, dtype=np.float32)}, "display_mv is not"),
+        ({"display_mv": np.zeros((2, 2))}, "display_mv is not"),
     ],
 )
 def test_content_the_reader_would_reject_is_not_written(
@@ -486,14 +513,18 @@ LINES = SMALL_TEXT.split("\n")[:-1]
 
 
 def _v(number: int) -> int:
-    """Line of the text of version 2 for a line number of the version 1 text (below 34).
+    """Line of the text of version 3 for a line number of the version 1 text (below 34).
 
     Version 2 adds two header lines after line 13; a number from 34 on is already a line of
-    the version 2 text.
+    the version 2 text. Version 3 adds one header line after line 15, then the section
+    ``[display_coefficients]`` (five lines here) before ``[signals]`` (version 2 line 21).
     """
     if number < 14:
         return number
-    return number + 2 if number <= 33 else number
+    v2 = number + 2 if number <= 33 else number
+    if v2 <= 15:
+        return v2
+    return v2 + 1 if v2 <= 20 else v2 + 6
 
 
 def _text(lines: list[str]) -> str:
@@ -541,7 +572,8 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
     ("[end] twice", SMALL_TEXT + "[end]\n", 43, "text after [end]"),
     # Format and version.
     ("unknown format", replaced(1, "format=other"), 1, "unknown format other"),
-    ("unknown version", replaced(2, "format_version=3"), 2, "unknown format version 3"),
+    ("unknown version", replaced(2, "format_version=4"), 2, "unknown format version 4"),
+    ("version 2", replaced(2, "format_version=2"), 2, "unknown format version 2"),
     ("version 1", replaced(2, "format_version=1"), 2, "unknown format version 1"),
     ("version with a zero", replaced(2, "format_version=01"), 2, "unknown format version"),
     # Header keys.
@@ -665,14 +697,14 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
     ("signal columns", replaced(20, "input_mv,mains_mv,baseline_mv"), 20, "expected input_mv"),
     ("beat column", replaced(26, "sample"), 26, "expected sample_index,mark,reported_at"),
     ("reference column", replaced(30, "sample"), 30, "expected sample_index"),
-    ("no [signals]", deleted(19), 19, "coefficient row with 3 fields, expected 7"),
+    ("no [signals]", deleted(19), 19, "[display_coefficients] has more rows than 2 *"),
     ("misnamed [signals]", replaced(19, "[signal]"), 19, "expected [signals], found [signal]"),
     ("no [beats]", deleted(25), 25, "[signals] has more rows than n_samples (4)"),
     ("misnamed [beats]", replaced(25, "[beat]"), 25, "expected [beats], found [beat]"),
     ("[signals] twice", replaced(25, "[signals]"), 25, "expected [beats], found [signals]"),
     (
         "sections swapped",
-        _text([*LINES[:26], *LINES[30:35], *LINES[26:30], *LINES[35:]]),
+        _text([*LINES[:32], *LINES[36:41], *LINES[32:36], *LINES[41:]]),
         25,
         "expected [beats], found [reference_beats]",
     ),
@@ -693,26 +725,32 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
     ("first stage missing", deleted(16), 16, "stage mains, expected baseline"),
     ("last stage missing", deleted(17, 18), 17, "no coefficient row for the stage mains"),
     ("stage back", replaced(18, "baseline,1,6.0,-7.5,8e-05,9e+20,-0.0"), 18, "expected mains or"),
-    ("unknown stage", replaced(18, "other,0,6.0,-7.5,8e-05,9e+20,-0.0"), 18, "or [signals]"),
+    (
+        "unknown stage",
+        replaced(18, "other,0,6.0,-7.5,8e-05,9e+20,-0.0"),
+        18,
+        "or [display_coefficients]",
+    ),
     ("coefficient float", replaced(16, "baseline,0,0x1p3,-1.0,0.5,-0.25,0.125"), 16, "not a float"),
     ("coefficient inf", replaced(17, "mains,0,1.0,2.0,3.0,1e+400,5.0"), 17, "not a finite float"),
     # Rows and counts.
-    ("signal row fields", replaced(22, "-0.0,1.0"), 22, "row with 2 fields, expected 3"),
-    ("signal row empty field", replaced(22, "-0.0,,1.0"), 22, "not a float: "),
-    ("signal float syntax", replaced(23, "1e16,-2.5,0.0"), 23, "not a float: 1e16"),
-    ("signal float overflow", replaced(23, "1e+999,-2.5,0.0"), 23, "not a finite float"),
-    ("signal NaN", replaced(23, "NaN,-2.5,0.0"), 23, "not a float: NaN"),
+    ("signal row fields", replaced(22, "-0.0,1.0"), 22, "row with 2 fields, expected 4"),
+    ("signal row of three", replaced(22, "-0.0,1.0,-1e-05"), 22, "row with 3 fields, expected 4"),
+    ("signal row empty field", replaced(22, "-0.0,,1.0,0.5"), 22, "not a float: "),
+    ("signal float syntax", replaced(23, "1e16,-2.5,0.0,-1.5"), 23, "not a float: 1e16"),
+    ("signal float overflow", replaced(23, "1e+999,-2.5,0.0,-1.5"), 23, "not a finite float"),
+    ("signal NaN", replaced(23, "NaN,-2.5,0.0,-1.5"), 23, "not a float: NaN"),
     # Floats that convert to zero although a digit of their significand is not zero (v0.2.11).
-    ("signal 1e-400", replaced(23, "1e-400,-2.5,0.0"), 23, "converts to zero"),
-    ("signal -1e-400", replaced(23, "1e+16,-1e-400,0.0"), 23, "converts to zero"),
+    ("signal 1e-400", replaced(23, "1e-400,-2.5,0.0,-1.5"), 23, "converts to zero"),
+    ("signal -1e-400", replaced(23, "1e+16,-1e-400,0.0,-1.5"), 23, "converts to zero"),
     (
         "signal below half the smallest subnormal",
-        replaced(23, "1e+16,-2.5,2.4703282292062327e-324"),
+        replaced(23, "1e+16,-2.5,2.4703282292062327e-324,-1.5"),
         23,
         "converts to zero although its significand is not zero: 2.4703282292062327e-324",
     ),
-    ("signal 0.0001e-400", replaced(22, "-0.0,0.0001e-400,-1e-05"), 22, "converts to zero"),
-    ("signal 10e-400", replaced(22, "-0.0,1.0,10e-400"), 22, "converts to zero"),
+    ("signal 0.0001e-400", replaced(22, "-0.0,0.0001e-400,-1e-05,0.5"), 22, "converts to zero"),
+    ("signal 10e-400", replaced(22, "-0.0,1.0,10e-400,0.5"), 22, "converts to zero"),
     ("fs 1e-400", replaced(6, "sampling_frequency_hz=1e-400"), 6, "converts to zero"),
     (
         "coefficient 1e-400",
@@ -756,9 +794,14 @@ REJECTED: list[tuple[str, str, int | None, str]] = [
         1,
         "ends before the header key format_v",
     ),
-    ("ends in the rows", _text(LINES[:24]), 22, "the file ends before row 3 of [signals]"),
-    ("ends in a row", _text(LINES[:23]) + "-0.0,1.0,-1e-05", 22, "ends before row 3 of [signals]"),
-    ("ends in the beats", _text(LINES[:29]), 27, "the file ends before row 2 of [beats]"),
+    ("ends in the rows", _text(LINES[:30]), 22, "the file ends before row 3 of [signals]"),
+    (
+        "ends in a row",
+        _text(LINES[:29]) + "-0.0,1.0,-1e-05,0.5",
+        22,
+        "ends before row 3 of [signals]",
+    ),
+    ("ends in the beats", _text(LINES[:35]), 27, "the file ends before row 2 of [beats]"),
 ]
 
 
@@ -783,7 +826,7 @@ def test_each_reader_rule_rejects_with_the_line_number(
 def test_the_reference_smaller_case_is_built_as_intended() -> None:
     """Guard for the parametrized case: reference beats 0, 3, 0 at lines 33 to 35."""
     case = next(text for name, text, _, _ in REJECTED if name == "reference smaller")
-    assert case.split("\n")[32:35] == ["0", "3", "0"]
+    assert case.split("\n")[38:41] == ["0", "3", "0"]
 
 
 def test_valid_variations_are_accepted() -> None:
@@ -799,9 +842,9 @@ def test_valid_variations_are_accepted() -> None:
             LINES[12],
             "n_heart_rates=0",
             LINES[14],
-            *LINES[15:28],
-            *LINES[30:37],
-            *LINES[38:],
+            *LINES[15:34],
+            *LINES[36:43],
+            *LINES[44:],
         ]
     )
     assert parse_golden_vector(text, "t").beats.tolist() == []
@@ -826,11 +869,11 @@ ACCEPTED_FLOATS: list[tuple[str, float]] = [
 @pytest.mark.parametrize(("text", "value"), ACCEPTED_FLOATS, ids=[t for t, _ in ACCEPTED_FLOATS])
 def test_floats_at_the_bounds_of_the_rules_are_accepted(text: str, value: float) -> None:
     # In a signal row, in a coefficient row, and as a stage output.
-    parsed = parse_golden_vector(replaced(23, f"{text},-2.5,0.0"), "t")
+    parsed = parse_golden_vector(replaced(23, f"{text},-2.5,0.0,-1.5"), "t")
     assert parsed.input_mv[2].tobytes() == np.float64(value).tobytes()
     parsed = parse_golden_vector(replaced(16, f"baseline,0,0.5,-1.0,0.5,-0.25,{text}"), "t")
     assert parsed.coefficients[0][0, 5].tobytes() == np.float64(value).tobytes()
-    parsed = parse_golden_vector(replaced(22, f"-0.0,1.0,{text}"), "t")
+    parsed = parse_golden_vector(replaced(22, f"-0.0,1.0,{text},0.5"), "t")
     assert parsed.stage_outputs_mv[1][1].tobytes() == np.float64(value).tobytes()
 
 
@@ -847,12 +890,12 @@ def test_the_integer_bound_is_checked_before_any_conversion() -> None:
     text = replaced(27, digits + ",startup,2")
     with pytest.raises(MalformedFileError) as caught:
         parse_golden_vector(text, "t")
-    assert caught.value.line == 29
+    assert caught.value.line == 35
     assert "integer greater than 9223372036854775807" in caught.value.reason
 
 
 def test_first_offending_line_is_named() -> None:
-    text = replaced(22, "-0.0, 1.0,-1e-05").replace("format_version=2", "format_version=9")
+    text = replaced(22, "-0.0, 1.0,-1e-05").replace("format_version=3", "format_version=9")
     with pytest.raises(MalformedFileError) as caught:
         parse_golden_vector(text, "t")
     assert caught.value.line == 2
@@ -939,14 +982,18 @@ def test_golden_vector_holds_what_the_pipeline_computes(ecg: Any) -> None:
         assert_same_array(got, want)
     assert_same_array(vector.beats, result.beats)
     assert_same_array(vector.reference_beats, ecg.r_peaks)
+    assert result.display_mv is not None
+    assert vector.display_delay_samples == result.display_delay_samples == 11
+    assert_same_array(vector.display_taps, result.display_taps)
+    assert_same_array(vector.display_mv, result.display_mv)
 
 
 def test_golden_vector_runs_the_pipeline_once(ecg: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[Any, ...]] = []
 
-    def counting(*args: Any) -> Any:
+    def counting(*args: Any, **kwargs: Any) -> Any:
         calls.append(args)
-        return run_pipeline(*args)
+        return run_pipeline(*args, **kwargs)
 
     monkeypatch.setattr(golden, "run_pipeline", counting)
     golden_vector("x", "s", "p=1", ecg.signal_mv, 360, MAINS_AS_FLOAT, [], software=SOFTWARE)
@@ -1072,7 +1119,7 @@ def test_every_vector_of_golden_vector_is_written_and_read_back(ecg: Any) -> Non
     text = render_golden_vector(vector)
     assert_same_vector(parse_golden_vector(text, "t"), vector)
     assert text.startswith(
-        "format=sinus-golden-vector\nformat_version=2\ninput_id=syn-fs360-hr075-bw-mains60\n"
+        "format=sinus-golden-vector\nformat_version=3\ninput_id=syn-fs360-hr075-bw-mains60\n"
         "input_source=synthetic\ninput_parameters=duration_s=30;heart_rate_bpm=75;"
         "baseline_wander_hz=0.3;baseline_wander_mv=1.0;mains_hz=60;mains_mv=0.2\n"
         "sampling_frequency_hz=360.0\nmains_frequency_hz=60\nsoftware_version=1.2.3.dev4\n"

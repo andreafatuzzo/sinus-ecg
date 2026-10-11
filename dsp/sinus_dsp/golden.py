@@ -7,8 +7,9 @@ stored signal, where the files of these records are available and verified. Each
 the input identifier, its sampling frequency, the mains setting, the software version with the
 digest of the package source, the input samples in mV, the output of each conditioning stage
 in the order applied, the detected QRS sample indices with their marks and report samples, the
-heart-rate events and the quality windows, in the text format of architecture §7.3 and §13.8
-(version 2; version 1 files are rejected). Floats are written as the shortest decimal
+heart-rate events and the quality windows, and the display low-pass (SRS-044: its delay, its
+taps and its output), in the text format of architecture §7.3, §13.8 and §16.5 (version 3;
+older versions are rejected). Floats are written as the shortest decimal
 text that reads back to the same binary64 value, so reading a file gives exactly the values
 computed. The content depends only on the inputs, the settings, the software identity and the
 computations of NumPy and SciPy, so two runs on the same computer write byte-identical files.
@@ -35,6 +36,7 @@ from sinus_dsp._types import BoolArray, FloatArray, IndexArray
 from sinus_dsp._units import round_samples
 from sinus_dsp.data.physionet import MITDB, Database, VerificationResult, verify_database
 from sinus_dsp.data.records import load_record
+from sinus_dsp.display import DISPLAY_MAX_DELAY_SAMPLES
 from sinus_dsp.errors import (
     DataVerificationError,
     InvalidInputError,
@@ -58,7 +60,7 @@ from sinus_dsp.version import SoftwareIdentity, software_identity
 #: Value of the header key ``format``.
 FORMAT_NAME: Final = "sinus-golden-vector"
 #: Value of the header key ``format_version``.
-FORMAT_VERSION: Final = 2
+FORMAT_VERSION: Final = 3
 #: Length of a record segment, in seconds from the first sample of the record.
 GOLDEN_SEGMENT_S: Final = 60  # s
 #: Suffix of a golden-vector file: ``<input identifier>.golden.txt``.
@@ -97,8 +99,10 @@ _HEADER_KEYS: Final = (
     "n_reference_beats",
     "n_heart_rates",
     "n_quality_windows",
+    "display_delay_samples",
 )
 _COEFFICIENTS: Final = "[coefficients]"
+_DISPLAY_COEFFICIENTS: Final = "[display_coefficients]"
 _SIGNALS: Final = "[signals]"
 _BEATS: Final = "[beats]"
 _REFERENCE_BEATS: Final = "[reference_beats]"
@@ -120,6 +124,8 @@ _STATUSES: Final = (
 )
 _STATUSES_WITH_RATE: Final = (STATUS_VALID, STATUS_OUT_OF_RANGE)
 _COEFFICIENT_COLUMNS: Final = "stage,section,b0,b1,b2,a1,a2"
+_DISPLAY_COLUMNS: Final = "tap,h"
+_DISPLAY_COLUMN: Final = "display_mv"
 _INDEX_COLUMN: Final = "sample_index"
 _SECTION_WIDTH: Final = 6  # b0, b1, b2, a0, a1, a2
 _A0_COLUMN: Final = 3
@@ -171,6 +177,10 @@ class GoldenVector:
         window_reported_at: Sample at which each window is reported.
         window_index: Signal quality index of each window, in [0, 1].
         window_usable: Whether each window is usable (SRS-028).
+        display_delay_samples: ``M``, the delay of the display low-pass in samples (SRS-044).
+        display_taps: The ``2 * M + 1`` taps of the display low-pass.
+        display_mv: The display output, as long as the input, not shifted by ``M``
+            (architecture §16.4).
     """
 
     input_id: str
@@ -194,6 +204,9 @@ class GoldenVector:
     window_reported_at: IndexArray
     window_index: FloatArray
     window_usable: BoolArray
+    display_delay_samples: int
+    display_taps: FloatArray
+    display_mv: FloatArray
 
 
 @dataclass(frozen=True)
@@ -229,10 +242,11 @@ def golden_vector(
 ) -> GoldenVector:
     """Compute the golden vector of one input.
 
-    SRS-015: the vector holds exactly what the public functions compute on the input: the
-    conditioning chain and the detection of :func:`~sinus_dsp.pipeline.run_pipeline`, run
-    once, with the coefficients and the output of each stage in the order applied, and the
-    identity of the software.
+    SRS-015, SRS-033, SRS-044: the vector holds exactly what the public functions compute on
+    the input: the conditioning chain, the display low-pass and the detection of
+    :func:`~sinus_dsp.pipeline.run_pipeline`, run once, with the
+    coefficients and the output of each stage in the order applied, the display output, and
+    the identity of the software.
 
     In this order:
 
@@ -270,7 +284,9 @@ def golden_vector(
         if problem is not None:
             raise InvalidInputError(f"{name} {problem}: {value!r}")
 
-    result = run_pipeline(signal_mv, fs_hz, mains_hz)
+    result = run_pipeline(signal_mv, fs_hz, mains_hz, display=True)
+    if result.display_mv is None:  # pragma: no cover - display=True always fills it
+        raise InvalidInputError("the pipeline gave no display output")
     reference = _checked_reference_beats(reference_beats, int(result.input_mv.shape[0]))
     return GoldenVector(
         input_id=input_id,
@@ -294,14 +310,17 @@ def golden_vector(
         window_reported_at=result.quality.reported_at,
         window_index=result.quality.index,
         window_usable=result.quality.usable,
+        display_delay_samples=result.display_delay_samples,
+        display_taps=result.display_taps,
+        display_mv=result.display_mv,
     )
 
 
 def render_golden_vector(vector: GoldenVector) -> str:
     """Return the text of the golden-vector file of a vector (architecture §7.3).
 
-    SRS-015: floats are written as ``repr(float(value))``, the shortest decimal text that
-    reads back to the same binary64 value (a NumPy scalar is converted to a Python
+    SRS-015, SRS-033, SRS-044: floats are written as ``repr(float(value))``, the shortest
+    decimal text that reads back to the same binary64 value (a NumPy scalar is converted to a Python
     ``float`` first, since NumPy 2 writes ``np.float64(...)``); integers in decimal. The text
     has line feeds only, ends with one line feed after ``[end]``, and holds no space, tab or
     carriage return. Every text returned is accepted by :func:`parse_golden_vector`, which
@@ -342,6 +361,7 @@ def render_golden_vector(vector: GoldenVector) -> str:
         f"n_reference_beats={int(vector.reference_beats.shape[0])}",
         f"n_heart_rates={len(vector.heart_rates)}",
         f"n_quality_windows={int(vector.window_first.shape[0])}",
+        f"display_delay_samples={int(vector.display_delay_samples)}",
         _COEFFICIENTS,
         _COEFFICIENT_COLUMNS,
     ]
@@ -350,9 +370,18 @@ def render_golden_vector(vector: GoldenVector) -> str:
             b0, b1, b2, _a0, a1, a2 = row
             numbers_text = ",".join(_float_text(value) for value in (b0, b1, b2, a1, a2))
             lines.append(f"{stage},{section},{numbers_text}")
+    lines.append(_DISPLAY_COEFFICIENTS)
+    lines.append(_DISPLAY_COLUMNS)
+    lines.extend(
+        f"{tap},{_float_text(value)}" for tap, value in enumerate(vector.display_taps.tolist())
+    )
     lines.append(_SIGNALS)
     lines.append(_signal_columns(stages))
-    columns = [vector.input_mv.tolist(), *(output.tolist() for output in vector.stage_outputs_mv)]
+    columns = [
+        vector.input_mv.tolist(),
+        *(output.tolist() for output in vector.stage_outputs_mv),
+        vector.display_mv.tolist(),
+    ]
     lines.extend(
         ",".join(_float_text(value) for value in row) for row in zip(*columns, strict=True)
     )
@@ -424,8 +453,11 @@ def parse_golden_vector(text: str, source: str) -> GoldenVector:
     reader.expect(_COEFFICIENTS)
     reader.expect(_COEFFICIENT_COLUMNS)
     coefficients = _read_coefficients(reader, stages)
+    reader.expect(_DISPLAY_COLUMNS)
+    delay = int(header["display_delay_samples"])
+    display_taps = _read_display_taps(reader, delay)
     reader.expect(_signal_columns(stages))
-    columns = _read_signals(reader, len(stages) + 1, n_samples)
+    columns = _read_signals(reader, len(stages) + 2, n_samples)
     reader.expect_section(_BEATS, after=_SIGNALS, n_rows=n_samples, count_key="n_samples")
     beats, reference, heart_rates, windows = _read_outputs(reader, header, n_samples)
     reader.finish()
@@ -441,7 +473,7 @@ def parse_golden_vector(text: str, source: str) -> GoldenVector:
         stages=stages,
         coefficients=coefficients,
         input_mv=np.array(columns[0], dtype=np.float64),
-        stage_outputs_mv=tuple(np.array(column, dtype=np.float64) for column in columns[1:]),
+        stage_outputs_mv=tuple(np.array(column, dtype=np.float64) for column in columns[1:-1]),
         beats=np.array(beats.indices, dtype=np.int64),
         reference_beats=np.array(reference, dtype=np.int64),
         beat_startup=np.array(beats.startup, dtype=np.bool_),
@@ -452,6 +484,9 @@ def parse_golden_vector(text: str, source: str) -> GoldenVector:
         window_reported_at=np.array(windows.reported_at, dtype=np.int64),
         window_index=np.array(windows.index, dtype=np.float64),
         window_usable=np.array(windows.usable, dtype=np.bool_),
+        display_delay_samples=delay,
+        display_taps=display_taps,
+        display_mv=np.array(columns[-1], dtype=np.float64),
     )
 
 
@@ -646,8 +681,8 @@ def _stages_problem(stages: Sequence[str]) -> str | None:
 
 
 def _signal_columns(stages: Sequence[str]) -> str:
-    """The column line of ``[signals]``: ``input_mv``, then ``<stage>_mv`` for each stage."""
-    return ",".join(["input_mv", *(f"{stage}_mv" for stage in stages)])
+    """The column line of ``[signals]``: ``input_mv``, ``<stage>_mv`` per stage, ``display_mv``."""
+    return ",".join(["input_mv", *(f"{stage}_mv" for stage in stages), _DISPLAY_COLUMN])
 
 
 def _float_text(value: float) -> str:
@@ -667,6 +702,8 @@ def _all_finite(vector: GoldenVector) -> bool:
         *_as_sequence(vector.coefficients),
         vector.input_mv,
         *_as_sequence(vector.stage_outputs_mv),
+        vector.display_taps,
+        vector.display_mv,
     ]
     for event in _as_sequence(vector.heart_rates):
         rate = getattr(event, "bpm", None)
@@ -730,9 +767,27 @@ def _check_vector(vector: GoldenVector) -> None:
         )
     for stage, output in zip(stages, outputs, strict=True):
         _check_signal(f"output of the stage {stage}", output, n_samples)
+    _check_display(vector, n_samples)
     _check_indices("beats", vector.beats, n_samples, strictly_increasing=True)
     _check_indices("reference_beats", vector.reference_beats, n_samples, strictly_increasing=False)
     _check_output_fields(vector)
+
+
+def _check_display(vector: GoldenVector, n_samples: int) -> None:
+    """Check the display fields of a vector (SRS-044, architecture §16.5)."""
+    delay = vector.display_delay_samples
+    if isinstance(delay, bool) or not isinstance(delay, numbers.Integral):
+        raise InvalidInputError(f"display_delay_samples is not an integer: {delay!r}")
+    if not 1 <= int(delay) <= DISPLAY_MAX_DELAY_SAMPLES:
+        raise InvalidInputError(
+            f"display_delay_samples is outside 1 to {DISPLAY_MAX_DELAY_SAMPLES}: {delay!r}"
+        )
+    taps = _check_signal("display_taps", vector.display_taps, None)
+    if taps != 2 * int(delay) + 1:
+        raise InvalidInputError(
+            f"display_taps has {taps} taps, 2 * display_delay_samples + 1 is {2 * int(delay) + 1}"
+        )
+    _check_signal("display_mv", vector.display_mv, n_samples)
 
 
 def _check_output_fields(vector: GoldenVector) -> None:
@@ -1003,12 +1058,15 @@ def _header_value_problem(key: str, value: str) -> str | None:
     if key == "stages":
         problem = _stages_problem(value.split(",") if value else [])
         return None if problem is None else f"stages: {problem}"
-    # n_samples, n_beats, n_reference_beats, n_heart_rates, n_quality_windows
+    # n_samples, n_beats, n_reference_beats, n_heart_rates, n_quality_windows,
+    # display_delay_samples
     problem = _integer_problem(value)
     if problem is not None:
         return f"{key}: {problem}"
     if key == "n_samples" and int(value) < 1:
         return "n_samples is not at least 1"
+    if key == "display_delay_samples" and not 1 <= int(value) <= DISPLAY_MAX_DELAY_SAMPLES:
+        return f"display_delay_samples is outside 1 to {DISPLAY_MAX_DELAY_SAMPLES}: {value}"
     return None
 
 
@@ -1063,14 +1121,16 @@ def _read_integer(reader: _LineReader, number: int, text: str) -> int:
 
 
 def _read_coefficients(reader: _LineReader, stages: tuple[str, ...]) -> tuple[FloatArray, ...]:
-    """Read the rows of ``[coefficients]`` and the line ``[signals]`` that ends them."""
+    """Read the rows of ``[coefficients]`` and the line ``[display_coefficients]`` after them."""
     rows: list[list[list[float]]] = [[] for _ in stages]
     current = 0
     while True:
-        number, line = reader.take(_SIGNALS)
+        number, line = reader.take(_DISPLAY_COEFFICIENTS)
         if line.startswith("["):
-            if line != _SIGNALS:
-                raise reader.error(number, f"expected {_SIGNALS}, found {_shown(line)}")
+            if line != _DISPLAY_COEFFICIENTS:
+                raise reader.error(
+                    number, f"expected {_DISPLAY_COEFFICIENTS}, found {_shown(line)}"
+                )
             missing = next(
                 (stage for stage, got in zip(stages, rows, strict=True) if not got), None
             )
@@ -1102,8 +1162,28 @@ def _unexpected_stage(
 ) -> str:
     expected = [stages[current]]
     if rows[current]:
-        expected.append(stages[current + 1] if current + 1 < len(stages) else _SIGNALS)
+        next_stage = stages[current + 1] if current + 1 < len(stages) else _DISPLAY_COEFFICIENTS
+        expected.append(next_stage)
     return f"coefficient row of the stage {_shown(stage)}, expected {' or '.join(expected)}"
+
+
+def _read_display_taps(reader: _LineReader, delay: int) -> FloatArray:
+    """Read the ``2 * delay + 1`` rows of ``[display_coefficients]`` (SRS-044, §16.5).
+
+    The column line has been read. Fewer or more rows than ``2 * delay + 1`` are named at the
+    line found where the next row, or the section line ``[signals]``, is expected.
+    """
+    count = 2 * delay + 1
+    count_key = "2 * display_delay_samples + 1"
+    values: list[float] = []
+    for row in range(count):
+        number, fields = _row_fields(reader, _DISPLAY_COEFFICIENTS, count_key, count, row, 2)
+        tap = _read_integer(reader, number, fields[0])
+        if tap != row:
+            raise reader.error(number, f"tap {tap}, expected tap {row}")
+        values.append(_read_float(reader, number, fields[1]))
+    reader.expect_section(_SIGNALS, after=_DISPLAY_COEFFICIENTS, n_rows=count, count_key=count_key)
+    return np.array(values, dtype=np.float64)
 
 
 def _read_signals(reader: _LineReader, width: int, n_samples: int) -> list[list[float]]:
