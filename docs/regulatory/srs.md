@@ -1,6 +1,6 @@
 # Software Requirements Specification
 
-_Inspired by IEC 62304 §5.2. Version 0.8.4, 2026-10-11. Status: version 0.8 confirmed by the project owner on 2026-10-07 (Milestone 2 requirements SRS-017 to SRS-038, and the changes to SRS-003 and SRS-007). The equivalence tolerances of SRS-034 (OP-005) and the memory limit of SRS-032 (OP-049) were approved by the project owner on 2026-10-08. The changes of version 0.8.1 to SRS-022, SRS-029 and SRS-030 were decided by the project owner on 2026-10-07; its clarifications of SRS-023, SRS-024, SRS-026, SRS-027 and SRS-033 were confirmed by the project owner on 2026-10-08. The change of version 0.8.3 to SRS-023 was decided by the project owner on 2026-10-09; version 0.8.4 records the status of SRS-029 at the Milestone 2 release (no change to any requirement)._
+_Inspired by IEC 62304 §5.2. Version 0.9, 2026-10-11. Status: version 0.9 (Milestone 3 requirements SRS-039 to SRS-054 and the amendment of SRS-029) decided by the project owner on 2026-10-11, to be confirmed by the project owner. Version 0.8 confirmed by the project owner on 2026-10-07 (Milestone 2 requirements SRS-017 to SRS-038, and the changes to SRS-003 and SRS-007). The equivalence tolerances of SRS-034 (OP-005) and the memory limit of SRS-032 (OP-049) were approved by the project owner on 2026-10-08. The changes of version 0.8.1 to SRS-022, SRS-029 and SRS-030 were decided by the project owner on 2026-10-07; its clarifications of SRS-023, SRS-024, SRS-026, SRS-027 and SRS-033 were confirmed by the project owner on 2026-10-08. The change of version 0.8.3 to SRS-023 was decided by the project owner on 2026-10-09; version 0.8.4 records the status of SRS-029 at the Milestone 2 release (no change to any requirement)._
 
 ## Conventions
 
@@ -18,9 +18,15 @@ _Inspired by IEC 62304 §5.2. Version 0.8.4, 2026-10-11. Status: version 0.8 con
 
 This version covers:
 - Milestone 1: the offline DSP reference implementation and its validation pipeline (`dsp/`), features F1.1 to F1.12 of the functional analysis (SRS-001 to SRS-016);
-- Milestone 2: the portable real-time signal-processing library (`libs/sinus-dsp/`) and the reference functions and validation it is checked against, features F2.5, F2.7, F2.8, F2.9, F3.4 and F2.10 of the functional analysis (SRS-017 to SRS-038).
+- Milestone 2: the portable real-time signal-processing library (`libs/sinus-dsp/`) and the reference functions and validation it is checked against, features F2.5, F2.7, F2.8, F2.9, F3.4 and F2.10 of the functional analysis (SRS-017 to SRS-038);
+- Milestone 3: the desktop application (`desktop/`) with replay, a test input, the live view, session recording and identification, the display low-pass stage of the reference and the library, and the check of the mains interference removal under a deviation of the mains frequency, features F2.4, F3.1 to F3.3, F3.6 to F3.14 of the functional analysis (SRS-039 to SRS-054). The amendment of SRS-029 (median criterion) is part of this version. The desktop application is verified on Windows and on Linux in Milestone 3; macOS is not (OP-080).
 
-Requirements for the desktop application (Milestone 3), the firmware (Milestone 4), the backend (Milestone 5) and beat classification (Milestone 6) are added at the milestones that introduce them, from the features listed for them in [`functional-analysis.md`](functional-analysis.md) §5.
+Requirements for the firmware (Milestone 4), the backend (Milestone 5) and beat classification (Milestone 6) are added at the milestones that introduce them, from the features listed for them in [`functional-analysis.md`](functional-analysis.md) §5.
+
+Terms used by the Milestone 3 requirements:
+- **The application** is the desktop application; **the library** is the real-time library `libs/sinus-dsp/`, with which the application computes every result it displays.
+- A **source** is where the stream comes from: a replay, the test input, or (Milestone 4) the device. One source feeds the application at a time.
+- The **signal status** is the state "usable" or "not usable" of SRS-045; a **withheld** heart rate is one that the application shows as "--" with its reason.
 
 Terms used by the Milestone 2 requirements:
 - **The reference** is the offline implementation in `dsp/`; **the real-time library** is `libs/sinus-dsp/`.
@@ -47,6 +53,7 @@ Terms used by the Milestone 2 requirements:
 | 0.8.2 | 2026-10-08 | Figures of the detailed design of the Milestone 2 library, approved by the project owner on 2026-10-08 with architecture version 0.4 (ADR 0006, 0007, 0008). SRS-032: memory of one processing chain at most 64 KiB (65 536 bytes) (OP-049). SRS-034: tolerances of 2e-5 mV for each conditioning stage, 0 samples for the index of a detection, 1e-4 bpm for a heart rate and 0.01 for the index of a signal quality window (OP-005); the report sample of a detection is added to the compared outputs, with a tolerance of 0 samples; the rationale states that signal conditioning is computed in binary64 (ADR 0008). Conventions: a requirement implemented by several software items needs a verifying test in each of them (ADR 0006). No requirement contains a placeholder figure any more |
 | 0.8.3 | 2026-10-09 | SRS-023 (decided by the project owner on 2026-10-09, correction of the evaluation method): each segment is processed with a continuation on its record for the documented maximum delay of a detection, or to the end of the record; only the reference beats and the detections whose index lies in the segment are scored; rationale states the correction. `architecture-m2.md` §13.7.2 (v0.4.3) |
 | 0.8.4 | 2026-10-11 | SRS-029: status at the Milestone 2 release, not met on three criteria, accepted as a known anomaly by the project owner on 2026-10-11 (OP-074). No change to any statement, criterion or verification |
+| 0.9 | 2026-10-11 | Milestone 3 requirements SRS-039 to SRS-054 and the amendment of SRS-029, decided by the project owner on 2026-10-11, to be confirmed by the project owner. Added: replay source, replay gives the results of the library, data source indication, test input, live waveform with beat marks, display low-pass, signal status, heart-rate display, data interruption, signal quality mark, intended-use statement, mains frequency setting, session recording, identification, accessible text, and mains interference removal under a deviation of the mains frequency (OP-007, OP-015, OP-020, OP-022, OP-037, OP-070, OP-071, OP-072, OP-076 for the desktop application). SRS-029: the median criterion is replaced by "the median index is above the usable threshold at 24 dB and below it at 0 dB and −6 dB"; the 6 dB and electrode-motion criteria are unchanged and stay a known anomaly (OP-074, Milestone 6). Platforms: scope stated above (OP-080) |
 
 ## Requirements
 
@@ -396,17 +403,17 @@ When "not enough beats" and "no recent beat" both apply, the reason shall be "no
 **Software item:** dsp (scripts)
 **Milestone:** M2
 **Statement:** With the reference, the first stored signal, the mains setting of SRS-007 and the windows of SRS-027, applied to the 12 ECG records of the MIT-BIH Noise Stress Test Database (records 118 and 119 with noise added at each of six SNRs), to records 118 and 119 of the MIT-BIH Arrhythmia Database and to the three noise records of the Noise Stress Test Database (baseline wander, electrode motion and muscle artefact), where the windows at an SNR are the windows of the two records at that SNR that lie entirely in the stretches to which noise was added, and a window from 5:00 is one that starts at or after 5:00:
-- the median index of the windows at each SNR shall not increase from one SNR to the next lower one (24, 18, 12, 6, 0 and −6 dB), and shall be lower at −6 dB than at 24 dB;
+- the median index of the windows at 24 dB shall be above the threshold of SRS-027 (usable), and the median index of the windows at 0 dB and at −6 dB, each on its own, shall be below it (not usable);
 - at least 95% of the windows from 5:00 of records 118 and 119 of the MIT-BIH Arrhythmia Database, counted over the two records together, shall be marked usable;
 - at 24 dB and at 18 dB, each SNR on its own, at least 90% of the windows at that SNR shall be marked usable;
 - at 6 dB, at 0 dB and at −6 dB, each SNR on its own, at most 20% of the windows at that SNR shall be marked usable;
 - for each of the three noise records on its own, at most 10% of its windows shall be marked usable.
 
-**Rationale:** The index is validated where the effect of noise on detection is known (SRS-014): in the Milestone 1 validation report, detection is unchanged at 24 dB and 18 dB SNR and degrades below, mostly through false detections (gross +P 95.69% at 12 dB, 79.16% at 6 dB). The index must keep a usable signal usable and mark as not usable the levels at which detection is no longer reliable (HAZ-006). The windows at 12 dB, where detection starts to degrade, are reported without a criterion (SRS-030). These criteria take the place of minimum detection results per SNR (OP-031). Which stretches of each record carry added noise is documented with the database; the first 5 minutes carry none. Each SNR and each noise record is judged on its own, so that a good result at one cannot make up for a poor result at another; records 118 and 119 are counted together, as the clean counterpart of the noise stress records made from them. Decided by the project owner on 2026-10-07 (OP-032), with the reading of each criterion stated above.
+**Rationale:** The index is validated where the effect of noise on detection is known (SRS-014): in the Milestone 1 validation report, detection is unchanged at 24 dB and 18 dB SNR and degrades below, mostly through false detections (gross +P 95.69% at 12 dB, 79.16% at 6 dB). The index must keep a usable signal usable and mark as not usable the levels at which detection is no longer reliable (HAZ-006). The windows at 12 dB, where detection starts to degrade, are reported without a criterion (SRS-030). These criteria take the place of minimum detection results per SNR (OP-031). Which stretches of each record carry added noise is documented with the database; the first 5 minutes carry none. Each SNR and each noise record is judged on its own, so that a good result at one cannot make up for a poor result at another; records 118 and 119 are counted together, as the clean counterpart of the noise stress records made from them. Decided by the project owner on 2026-10-07 (OP-032), with the reading of each criterion stated above. Amended in version 0.9 (decided by the project owner on 2026-10-11): the first criterion claimed that the index grades the levels below 0 dB, which the measured behaviour does not support (the median has a flat floor near 0.35 at the low SNRs), and the application shows the index as a usable or not usable mark only (SRS-048); the criterion now states what the mark relies on, that a clean level and the degraded levels fall on opposite sides of the threshold. The other criteria are the protection against presenting a degraded signal as usable (HAZ-006); they are not relaxed to fit the measured data.
 **Verification level:** System (test engineer)
 **Verification:** Analysis, from the validation report generated per SRS-009 and SRS-030. A test that requires the local databases checks each criterion; it is skipped in CI, where the databases are not available, and its result is recorded in the milestone verification report.
 **Risk controls:** RC-007.
-**Status at the Milestone 2 release:** not met on three of its criteria (6 dB, the electrode motion noise record, the order of the medians below 0 dB); accepted as a known anomaly by the project owner on 2026-10-11 (OP-074, Milestone 3; `sdp.md` §8; Milestone 2 verification report).
+**Status:** at the Milestone 2 release it was not met on three of its criteria (6 dB, the electrode motion noise record, the order of the medians below 0 dB); accepted as a known anomaly by the project owner on 2026-10-11 (`sdp.md` §8; Milestone 2 verification report). With the median criterion amended in version 0.9, the two remaining criteria (at most 20% usable at 6 dB; at most 10% usable for the electrode motion record) stay a known anomaly, to be addressed in Milestone 6 by improving the index and checking it on unseen recordings (OP-074, OP-029). The median criterion is to be checked again against the Milestone 2 evaluation results (median 0.3455 at 0 dB and 0.3566 at −6 dB, below the threshold).
 
 ### SRS-030: Signal quality and start-of-stream sections of the validation report
 
@@ -505,3 +512,163 @@ When "not enough beats" and "no recent beat" both apply, the reason shall be "no
 **Verification level:** System (test engineer)
 **Verification:** Analysis. A test that requires the local databases compares the counts of each record with those of the reference; it is skipped in CI, where the databases are not available, and its result is recorded in the milestone verification report.
 **Risk controls:** RC-012.
+
+### SRS-039: Replay source
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** The application shall replay a record in WFDB format (signal format 16 or 212, first stored signal, as in SRS-002) or a recorded session (SRS-051) as a stream with the content and timing of a device stream, at 1, 2, 5 or 10 times the original rate. The user shall be able to pause, resume and stop the replay, and to choose the start position before the replay starts; a change of start position or speed takes effect only by stopping and starting a new replay, which starts a new continuous segment (SRS-031). When the end of the record is reached the application shall stop the replay and show "Replay ended". A record or session that cannot be read is rejected with a message that names the cause, and no stream is produced. The samples of a replayed record shall equal those that the offline loader of SRS-002 returns for the same record. At 1 times the original rate, the time taken to deliver 60 s of the record shall differ from 60 s by less than 1%; at the other speeds, from 60 s divided by the speed by less than 1%.
+**Rationale:** Replay is the only source before the device exists (Milestone 4) and the way the display rules are verified on real records (`functional-analysis.md` F3.8; OP-037). Processing is per sample, so the results do not depend on the speed (SRS-040); the speed is shown with the source (SRS-041) so that a fast replay is not read as live (HAZ-013). A jump in the record is a discontinuity, so it is a stop and a new replay and not a seek. Pause and the end are visible states that withhold the heart rate (SRS-045, SRS-046), so that a frozen screen does not look current (HAZ-007). Values decided by the project owner on 2026-10-11 (OP-037).
+**Verification level:** Requirement (QA)
+**Verification:** Test with fixture records in format 16 and in format 212, and a recorded session: at each of the four speeds the replay delivers the samples of the offline loader, value for value; the timing criterion holds over 60 s at 1, 2, 5 and 10 times; pause stops the delivery and resume continues it from the next sample; stop ends it; a start position of 30 s starts the replay at that sample; at the end of a fixture record "Replay ended" is shown and no further sample is delivered. A truncated file, a header that names an unsupported format and a record of 0 samples are each rejected with a message and produce no stream.
+**Risk controls:** RC-015.
+
+### SRS-040: Replay gives the results of the real-time library
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** For each of the six records of the subset of SRS-016, for all the 48 records of the MIT-BIH Arrhythmia Database, and for records 118e06 and 119e06 and the three noise records of the MIT-BIH Noise Stress Test Database, replayed through the application without its display, with the channel and mains frequency of SRS-007 (SRS-050), at each replay speed of SRS-039, the application shall obtain: the conditioned samples within 2e-5 mV; the detections with the same index, mark and report sample; the heart rates with the same validity and reason, each valid one within 1e-4 bpm; and the signal quality windows with the same first and last samples and marks, each index within 0.01, as the library given the same samples directly. The tolerances are those of SRS-034.
+**Rationale:** The application adds replay, framing, status rules and display around the library. This checks that none of them changes a result the library computes, so that the validation results of SRS-007, SRS-014, SRS-023 and SRS-029 apply to what the user sees (RC-012; HAZ-001, HAZ-002). It is the method of integration verification by replay of `sdp.md` §6 for Milestone 3 (OP-007); the device step follows in Milestone 4 and the backend step in Milestone 5. Decided by the project owner on 2026-10-11.
+**Verification level:** System (test engineer)
+**Verification:** Test and analysis. The six records of the subset run in CI. The whole database and the noise stress records need the local databases; that test is skipped in CI and its result is recorded in the milestone verification report. A run in which one detection of the library output is removed or one heart rate is changed by more than its tolerance fails and names the record and the output.
+**Risk controls:** RC-012.
+
+### SRS-041: Data source indication
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** In every state of the application, a text banner in a fixed place at the top of the main window shall show the source: for a replay, "REPLAY", the name of the record or session, the speed and the mains frequency of the record (SRS-050); for the test input, "TEST INPUT" and its address and port (SRS-042). The word "REPLAY" shall also be shown in the waveform area while a replay is the source. The indication shall not rely on colour alone. One source feeds the application at a time: changing the source stops the first, resets the processing (SRS-031) and clears the displayed heart rate and marks; a frame or sample that carries the tag of a source other than the current one is dropped and does not reach the library.
+**Rationale:** A replay or a test signal read as a live measurement is the hazard HAZ-013 (RC-015, use scenario HRS-1 of `usability.md`). A fixed place and words, not colour, make the source readable in every state, and an exclusive source prevents a replay and a device (Milestone 4) from mixing. Decided by the project owner on 2026-10-11 (OP-037).
+**Verification level:** Requirement (QA)
+**Verification:** Test: the banner text is checked in each state (no source, playing at each speed, paused, ended, interrupted, test input receiving) and has the same position; the waveform area shows "REPLAY" during a replay. A frame tagged with a source other than the current one, sent while a replay runs, produces no change in the detections, heart rate or windows and is counted as dropped. Starting another source stops the first and the outputs after the change equal those of a newly configured library (SRS-031).
+**Risk controls:** RC-015.
+
+### SRS-042: Test input (UDP, local host only)
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** The application shall provide a test input that receives the stream as UDP datagrams, in the frame format documented in `architecture.md`. The input shall be off at every start of the application, and shall accept datagrams only from the local host. While it is on, the source indication is "TEST INPUT" (SRS-041) and the application states that the test input is never to be used with a worn device. A malformed datagram (wrong length, wrong content, a sample that is not finite or exceeds 1000 mV in magnitude) shall be rejected, counted and not given to the library; a lost or out-of-order frame shall be treated as a gap in the data and start a new continuous segment (SRS-031).
+**Rationale:** The test engineer needs a source that can inject faults (gaps, malformed frames, noise) in CI, because the replay cannot (HRS-2, SRS-047). Local host only and off by default keep it from being reached from the network. The link where a worn device could be connected to a computer, a serial link, is left to Milestone 4 (HAZ-005, RC-006), and the statement keeps the test input apart from any use with a person. A gap is never bridged (HAZ-012, RC-014). Decided by the project owner on 2026-10-11 (OP-038: UDP part; serial in Milestone 4).
+**Verification level:** Requirement (QA)
+**Verification:** Test: after a start of the application the input is off and a datagram sent to its port is not accepted. With the input on, valid frames of a synthetic ECG from the local host give detections and a heart rate, and the warning text is shown. A datagram sent from an address other than the local host (or a connection attempt to the port on another address of the computer) is not accepted. Malformed datagrams of each kind listed are rejected and counted, with no change of the outputs. A stream from which one frame is removed gives a gap: the outputs after it equal those of a newly configured library.
+**Risk controls:** RC-006, RC-015.
+
+### SRS-043: Live waveform with beat marks
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** The application shall draw the display waveform of SRS-044 continuously over a window of the last 10 s. The display shall be delayed by 0.5 s after the acquisition of the sample drawn, so that every beat mark reported within the delay of SRS-021 (0.35 s) is drawn at the position of its index, within 20 ms of the R peak of the drawn waveform. A mark reported later (by search-back, up to the maximum delay of SRS-021) shall be added at the position of its index onto the part of the trace already drawn. While the signal status is not usable (SRS-045) no new beat mark shall be drawn, and the waveform shall continue to be drawn.
+**Rationale:** The waveform with the beat marks lets the user see what the algorithm did (`functional-analysis.md` F3.1); a mark that disagrees with the waveform makes beats look missed or added (HAZ-001, HAZ-002; RC-019). The display delay is the price of marks that agree with the trace, and 0.5 s covers the normal reporting delay (0.35 s) with margin. The waveform stays visible while the signal is not usable so that the user can see why; marks drawn earlier stay, because quality windows overlap and the stretch has no clean boundary. Whether the window sweeps or scrolls is a design choice (`architecture.md`). Decided by the project owner on 2026-10-11.
+**Verification level:** Requirement (QA)
+**Verification:** Test on the data given to the drawing, with the synthetic ECG of SRS-006 at 75 and 180 bpm at 360 Hz and 250 Hz: the drawn window spans 10 s; each mark is within 20 ms of the R peak of the drawn waveform; a sample is drawn 0.5 s after its acquisition, within 20 ms. With the synthetic input of `architecture.md` that makes detection report a beat by search-back, the mark appears after the trace at its index position. With a flat stretch of 30 s inside the ECG, no mark is added from the moment the status is not usable, and the trace continues.
+**Risk controls:** RC-019.
+
+### SRS-044: Display low-pass
+
+**Software item:** dsp and libs/sinus-dsp
+**Milestone:** M3
+**Statement:** The reference and the real-time library shall provide a display stage applied to the conditioned signal (SRS-019), as a separate output that does not feed detection, heart rate or signal quality. At 360 Hz and at 250 Hz: its gain shall be within ±1 dB of that of the unfiltered signal from 1 Hz to 30 Hz; its attenuation shall be at least 20 dB at every frequency from 80 Hz to the Nyquist frequency; its group delay shall vary by no more than 20 ms from 1 Hz to 30 Hz and shall be constant and documented in `architecture.md`; the peak R-wave amplitude of the synthetic ECG of SRS-006 shall be kept to at least 90%; and on that ECG with added white noise in the band from 40 Hz to the Nyquist frequency, the RMS of the noise in the output shall be at least 6 dB below that of the input. The detections, heart rates and signal quality windows shall be identical with the stage on and with it off. The reference shall be written first and export the display output in the golden vectors (SRS-015, SRS-033); the library shall equal it within the tolerance of the conditioning stages of SRS-034 (2e-5 mV), checked on every push (SRS-035) and on the ESP32-S3 (SRS-036).
+**Rationale:** The conditioned signal keeps high-frequency noise that detection tolerates but that makes the waveform hard to read (OP-070, option (c) decided on 2026-10-07; `functional-analysis.md` F3.12). The stage must not change what is detected, so that the validation results of SRS-007 and SRS-014, obtained without a low-pass, keep holding (RC-019; HAZ-001, HAZ-002). The delay variation bound keeps the QRS shape and the alignment of the marks of SRS-043. The figures are chosen for the project and do not claim any standard; the feasibility of the criteria on the muscle band is checked by the tech lead in the design. Decided by the project owner on 2026-10-11 (OP-070).
+**Verification level:** Requirement (QA)
+**Verification:** Test on the reference and on the build for the computer: the gain and attenuation are measured with sinusoids at 1, 5, 10, 20, 30, 80, 100 and 120 Hz (and the Nyquist frequency), each of at least 2 s, on the second half; the group delay at 1, 10, 20 and 30 Hz; the R-wave amplitude on the synthetic ECGs of SRS-006 at 30, 75 and 200 bpm; the noise RMS on that ECG with white Gaussian noise of 0.1 mV RMS in the band, over 60 s. The detections, heart rates and windows with the stage on equal those with it off on the synthetic ECGs of SRS-010 and on the golden-vector input signals. The equivalence of the library with the reference is checked on the golden vectors.
+**Risk controls:** RC-019.
+
+### SRS-045: Signal status
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** The application shall show the signal status as "usable" only when all of the following hold: the latest signal quality window reported by the library is marked usable (SRS-027); samples arrive, that is, no more than 1 s has passed on the clock of the application since the last sample; and the source is playing (not paused, not ended). Otherwise the status is "not usable" and its reason is stated in words, with the first of these that applies: "data interrupted", "replay paused" or "replay ended", "low signal quality". Until the first quality window after the start of a stream or after a reset has been reported, the status is "not usable" with the reason "checking signal quality". A status of "not usable" caused by an interruption, a pause or the end of the replay shall be shown within 2 s of its cause; for a signal that becomes constant (flat or saturated), within 7 s of the start of the constant stretch. While the status is "not usable" the heart rate is withheld (SRS-046), no new beat mark is drawn (SRS-043) and the waveform is still drawn.
+**Rationale:** Beats and a heart rate from noise, a flat line or a stopped stream must not be presented as valid (HAZ-006, HAZ-007; RC-007, RC-008; `functional-analysis.md` F3.3). The status combines the three conditions that exist without the device; electrode contact and device state are added with the device in Milestone 4 (OP-078). The 7 s bound comes from the window-based index: a stretch counts only when it fills 5 s of a window (SRS-028), the window is reported up to 0.5 s after its end (SRS-027) and a new window starts every 1 s, so a signal that turns flat is shown as not usable after at most 5 s + 0.5 s + 1 s (display refresh) = 6.5 s; noise has no such bound, because the index decides on the window (known limit, OP-074). There is no hysteresis in Milestone 3, because the windows already smooth the index. Decided by the project owner on 2026-10-11 (OP-020).
+**Verification level:** Requirement (QA)
+**Verification:** Test with synthetic streams (SRS-006 ECG, with a flat stretch, a stretch of white noise of 0.1 mV RMS, a pause, a stop of the data for 3 s, the end of the record): the status and the reason follow the rules above, the status is shown within 2 s for an interruption, a pause and the end, and within 7 s of the start of a flat stretch of 30 s; the status is "not usable" with "checking signal quality" from the start up to the first window; with several causes the reason is the first of the list; while not usable, no mark is added and the waveform continues.
+**Risk controls:** RC-007, RC-008.
+
+### SRS-046: Heart-rate display
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** The application shall show the heart rate as the value reported by the library, rounded to a whole number of bpm, with no further smoothing, refreshed at least once per second and never more than 1 s behind the latest value reported. A heart rate outside 30–200 bpm is not shown as a value. When the heart rate is withheld the application shall show "--" and the reason in words next to it: "not enough beats", "no recent beat", "out of range" (reasons of SRS-026), "signal not usable", "data interrupted", "replay paused" or "replay ended" (SRS-045); the last value shall never be shown, greyed or not, while the heart rate is withheld. While the signal status is "not usable" the heart rate is withheld; after the status has become "usable" again it stays withheld, with the reason "not enough beats", until 4 intervals between detections marked reliable whose index lies after the sample at which the status became usable are available. The display shall use no colour scale, normal range, judging label, sound or alarm.
+**Rationale:** The heart rate is the main value of the live view (`functional-analysis.md` F3.2); a value from the noise detections or the last value after a stop would be read as current (HAZ-001, HAZ-002, HAZ-006, HAZ-007; RC-007, RC-008). The library value is already robust (SRS-024, SRS-025), so smoothing would add delay without a verified benefit. One second makes beat-by-beat flicker unnecessary and is easy to verify; a whole bpm is within the 2 bpm accuracy of SRS-024. The restart rule is that of the start of a stream (SRS-026) applied after a not usable stretch. No judging labels, because the intended use excludes interpretation and alarms (`safety-class.md`). Decided by the project owner on 2026-10-11 (OP-071).
+**Verification level:** Requirement (QA)
+**Verification:** Test with sequences of detections and statuses at 360 Hz: the displayed value equals the library value rounded, is not more than 1 s old, and an out-of-range value is shown as "--" with "out of range"; each reason of the list gives "--" and its words in the matching case; no case shows the previous value; after a stretch of status "not usable" the heart rate is withheld until the fourth interval of detections that came after the status became usable, even if the library reports a valid value earlier; inspection that the display has no colour scale, label or sound.
+**Risk controls:** RC-007, RC-008.
+
+### SRS-047: Data interruption
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** When no sample arrives for 1 s (measured on the clock of the application, not on the stream), the application shall show "data interrupted" within 2 s of the last sample, shown as the status reason (SRS-045) and as the reason of the withheld heart rate (SRS-046), and shall not show the last heart rate as current. When samples arrive again, the application shall start a new continuous segment: the library is reset (SRS-031), the detections of its start-up period are marked start-up (SRS-022), and the heart rate stays withheld until 4 intervals of reliable detections after the restart are available (SRS-026). A gap of less than 1 s (lost frames) starts a new segment in the same way without the indication "data interrupted".
+**Rationale:** A stopped data stream with the last heart rate on the screen is the main use error of HAZ-007 (use scenario HRS-2 of `usability.md`; RC-008). One packet lasts far less than 1 s, so 1 s without samples is a real interruption, and 2 s leaves the user with a few seconds at most of a stale value. Intervals and the heart rate are never computed across a gap (HAZ-012, RC-014). Decided by the project owner on 2026-10-11 (OP-071).
+**Verification level:** System (test engineer)
+**Verification:** Test with the test input of SRS-042 sending a synthetic ECG with a pause of 3 s in the data, and with a pause of 0.5 s, on the clock of the test: the interruption is shown within 2 s of the last sample sent, the displayed heart rate is "--" with "data interrupted" from then on, and the last value is shown at no time after it; after the data resumes the outputs of the library equal those of a newly configured library given the samples after the pause, the first detections are marked start-up and the heart rate is withheld until the fourth interval; the pause of 0.5 s gives the restart without the indication.
+**Risk controls:** RC-008.
+
+### SRS-048: Signal quality mark
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** For each signal quality window reported by the library, the application shall show a mark in words next to the heart rate, "Signal usable" or "Signal not usable: low quality", within 1 s of the report of the window. The application shall show no number, bar, scale or other graded display of the index.
+**Rationale:** The index separates a clean signal from a heavily degraded one but does not grade the levels between, and not below 0 dB (SRS-029, OP-074); a graded display would claim a precision that is not verified. The mark is what the signal status needs (RC-007; HAZ-006; `functional-analysis.md` F3.9). A window is reported every 1 s (SRS-027), so the mark is refreshed every second. The mark lags the signal by the window (see SRS-045). Decided by the project owner on 2026-10-11 (OP-072).
+**Verification level:** Requirement (QA)
+**Verification:** Test with a stream of windows from the library on synthetic ECG with a noisy stretch and a flat stretch: the mark text follows the usable mark of each window, within 1 s of its report; no number or bar is present in the quality display (inspection of the elements of the main window).
+**Risk controls:** RC-007.
+
+### SRS-049: Intended-use statement
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** The main window of the application shall show, in every state, the text "Not a medical device, not for diagnosis or health decisions" in a fixed bar at the top, beside the source indication (SRS-041). The bar shall not scroll, and shall not be hidden, overlaid or closable; its text shall be at least as large as the status text of SRS-045 and SRS-046. The same text shall be in the About box. The application shall show no sound, notification or alarm.
+**Rationale:** The application is not a medical device and the user must always be able to see it (RC-005; HAZ-001, HAZ-002, HAZ-010; `safety-class.md`). The top bar is where the source is read (HRS-1). A dialog at the first start adds nothing, because a click-through is not read, so none is required. Decided by the project owner on 2026-10-11 (OP-015).
+**Verification level:** Requirement (QA)
+**Verification:** Test: the exact text is found in the main window, visible and not overlapped, in every state of SRS-041 and for the smallest and the largest size of the window; the bar has no close control; the About box contains the text. Inspection that the text is at least as large as the status text and that the application has no sound or notification.
+**Risk controls:** RC-005.
+
+### SRS-050: Mains frequency setting
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** The application shall let the user choose a mains frequency of 50 Hz or 60 Hz for the test input and for the device. The setting is 50 Hz at every start of the application, and the frequency in use is shown in the main window. A change of the setting resets the processing (SRS-031). A replay of a record of the MIT-BIH Arrhythmia Database or the MIT-BIH Noise Stress Test Database uses 60 Hz, a property of the record, shown in the source indication (SRS-041) and not changed by the setting; a replay of a recorded session uses the mains frequency stored in the recording (SRS-051).
+**Rationale:** A filter set to the wrong mains frequency leaves the interference in a signal that looks filtered (HAZ-002; RC-002; SRS-005). Automatic detection would add an algorithm whose failure is the hazard itself; a visible setting is testable. The reference records were made on 60 Hz mains (SRS-007), so a replay with the default 50 Hz would filter the wrong frequency; the tolerance of the filter to the deviation of the mains frequency is SRS-054. Decided by the project owner on 2026-10-11 (OP-022).
+**Verification level:** Requirement (QA)
+**Verification:** Test: the setting at start is 50 Hz and is shown; selecting 60 Hz changes the library configuration, and the outputs after the change equal those of a newly configured library at 60 Hz given the samples after the change; the replay of record 100 shows 60 Hz in the banner and gives the outputs of the library at 60 Hz whichever setting is chosen; no other value can be selected.
+**Risk controls:** RC-002.
+
+### SRS-051: Session recording
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** On the user's command the application shall save the session of a replay or of the test input as a record in WFDB format 16, with the samples as given by the source (not the display waveform of SRS-044), and with the metadata: start date and time (UTC), sampling frequency, scale to mV, software version and source digest (SRS-052), the mains frequency in use, and the data source with the name of the record and the mark "replayed" or "test". Gaps and interruptions shall be saved as events at their position in the samples; no sample shall be invented or left out. The detected beats are not saved. A recording of a replay of a recorded session is again marked "replayed". The record shall load in the offline functions of SRS-002 without conversion, and each sample shall equal the sample of the source within half of the resolution of the format. If writing fails (for example the disk is full), the application shall report the failure, and shall leave no file that looks complete.
+**Rationale:** Without the device there is no worn session; recording a replay or a test input exercises the writer, the metadata and the gap events, and the round trip through the offline functions (`functional-analysis.md` F2.4; OP-050, OP-034 closed: WFDB only). Replayed or test data that lost its mark could later be taken for a measurement (HAZ-013, RC-015), and an incomplete or altered session processed as complete is HAZ-015 (RC-020). The detections are not saved because they are recomputed offline from the samples. Decided by the project owner on 2026-10-11.
+**Verification level:** Requirement (QA)
+**Verification:** Test: the first 60 s of a fixture record are replayed and recorded; the record loads with the loader of SRS-002, its samples equal the source within half of the resolution, and its metadata and marks are as stated. A session of the test input with a gap of 3 s has the gap as an event at its position and the sample count of the source. The recording of a replay of that recording is marked "replayed". A target that cannot be written (read-only folder, no space) gives an error message and no file, or a file that names itself incomplete, and no file that loads as complete.
+**Risk controls:** RC-015, RC-020.
+
+### SRS-052: Identification
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** The application shall show its version and the identifier of its source code in its About box, and shall write both into each recording (SRS-051).
+**Rationale:** A version alone does not identify the code while a milestone is developed; like the library and the reports, the application states both (`sdp.md` §4; `functional-analysis.md` F3.13; OP-076, desktop part). Decided by the project owner on 2026-10-11.
+**Verification level:** Requirement (QA)
+**Verification:** Test: the version and identifier shown in the About box and written in a recording equal those that the test computes itself with the method documented in `architecture.md`.
+**Risk controls:** None.
+
+### SRS-053: Accessible text of heart rate, reason and signal status
+
+**Software item:** desktop
+**Milestone:** M3
+**Statement:** The application shall expose the heart rate (the value or "--"), its reason and the signal status as text with accessible names to the accessibility interface of the operating system, so that a screen reader can read them, and the text shall equal the text shown and change when it changes. The application does not claim conformance to an accessibility standard.
+**Rationale:** The information that decides whether a value may be read must not depend on sight alone (`functional-analysis.md` F3.14; `usability.md`). No conformance claim is made, because the project does not verify against such a standard. Decided by the project owner on 2026-10-11.
+**Verification level:** Requirement (QA)
+**Verification:** Test through the accessibility interface: for each state of SRS-045 and SRS-046 the accessible name and text of the heart rate, its reason and the status are present and equal the visible text, and update when the display changes.
+**Risk controls:** None.
+
+### SRS-054: Mains interference removal under a deviation of the mains frequency
+
+**Software item:** dsp
+**Milestone:** M3
+**Statement:** The reference shall meet all the criteria of SRS-010 when the mains frequency of the interference deviates by up to ±0.5 Hz from the configured frequency, for the setting of 50 Hz (interference at 49.5 Hz and 50.5 Hz) and of 60 Hz (59.5 Hz and 60.5 Hz).
+**Rationale:** The public supply varies around its nominal frequency, and the filter is narrow (SRS-005), so an interference that is not exactly at the configured frequency could pass (HAZ-002; RC-002; OP-022). The criterion of SRS-010 is kept so that the check is the same as for the nominal frequency. If it is not met, the result is reported with the deviations that hold and a new open point is opened; it is not hidden. Decided by the project owner on 2026-10-11 (OP-022).
+**Verification level:** System (test engineer)
+**Verification:** Test on the synthetic ECGs of SRS-010 (30, 40, 75, 180 and 200 bpm) at 360 Hz and at 250 Hz, with the interference at each of the four frequencies above and the mains setting at the nominal frequency: the pass criteria of SRS-006 hold. The result is recorded in the milestone verification report, with any deviation for which it does not hold.
+**Risk controls:** RC-002.
