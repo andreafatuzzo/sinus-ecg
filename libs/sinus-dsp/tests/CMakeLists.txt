@@ -17,8 +17,9 @@ add_executable(sinus_dsp_unit_tests
   unit/test_identity.cpp unit/test_arithmetic.cpp unit/test_config.cpp unit/test_biquad.cpp
   unit/test_conditioner.cpp unit/test_chain.cpp unit/test_detector_math.cpp
   unit/test_qrs_detector.cpp unit/test_interval_estimate.cpp unit/test_heart_rate.cpp
-  unit/test_signal_quality.cpp)
-target_link_libraries(sinus_dsp_unit_tests PRIVATE sinus::dsp GTest::gtest_main)
+  unit/test_signal_quality.cpp unit/test_harness.cpp)
+target_link_libraries(sinus_dsp_unit_tests PRIVATE sinus::dsp sinus_dsp_harness_static
+                      GTest::gtest_main)
 # The private helpers of src/ (compensated sum, search-back limit) are tested directly.
 target_include_directories(sinus_dsp_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(sinus_dsp_unit_tests PRIVATE
@@ -28,7 +29,8 @@ gtest_discover_tests(sinus_dsp_unit_tests PROPERTIES LABELS unit DISCOVERY_MODE 
 
 # Unit tests of the verification code (reader, equivalence check, results), label "unit".
 add_executable(sinus_dsp_verification_unit_tests
-  unit/test_golden_reader.cpp unit/test_equivalence.cpp unit/test_equivalence_report.cpp)
+  unit/test_golden_reader.cpp unit/test_equivalence.cpp unit/test_equivalence_report.cpp
+  unit/test_sha256.cpp unit/test_golden_pack.cpp)
 target_link_libraries(sinus_dsp_verification_unit_tests PRIVATE sinus::dsp_verification
                       GTest::gtest_main)
 sinus_dsp_apply_test_flags(sinus_dsp_verification_unit_tests)

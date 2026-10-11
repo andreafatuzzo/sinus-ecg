@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "sinus/dsp/chain.hpp"
 #include "sinus/dsp/status.hpp"
 #include "sinus/dsp/verification/golden_reader.hpp"
 
@@ -32,6 +33,10 @@ struct LibraryOutputs {
   std::vector<HeartRateRow> heart_rates;
   std::vector<WindowRow> windows;
 };
+
+// Appends the detections, heart-rate events and quality window that the chain reported at one
+// sample (not the two signals).
+void collect_events(const SampleOutput& out, LibraryOutputs& result);
 
 // Configures a new Chain with the sampling frequency and the mains setting of the vector and runs
 // its input, each value as a binary32 (static_cast<float>). The vector's stages must be

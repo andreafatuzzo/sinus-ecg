@@ -817,6 +817,11 @@ New items of the rule "Requirement or milestone register errors" of `--check`: `
 - milestones table: `With a verifying test` counts the requirements verified in each of their items;
 - gaps: "Requirements without tests" lists `SRS-nnn` when no item has a verifying test and `SRS-nnn (<item>, …)` when only some items lack one.
 
+**As implemented (v0.4.4; readings, no change of behaviour).**
+- Rule 1 groups the citations of R by the item of the citing file and reports each item without a verifying test of R, whether R names that item or not; an item that R does not name is then also reported by rule 2.
+- Rule 4 names the item for every requirement, including one with a single item: `SRS-034 (M2, In progress): no verifying test in libs/sinus-dsp`. Only a requirement whose `Software item` line gives no readable item, which `--check` already reports, gives `SRS-nnn (Mn, <status>): no verifying test` without ` in <item>`; for such a requirement any verifying test counts.
+- In the matrix a requirement with one item and no test keeps `**none**` (not `**none in <item>**`), as stated above; the release-gate list under the matrix uses the texts of rule 4.
+
 **Migration.** SRS-001 to SRS-016 name `dsp` only and have their tests: their rows gain the new column and nothing else. SRS-022 and SRS-024 to SRS-028 show `**none in libs/sinus-dsp**` once their Python tests exist and until their C++ tests do; the release gate of M2 then lists them per item. The matrix is regenerated in the same change.
 
 **`Layout`** gains `python_test_roots` with each existing `tests` folder of a C++ item, the C++ item folders as roots of Python production code, and `version_files`.
@@ -842,8 +847,8 @@ No C++ compiler was used to write this version. Every numerical figure below com
 | Verification code | Golden reader, equivalence check and results in `verification/`, used on the computer and on the ESP32-S3 | §14.12, §14.13 |
 | ESP32-S3 | ESP-IDF v6.1 in its pinned container image; vectors as a binary pack in a data partition of a 16 MB flash image; Espressif QEMU | §14.13, SRS-036 |
 | Whole databases | A C interface to the library, called from Python with `ctypes` | §14.14, SRS-038 |
-| Identity | One version per milestone for every software item (`VERSION`); a source digest of the library | §14.15, OP-062 |
-| SBOM | CycloneDX 1.6 JSON written by CMake from a template | §14.16, OP-046 |
+| Identity | One version per milestone for every software item (`VERSION`); a source digest of the library | §14.15, OP-062 (closed for the library); later items OP-076 |
+| SBOM | CycloneDX 1.6 JSON written by CMake from a template | §14.16, OP-046 (closed for the library); later items OP-075 |
 | Traceability | One verifying test per implementing software item; C++ tests and Python tests of C++ items | §13.12, §14.17, [ADR 0006](../adr/0006-verification-per-software-item.md) |
 
 ### 14.2 Layout, build and development tools
@@ -886,7 +891,7 @@ libs/sinus-dsp/
 |---|---|---|---|
 | `debug` | `Debug` | — | locally |
 | `release` | `Release` (`-O2`) | — | CI and locally; the equivalence check runs on this build |
-| `asan-ubsan` | `Debug` | `-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer` | CI (Linux) |
+| `asan-ubsan` | `Debug` | `-fsanitize=address,undefined -fno-sanitize=vptr -fno-sanitize-recover=all -fno-omit-frame-pointer` | CI (Linux) |
 | `coverage` | `Debug` | `--coverage` (GCC) | CI; gcovr summary uploaded as an artifact, no threshold |
 | `tidy` | `Debug` | `CMAKE_CXX_CLANG_TIDY` set to the pinned clang-tidy, on the library, `verification/` and `harness/` | CI (gate) |
 
@@ -895,6 +900,14 @@ libs/sinus-dsp/
 - Tests: `-ffp-contract=off -Wall -Wextra -Werror`; GoogleTest is built with its own defaults.
 - Never: `-ffast-math`, `-Ofast`, `-funsafe-math-optimizations`, `-ffinite-math-only`, `-fassociative-math`. The configuration fails if `CMAKE_CXX_FLAGS` contains one of them (OP-057).
 - `-Wdouble-promotion` stays an error: every use of `double` in the real-time path is explicit (§14.3).
+- **Floating-point arithmetic only in `.cpp` files** (from v0.4.4, as implemented). The headers of `include/` and `src/` hold declarations, constants and integer helpers only (`array_index.hpp`, `search_back_limit.hpp`, §14.4). A function defined in a header is compiled in the translation unit that includes it, with that program's options; the firmware or the desktop application might not set `-ffp-contract=off`. In the `.cpp` files of `src/` the library's options always apply (§14.3).
+- `asan-ubsan` leaves out only UBSan's `vptr` check (`-fno-sanitize=vptr`, reason in `cmake/Flags.cmake`): that check needs the type information of polymorphic classes, which `-fno-rtti` (ADR 0007) removes, so GCC fails to link (`undefined reference to typeinfo for …MemorySource`). Every other check of `-fsanitize=undefined` stays.
+- **MinGW** (the local LLVM-MinGW toolchain): `if(MINGW) add_link_options(-static)` in `cmake/Flags.cmake` links the C++ runtime and the unwinder into every executable and into the harness (§14.14), so that they import only Windows system libraries and run without the toolchain's `bin` on `PATH` (otherwise Windows stops the process with a modal dialog about a missing `libc++.dll`). The `asan-ubsan` executables still import the sanitizer runtime `libclang_rt.asan_dynamic-x86_64.dll` and run only with the toolchain's `bin` on `PATH`. Linux builds are unchanged.
+
+**clang-tidy** (`.clang-tidy`, ADR 0007; as implemented, v0.4.4):
+- `-portability-avoid-pragma-once`: this check (clang-tidy 21 and later) forbids `#pragma once`, which ADR 0007 requires; it is disabled, with the reason in the file.
+- `HeaderFilterRegex` accepts both path separators (`[/\\]`): on Windows Clang reports a header as `include\sinus/dsp/x.hpp`, which a `/`-only expression never matches, so the headers went unchecked locally.
+- When the compiler is Clang, the tidy command of the `tidy` preset gets `--extra-arg=--target=<the compiler's -dumpmachine>` and the compiler's include directories: the pinned clang-tidy is not the compiler's own tool and, on Windows, would otherwise assume the MSVC target and find no standard header. With GCC (CI) the command is unchanged.
 
 **GoogleTest** 1.18.0 (C++17 minimum), fetched with `FetchContent` from the release asset `https://github.com/google/googletest/releases/download/v1.18.0/googletest-1.18.0.tar.gz`, `URL_HASH SHA256=6e3191c1455468b3fc35a417fb565c1c5071aee1b7e7f85e30cf48a98d37d8b5` (894 741 bytes; checked on 2026-10-08, equal to the digest that GitHub states for the asset). A computer without network access sets `FETCHCONTENT_SOURCE_DIR_GOOGLETEST` to a copy. GoogleTest is a test tool, not SOUP (`sdp.md` §7), and is not part of any artifact.
 
@@ -924,7 +937,7 @@ z2 = b2 * x - a2 * y;
 - Outputs: `static_cast<float>` of each stage's binary64 output (rounding to nearest), as `baseline_mv` and `conditioned_mv`.
 
 **Detection, binary32.** Every operation in this order; coefficients are their binary64 design rounded once (`static_cast<float>`):
-1. Band-pass: two binary32 sections (high-pass 5 Hz, low-pass 15 Hz) in the order above, starting in the state of §8.6 computed in binary32 from the first conditioned sample, which is 0.0f, so a zero state.
+1. Band-pass: two binary32 sections (high-pass 5 Hz, low-pass 15 Hz) in the order above, starting in the state of §8.6 computed in binary32 from the first conditioned sample, which is 0.0f, so a zero state. As implemented (v0.4.4): the high-pass section starts in its steady state for the first sample it receives and the low-pass section in the zero state, because the high-pass gain at 0 Hz is exactly 0 in binary32 (`b0 + b1 + b2 = norm − 2·norm + norm`); in the chain both states are zero, as above, and a `QrsDetector` used alone with a non-zero first sample starts like the reference's cascade would.
 2. Derivative: `d = ((c4 * b[n-4] + c3 * b[n-3]) + c1 * b[n-1]) + c0 * b[n]` with `c0 = float(fs / 8)`, `c1 = float(fs / 4)`, `c3 = -c1`, `c4 = -c0`, and `b[k] = 0.0f` for `k < 0`. The tap of `b[n-2]`, whose coefficient is zero, is left out.
 3. Squaring: `s = d * d`.
 4. Integration: `y = sum / static_cast<float>(N)`, where `sum` adds `s[n-N+1]` to `s[n]` in that order (oldest first) in binary32, with `s[k] = 0.0f` for `k < 0`. A running sum is not used: its error would grow with the length of the stream.
@@ -952,7 +965,7 @@ It is correct only if the compiler neither contracts nor reassociates floating-p
 
 **Times in samples.** Every parameter in samples is computed at configuration in binary64 with the expressions of §8.2, `_units` and §13.5, §13.6 written the same way: `std::floor(t_ms * fs_hz / 1000.0 + 0.5)`, `std::floor(t_ms * fs_hz / 1000.0)`, `std::ceil(t_ms * fs_hz / 1000.0)`, `std::floor(t_s * fs_hz + 0.5)`, with `t_ms`, `t_s` and products such as `300 * k` exact in binary64. IEEE 754 binary64 evaluates the same expression to the same value on every target (correct rounding, no contraction), so the library obtains the same integers as the reference at every sampling frequency, including one that is not a whole number of hertz (SRS-027).
 
-**No contraction, no fast-math (OP-057).** GCC contracts `a * b + c` into a fused multiply-add by default outside ISO mode, as ESP-IDF builds (`-std=gnu++2b`), and the ESP32-S3 has fused instructions (`madd.s`); Clang contracts within an expression by default wherever the target has them. `-ffp-contract=off` is therefore set on every target (§14.2). Two checks: a unit test computes, from `volatile` operands, an expression whose fused and unfused results differ and requires the unfused one; the same check runs first in the ESP32-S3 test app (§14.13). The baseline stage's output for a constant input is then exactly 0.0, as in the reference (§8.6), which a unit test checks at 125, 360 and 1000 Hz.
+**No contraction, no fast-math (OP-057).** GCC contracts `a * b + c` into a fused multiply-add by default outside ISO mode, as ESP-IDF builds (`-std=gnu++2b`), and the ESP32-S3 has fused instructions (`madd.s`); Clang contracts within an expression by default wherever the target has them. `-ffp-contract=off` is therefore set on every target (§14.2), and every floating-point operation of the library lies in a `.cpp` file of `src/` (§14.2), so the option applies whatever the options of the program that includes the headers. Two checks: a unit test computes, from `volatile` operands, an expression whose fused and unfused results differ and requires the unfused one; the same check runs first in the ESP32-S3 test app (§14.13). The baseline stage's output for a constant input is then exactly 0.0, as in the reference (§8.6), which a unit test checks at 125, 360 and 1000 Hz.
 
 **Cost on the ESP32-S3**, which has no binary64 unit: the two conditioning stages are about 20 software binary64 operations per sample, of the order of a few thousand cycles, below 1 % of one 240 MHz core at 360 Hz. The emulator cannot measure it; the processing time per sample is measured with the firmware (OP-014).
 
@@ -973,7 +986,15 @@ It is correct only if the compiler neither contracts nor reassociates floating-p
 | `chain.hpp` | The complete processing chain, input checks, restart | SRS-017, SRS-018, SRS-031, SRS-032 |
 | `version.hpp` | Identity of the library (§14.15) | SRS-037 |
 
-Private headers in `src/`: `ring.hpp` (fixed-capacity ring indexed by the sample counter), `compensated_sum.hpp` (§14.3). Each public function cites in its comment the requirements it implements, and only those (§8.2, "Requirement citations"); citing one claims the requirement for `libs/sinus-dsp` (§13.12).
+Private headers in `src/` (as implemented, v0.4.4):
+- `compensated_sum.hpp` (§14.3): the class `CompensatedSum` and the free functions `compensated_add` and `compensated_value` on a pair of `float`, which the blocks of `signal_quality` store, because a public header cannot include a private one;
+- `interval_estimate.hpp`: the interval estimator of the heart rate (§13.5, §14.8), not part of the public `heart_rate.hpp`, and unit-tested directly;
+- `search_back_limit.hpp`: the integer search-back limit (§14.3, step 9);
+- `array_index.hpp`: `array_index(std::uint64_t)`, the conversion of a sample counter reduced modulo a capacity to `std::size_t`, with a `static_cast` only where `std::size_t` is not `std::uint64_t` (`if constexpr`), so that GCC's `-Wuseless-cast` does not fail on 64-bit targets and 32-bit targets (the ESP32-S3) keep the explicit conversion.
+
+There is no `ring.hpp`: each ring is a `std::array` member of its class, indexed by the sample counter modulo its capacity through one private helper in the `.cpp` (`at()` in `qrs_detector.cpp`, `slot()` in `signal_quality.cpp`); the capacities are named in `limits.hpp` (below). `QrsDetector` declares `friend struct QrsDetectorProbe;`, an access point that only the unit tests define, to fill the store of peaks to its capacity and read it (§14.7, "Verification notes"); no production code defines it.
+
+Each public function cites in its comment the requirements it implements, and only those (§8.2, "Requirement citations"); citing one claims the requirement for `libs/sinus-dsp` (§13.12).
 
 **Rules for every interface.**
 - Every function is `noexcept`. Functions that can fail return a `Status` and are `[[nodiscard]]`. No function allocates memory (§14.10).
@@ -1000,6 +1021,13 @@ inline constexpr float kMaxAbsSampleMv = 1000.0f;
 // capacities, sized for kMaxSamplingFrequencyHz (§14.10)
 inline constexpr std::size_t kMaxDetectionsPerSample = 12;
 inline constexpr std::size_t kMaxHeartRateEventsPerSample = 12;
+// detector capacities (§14.7, §14.10; named here from v0.4.4, as implemented)
+inline constexpr std::size_t kDetectorWindowCapacity = 150;      // s: N
+inline constexpr std::size_t kDetectorBandpassCapacity = 248;    // b: N + P + 3
+inline constexpr std::size_t kDetectorDerivativeCapacity = 246;  // d: N + P + 1
+inline constexpr std::size_t kDetectorLearningCapacity = 2000;   // y and |b|: L
+inline constexpr std::size_t kDetectorPeakStoreCapacity = 1000;  // peaks: L / 2
+inline constexpr std::size_t kDetectorRrIntervalCapacity = 8;    // intervals of search-back
 inline constexpr std::size_t kChainMemoryLimitBytes = 65536;   // SRS-032, proposed (§14.10)
 
 // config.hpp
@@ -1280,6 +1308,7 @@ In every case the true positives, false negatives and false positives of every r
 | Heart rate | One rounding of the division at an integer sampling frequency, three at another: ≤ 3 · u · rate, at most 5.4e-5 bpm for any rate up to 300 bpm (detections are at least 200 ms apart) | 7.5e-6 bpm | **1e-4 bpm** |
 | Signal quality index | Rounding: about 1e-6 (measured; a worst-case bound of the infinite impulse responses gives 0.68, which says nothing). A tie that moves the integrated peak of one detection moves its zone: by 1 sample the index of a golden window changes by at most 0.0027, by 2 samples by at most 0.0077 (computed for every detection and window of the golden set; a zone cut by a window edge is the worst case) | 7.5e-7 | **0.01** |
 
+- **Amplitude range of the conditioning tolerance** (v0.4.4, found while implementing C2). The bound `(G + 1) · u · max|x|` stays within 2e-5 mV for inputs up to **50 mV** in magnitude through both stages (`2e-5 / (6.59 · u)` = 50.9 mV) and up to 97 mV for the baseline stage alone (`2e-5 / (3.43 · u)`). Above, the tolerance is not guaranteed: the rounding of a binary32 output alone reaches half a unit in the last place, 1.5e-5 mV for outputs of 256 to 512 mV and 3.05e-5 mV for outputs of 512 to 1000 mV, above 2e-5 mV without any defect. SRS-034 applies to the golden-vector files only, whose inputs stay within 20 mV (largest measured difference 1.8e-6 mV; the library is bit-identical to the binary32 rounding of the reference on 60 inputs of up to 100 mV, largest difference 7.6e-6 mV near 240 mV outputs). A golden input above 50 mV in magnitude added to SRS-015 or SRS-033 needs this bound redone and the tolerance reviewed first. The library itself accepts up to 1000 mV (SRS-018), where the bound is 4e-4 mV (table above): the tolerance is a check of the golden set, not a precision claim for every accepted input.
 - The report sample is compared (SRS-034 lists it since `srs.md` v0.8.2, tolerance 0 samples), because the heart rates must be reported "at the same samples": a different report sample of a reliable detection fails either way, and comparing it names the cause (§14.12).
 - The index tolerance 0.01 does not loosen any decision: the usable marks are compared exactly, and the closest golden window to the threshold lies 0.0019 from it.
 - With binary64 throughout, every tolerance could be of the order of 1e-9 and the integrated-peak ties would vanish, for about 43 KB more per chain (ADR 0008, alternative).
@@ -1291,9 +1320,11 @@ In every case the true positives, false negatives and false positives of every r
 - `golden_reader`: reads a golden-vector file of format version 2 with every reader rule of §7.3 and §13.8, naming the first offending line. Floats by `std::from_chars` after the syntax check (§7.3).
 - `golden_set`: the expected input identifiers, written out (18 synthetic, 8 event, 6 record segments, §7.2 and §13.9).
 - `equivalence`: runs a newly configured `Chain` on the input of one vector (each value `static_cast<float>` of the file's binary64 value) and compares the outputs as below.
+- `equivalence_folder` (v0.4.4, as implemented): the check of a folder of text files (listing with `<filesystem>`, reading with `golden_reader`, missing and unexpected files). It is separate from `equivalence` so that the ESP32-S3 component builds `equivalence`, `equivalence_report`, `golden_set`, `golden_pack` and `sha256` without the text reader and without `<filesystem>` (§14.13).
 - `equivalence_report`: writes the results (format below).
 - `golden_pack`, `sha256`: the binary pack of §14.13 and the SHA-256 (FIPS 180-4) that seals it.
-- tools: `sinus_dsp_equivalence --vectors <folder> --results <file>` (exit status 0 if every expected file is present and passes, 1 otherwise, 2 on a usage error) and `sinus_dsp_golden_pack --vectors <folder> --output <file>`.
+- tools: `sinus_dsp_equivalence --vectors <folder> --results <file>` (exit status 0 if every expected file is present and passes, 1 otherwise, 2 on a usage error) and `sinus_dsp_golden_pack --vectors <folder> --output <file>` (exit status 0 when the pack is written; 1 when a file is missing, unexpected or rejected by the reader, each named, and then no pack is written; 2 on a usage error or a folder or file that cannot be listed or written).
+- Files are read and written with `<cstdio>` (`std::fopen`, `std::fread`, `std::fwrite`), not with file streams (v0.4.4, as implemented): GCC 14 at `-O2` reports a false `-Wnull-dereference` inside the inlined stream buffer of libstdc++, an error under `-Werror`. The tools write their messages with `std::cout` and `std::cerr`.
 
 **The set.** The folder must hold exactly the expected files (`<id>.golden.txt`): a missing one is a failure naming it (SRS-035), an unexpected one too (the C++ side states what it expects, so a new reference input fails until the C++ list follows it). Other files of the folder (`NOTICE.md`) are ignored.
 
@@ -1308,6 +1339,14 @@ In every case the true positives, false negatives and false positives of every r
 | `quality_windows` | count; then in order the first, last and report samples and the usable mark of each window | max \|index difference\| | 0.01 |
 
 A structural difference (a count, a mark, a status, a sample, a usable mark) fails the output and is reported at the first sample where it occurs, in place of a largest difference. A file that a reader rejects fails as a whole, with the reader's line and reason. The outputs are compared in this order, and every output of every file is reported, even after a failure, so that one run shows everything.
+
+**As implemented (v0.4.4; readings, no change of the compared outputs or tolerances):**
+- A difference that is not a finite number (the library gives NaN or an infinity where the file has a value) counts as +∞ and fails the output.
+- Text of a structural difference, in the column `Largest difference`: `count <library>, file <file>` for a count; otherwise the first differing field: `mark` (beats), `sample`, `beat index` or `status` (heart rates, in that order), `first sample`, `last sample`, `report sample` or `usable mark` (windows, in that order).
+- `At sample` (one rule per output): the sample number for `baseline_mv` and `mains_mv`; the file's detection index for `beats` and `beat_reported_at`; the event sample for `heart_rates`; the first sample of the window for `quality_windows`. For a count difference, the same sample of the first entry that only the longer list holds. `—` when an output has no entry (no detection, no rate, no window).
+- When the counts of `beats` differ, `beat_reported_at` is not compared: its row reads `not compared, the counts differ`, `At sample` `—`, outcome `fail`.
+- A file that is not compared has a single row with `file` in the column `Output`, the reason in `Largest difference` (`missing`, `unexpected`, `rejected: line <n>: <reason>` (`line <n>: ` only when the reader names a line), or why the library could not run it, such as `the library returns status <code> at sample <n>`), `—` in `At sample` and `Tolerance`, and outcome `fail`.
+- The outcome of the set is `pass` only if the folder (or pack) could be read, holds at least one file, every file passes and the reference identity is the same in every file.
 
 **Results** (SRS-037), a Markdown file written by `equivalence_report`, byte for byte the same on every target for the same results:
 
@@ -1334,7 +1373,7 @@ A structural difference (a count, a mark, a status, a sample, a usable mark) fai
 
 - `Build target`: `computer (<processor>, <system>, <compiler id> <version>)` from CMake, or `ESP32-S3 (emulator, ESP-IDF <version>, <compiler id> <version>)`.
 - `Reference`: the `software_version` and `source_sha256` of the files; if the files do not all state the same, `not the same in every file` and the outcome `fail` (the vectors of one run come from one export).
-- Numbers: differences written as the shortest text that converts back to the same binary64 value (`std::to_chars`), `0` for exact zero; samples as integers (`—` where none); tolerances as written in §14.11. A structural difference is written `<what> differs` in the column `Largest difference` (for example `count 74, file 73`, `mark`, `status`).
+- Numbers: differences written as the shortest text that converts back to the same binary64 value (`std::to_chars` without a format, which also chooses between fixed and scientific notation), `0` for exact zero; samples as integers (`—` where none); tolerances, which are binary64 constants, written the same way: `2e-05` (conditioning stages), `0` (`beats`, `beat_reported_at`), `1e-04` (`heart_rates`) and `0.01` (`quality_windows`). A structural difference is written as stated above (for example `count 74, file 73`, `mark`, `status`).
 - `Database notice`, present when a record segment is in the set: `The files mitdb-100-first60s, mitdb-105-first60s, mitdb-108-first60s, mitdb-119-first60s, mitdb-203-first60s and mitdb-207-first60s contain extracts of the MIT-BIH Arrhythmia Database, version 1.0.0, made available by PhysioNet under the Open Data Commons Attribution License v1.0, https://opendatacommons.org/licenses/by/1-0/; the results above are computed from them.` (§8.15; OP-067).
 
 **Notice beside the vectors (OP-067, option (b) of the owner).** From this version, `export_golden_vectors` (§8.12, §13.8) also writes `NOTICE.md` into the output folder, with `write_atomically`, whenever it writes the record segments (before the first of them; it stays if the export then fails, §13.8), and never otherwise:
@@ -1350,11 +1389,12 @@ The other files of this folder contain synthetic signals generated by Sinus and 
 Every artifact that holds golden vectors or a pack of them carries this file; the equivalence results carry the row above. The text is a constant of `golden.py` (`NOTICE_TEXT`), so that QA can compare it literally; `ExportSummary` gains `notice: Path | None`.
 
 **CI** (`.github/workflows/ci.yml`, every push and pull request; `permissions: contents: read` and `persist-credentials: false` as now):
-- Job `dsp`, after the subset check (the six records are then present and verified): `export_golden.py --output-dir "$RUNNER_TEMP/golden-vectors"`, then `actions/upload-artifact` of that folder as `golden-vectors` (`if-no-files-found: error`, `retention-days: 7`). Whether a record segment is missing is decided by the check of the job `libs`, which names it.
+- Job `dsp`, after the subset check (the six records are then present and verified): `export_golden.py --output "$RUNNER_TEMP/golden-vectors"` (the option of §8.12; `--output-dir` up to v0.4.3 was a slip), then `actions/upload-artifact` of that folder as `golden-vectors` (`if-no-files-found: error`, `retention-days: 7`). Whether a record segment is missing is decided by the check of the job `libs`, which names it.
 - Job `libs` (`needs: dsp`, `ubuntu-24.04`): checkout; setup-uv; `uv sync --locked --project libs/sinus-dsp/tools`; clang-format check (`--dry-run --Werror` on every C++ file of `libs/sinus-dsp`); for `CXX=g++-14` and then `CXX=clang++-18`: presets `release` and `asan-ubsan`, build, `ctest` (unit, requirement, system tests and `no_heap_symbols`); preset `tidy` (GCC); preset `coverage` (GCC) with a gcovr summary uploaded as `coverage-libs`; download of `golden-vectors`; `sinus_dsp_equivalence` (GCC release build) writing `equivalence-computer.md`, the step's exit status deciding the job (SRS-035); the requirement tests that read the vectors run with `SINUS_GOLDEN_DIR` set; upload of `equivalence-computer.md` with `NOTICE.md` as `equivalence-computer` (`if: always()`); the SBOM as `sbom-libs` (§14.16).
 - Job `libs-esp32s3` (`needs: dsp`, §14.13).
 - The Python tests under `libs/sinus-dsp/tests` run in the job `dsp`, which runs pytest with its `testpaths` (§13.12).
 - The ruleset of `main` should require `libs` and `libs-esp32s3` once each has passed once (owner action in the repository settings).
+- Artifacts (as implemented, v0.4.4): `golden-vectors` (job `dsp`; `if-no-files-found: error`, 7 days), `equivalence-computer` (`equivalence-computer.md` and `NOTICE.md`; `if: always()`, `if-no-files-found: warn`), `sbom-libs` (`if-no-files-found: error`), `coverage-libs` (`warn`) and `equivalence-esp32s3` (§14.13). The folder layout inside an artifact is not specified: when its files come from different folders, the artifact keeps their paths below their common folder, which in the container job `libs-esp32s3` is an absolute path of the runner (cosmetic). Whoever reads an artifact finds its files by name.
 
 **Verification notes.** QA (SRS-034): the C++ requirement test runs the check on the folder of `SINUS_GOLDEN_DIR` (the vectors of the same commit) and requires every file to pass; on copies with one value of each compared output changed by more than its tolerance, and with one detection removed, the check fails and names the file, the output and the sample. Without `SINUS_GOLDEN_DIR` the test that needs the folder skips with a message (a stated precondition, §13.12 rule 5); CI always sets it. QA (SRS-035): the check on a folder without one file fails and names it (C++); a Python test in `dsp/tests/requirements` inspects `ci.yml` (export and upload in `dsp`, `needs: dsp` and the check in `libs`, on every push), as for SRS-016. QA (SRS-037): a copy with one output of one file changed by a known amount within its tolerance and larger than every other difference: the reported largest difference equals it within the rounding of the subtraction; the reference identity equals the files'; the library identity equals the one the test computes with the method of §14.15. Developer: the reader rules (one rejected text per rule, with its line), exact read-back of edge values (§7.4), the report format literally.
 
@@ -1362,7 +1402,9 @@ Every artifact that holds golden vectors or a pack of them carries this file; th
 
 **ESP-IDF.** Version **v6.1** (released 2026-08-27; in service until 2027-08, end of life 2029-02 under Espressif's support policy), in the official image pinned by tag and digest: `espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c` (Docker Hub, read on 2026-10-08). The image holds the toolchain `xtensa-esp-elf` esp-15.2.0, CMake 4.0.3, Espressif's QEMU `esp_develop_9.2.2_20260417` (machine `esp32s3`) and a host compiler (Ubuntu 24.04 build tools). A new bugfix release of v6.1 is taken deliberately, with its digest. The firmware of Milestone 4 starts from the same version (ADR 0001).
 
-**Components.** `libs/sinus-dsp/esp-idf/sinus_dsp/CMakeLists.txt` registers the library sources of `cmake/SinusDspSources.cmake` and the generated identity (§14.15), with the include folder, and compiles them with `-std=c++17 -fno-exceptions -fno-rtti -ffp-contract=off` and the warnings of §14.2 (ESP-IDF builds C++ with `-std=gnu++2b` and contraction by default otherwise). `esp-idf/sinus_dsp_verification` registers the verification code the same way. The firmware will use the first component (§5.3).
+**Components.** `libs/sinus-dsp/esp-idf/sinus_dsp/CMakeLists.txt` registers the library sources of `cmake/SinusDspSources.cmake` and the generated identity (§14.15), with the include folder, and compiles them with `-std=c++17 -fno-exceptions -fno-rtti -ffp-contract=off` and the warnings of §14.2 (ESP-IDF builds C++ with `-std=gnu++2b` and contraction by default otherwise). `esp-idf/sinus_dsp_verification` registers the verification code the same way, without the text reader and the folder check (`golden_reader`, `equivalence_folder`, §14.12), which the target does not need. The firmware will use the first component (§5.3).
+
+As implemented (v0.4.4): ESP-IDF first runs every component's `CMakeLists.txt` in CMake script mode (its "early expansion"), where `file(GLOB … CONFIGURE_DEPENDS)` is an error. `cmake/SinusDspSources.cmake` therefore passes `CONFIGURE_DEPENDS` only outside script mode (neither `CMAKE_SCRIPT_MODE_FILE` nor `CMAKE_BUILD_EARLY_EXPANSION` set); the lists are the same, only the check for added files at build time is left out there. The components register their sources and the identity only outside the early expansion.
 
 **Test app** `libs/sinus-dsp/tests/system/esp32s3_equivalence/` (an ESP-IDF project; under `tests/`, so never scanned as production code): `sdkconfig.defaults` with target `esp32s3`, flash size 16 MB, the custom partition table, optimisation for performance, task watchdog off; `partitions.csv`:
 
@@ -1375,28 +1417,38 @@ golden,    data, 0x40,    0x200000, 0xE00000
 
 `app_main` runs, in order: the contraction self-check of §14.3; the check of the pack's SHA-256; the equivalence check of every vector of the pack, with the `Chain` in static storage; the results of §14.12 printed between the lines `SINUS-EQUIVALENCE-BEGIN` and `SINUS-EQUIVALENCE-END <pass|fail>`; then `esp_restart()`, which ends the emulator (`-no-reboot`).
 
+The `Build target` of these results (§14.12) comes from a header that the app's `main/CMakeLists.txt` generates, `sinus_build_target.h`, defining `SINUS_DSP_BUILD_TARGET` as `ESP32-S3 (emulator, ESP-IDF <version>, <compiler id> <version>)` (rewritten only when its content changes; first CI run: `ESP32-S3 (emulator, ESP-IDF v6.1, GNU 15.2.0)`). `app_main.cpp` includes it with `__has_include` and falls back to `ESP32-S3 (emulator)`. A quoted compile definition is not used, because it broke the build properties that ESP-IDF generates (v0.4.4, as implemented).
+
 **How the vectors reach the emulator.** The text set (about 22 MB) does not fit the largest flash image that Espressif's QEMU accepts for the ESP32-S3 (2, 4, 8 or 16 MB; read in its source on 2026-10-08). The job converts it on the host into a **binary pack** with `sinus_dsp_golden_pack`, which reads every file with the verified reader of §14.12, so that the target compares with exactly the values the computer compares with:
 
 - header: the 8 bytes `SINUSGVP`, `uint32` pack version 1, `uint32` number of files, `uint64` payload length, the 32-byte SHA-256 of the payload;
 - per file, in the order of `golden_set`: the 4 bytes `GVF2`; `input_id`, `input_source`, `input_parameters`, `software_version`, `source_sha256` (each a `uint16` length and UTF-8 bytes); `float64` sampling frequency; `uint32` mains; `uint32` counts of samples, coefficient rows, beats, heart rates and windows; the coefficient rows (`uint8` stage, `uint8` section, five `float64`); per sample the input as `float32` (the conversion the computer makes) and both stage outputs as `float64`; per beat `uint64` index, `uint8` mark, `uint64` report sample; per heart rate `uint64` sample, `int64` beat index (−1 if none), `uint8` status, `float64` rate (NaN if none); per window `uint64` first, last and report samples, `float64` index, `uint8` usable;
-- all little-endian. Size for the 32 files: about 8 MB (394 340 samples × 20 bytes, plus the events).
+- all little-endian. Size for the 32 files: about 8 MB (394 340 samples × 20 bytes, plus the events); 7 996 860 bytes for the vectors of Milestone 2.
+
+As implemented (v0.4.4): the SHA-256 is computed by `verification/sha256` (FIPS 180-4, no SOUP) over the payload, the bytes after the 56-byte header. The absent beat index of a heart rate is written as the `uint64` with every bit set, which is the `int64` −1 above. `sinus_dsp_golden_pack` packs only a complete set: a missing, unexpected or rejected file fails the tool and no pack is written (§14.12), so the target never meets a missing file in CI, although `check_pack` reports one as `missing`, like the folder check. On the target `verify_pack` first checks the header (length, magic, version) and the SHA-256 of the whole payload; `check_pack` then reads the files in the order of the pack and lists the results in the order of `golden_set`, then any unexpected file. When the contraction self-check, the seal or the reading of the pack fails, the app compares nothing further and prints, between the two marker lines, the reason (for example `the golden pack is damaged: <error>`) and `SINUS-EQUIVALENCE-END fail`.
 
 The app reads the partition `golden` in chunks (`esp_partition_read`) and streams it into the check: samples are compared as they come, the events after the samples, as in a text file.
 
-**Job `libs-esp32s3`** (`needs: dsp`, `ubuntu-24.04`, `container:` the image above; `timeout-minutes: 45`): checkout; download of `golden-vectors`; build of `sinus_dsp_golden_pack` with the image's host compiler and CMake, then the pack; `idf.py -C libs/sinus-dsp/tests/system/esp32s3_equivalence build`; one 16 MB flash image from the bootloader, the partition table, the app and the pack at `0x200000` (`esptool.py merge_bin --fill-flash-size 16MB`); `timeout 1800 qemu-system-xtensa -machine esp32s3 -nographic -no-reboot -drive file=flash.bin,if=mtd,format=raw -serial file:qemu.log`; `python3 libs/sinus-dsp/verification/emulator_log.py qemu.log --results equivalence-esp32s3.md`, whose exit status decides the job; upload of the results, the log and `NOTICE.md` as `equivalence-esp32s3` (`if: always()`).
+**Job `libs-esp32s3`** (`needs: dsp`, `ubuntu-24.04`, `container:` the image above; `timeout-minutes: 45`): checkout; download of `golden-vectors`; build of `sinus_dsp_golden_pack` with the image's host compiler and CMake, then the pack; `idf.py -C libs/sinus-dsp/tests/system/esp32s3_equivalence build`; one 16 MB flash image from the bootloader, the partition table, the app and the pack at `0x200000` (`esptool merge_bin`, then padded to 16 MiB, below); `timeout 1800 qemu-system-xtensa -machine esp32s3 -nographic -no-reboot -drive file=flash.bin,if=mtd,format=raw -serial file:qemu.log`; `python3 libs/sinus-dsp/verification/emulator_log.py qemu.log --results equivalence-esp32s3.md`, whose exit status decides the job; upload of the results, the log and `NOTICE.md` as `equivalence-esp32s3` (`if: always()`).
+
+As implemented (v0.4.4):
+- The pack tool is built in the image with its host compiler (`-DSINUS_DSP_BUILD_TESTS=OFF`, target `sinus_dsp_golden_pack` only), and the step checks that the pack fits the partition `golden` (at most `0xE00000` bytes).
+- `merge_bin` writes the image without `--fill-flash-size` (v0.4 named that option); a separate step checks that it is at most 16 MiB and pads it to exactly 16 MiB with `0xFF` bytes (erased flash), since the emulator accepts only images of 2, 4, 8 or 16 MB.
+- QEMU runs with `-monitor none` and standard input from `/dev/null`; its exit status is printed, not used: the verdict is that of `emulator_log.py`.
+- After the step of `emulator_log.py`, a step "System test of SRS-036" installs `pytest==9.1.1` into the image's Python and runs `libs/sinus-dsp/tests/system/test_srs_036_emulator_equivalence.py` with `SINUS_EMULATOR_DIR` (the folder of `qemu.log` and `equivalence-esp32s3.md`) and `SINUS_GOLDEN_DIR` (the vectors) set, with `-c dsp/pyproject.toml`; its failure fails the job. The upload is the last step (`if: always()`, `if-no-files-found: warn`).
 
 **`emulator_log.py`** (standard library only; cites SRS-036): extracts the block between the two marker lines into the results file and exits 0 only if the log holds exactly one `SINUS-EQUIVALENCE-END pass` line and no other end line; a log without it (a crash, a timeout, a failed self-check) exits 1 with a message; a usage error exits 2.
 
 **Alternatives considered.** Streaming the text over the emulated UART: no size limit, but a host–target protocol, flow control and timeouts to maintain. An SD card image: SDMMC emulation of the ESP32-S3 appeared in QEMU in April 2026. ESP-IDF v6.0.3: more bugfix releases, seven months less support. PSRAM: still needs a transport.
 
-**Verification notes.** Test engineer (SRS-036, System): a Python test in `libs/sinus-dsp/tests/system/` inspects `ci.yml` (the job runs on every push, needs `dsp`, uses the pinned image, builds the app, runs QEMU on the set and fails through `emulator_log.py`) and checks `emulator_log.py` on recorded logs (pass, a failing file, no end line, two end lines); the log of a CI run, and of a run on a pack with one value changed beyond its tolerance, is kept for the milestone verification report.
+**Verification notes.** Test engineer (SRS-036, System): a Python test in `libs/sinus-dsp/tests/system/` inspects `ci.yml` (the job runs on every push, needs `dsp`, uses the pinned image, builds the app, runs QEMU on the set and fails through `emulator_log.py`) and checks `emulator_log.py` on recorded logs (pass, a failing file, no end line, two end lines); in the job itself (step above) it judges the results of the run against the vectors of the same commit, and skips that part with a message when `SINUS_EMULATOR_DIR` is not set; the log of a CI run, and of a run on a pack with one value changed beyond its tolerance, is kept for the milestone verification report.
 
 ### 14.14 Detection on the whole reference databases (SRS-038)
 
 **Harness: a C interface called with `ctypes`** (option (a)):
 
 ```c
-/* harness/sinus_dsp_harness.h, shared library sinus_dsp_harness (computer only) */
+/* harness/include/sinus_dsp_harness.h, shared library sinus_dsp_harness (computer only) */
 /* Runs a newly configured Chain on n samples; writes up to `capacity` detections (index, mark,
    report sample) and returns their total number, or -1 - (int)Status on a configuration error or
    an invalid sample. */
@@ -1406,6 +1458,8 @@ int64_t sinus_dsp_harness_detect(double fs_hz, int32_t mains_hz, const float* sa
 /* "<version>;<source SHA-256>" of the library */
 const char* sinus_dsp_harness_identity(void);
 ```
+
+Targets (as implemented, v0.4.4): `sinus_dsp_harness`, the shared library, exports only these two functions and links the C++ runtime statically on MinGW (§14.2), so Python loads it without the toolchain on `PATH`; `sinus_dsp_harness_static`, a static library built from the same source (position-independent code), which the C++ unit tests of the C interface link directly. Both use the flags of the library (§14.2).
 
 On the Python side (`dsp`, cites SRS-038), `sinus_dsp.evaluation.harness`:
 - `load_harness(path: Path) -> LibraryHarness` (ctypes; standard library only);
@@ -1417,7 +1471,7 @@ Script `dsp/scripts/compare_library.py --harness <path> [--data-dir DIR]`: the 4
 
 **Why ctypes rather than a command-line program.** The library runs in the same process as the evaluation of §8.10 through its `Detector` injection: no file format for signals or detections, no temporary files, no second scoring path. One call per record processes 650 000 samples in C++.
 
-**Verification notes.** Test engineer (SRS-038, System): in `libs/sinus-dsp/tests/system/` a pytest test marked `needs_data`, `needs_nstdb` and `needs_harness` (the shared library of the `release` build, or the path in `SINUS_DSP_HARNESS`; skipped otherwise) runs the comparison on the whole databases and requires equal counts for every record; in `dsp/tests/system/` a test checks `compare_detection` and the script with fixture records and a fake candidate (the record whose counts differ is named). Result recorded in the milestone verification report. The marker `needs_harness` is registered in `dsp/pyproject.toml`, its hook in `libs/sinus-dsp/tests/conftest.py`.
+**Verification notes.** Test engineer (SRS-038, System): in `libs/sinus-dsp/tests/system/` a pytest test marked `needs_data`, `needs_nstdb` and `needs_harness` (the shared library of the `release` build, or the path in `SINUS_DSP_HARNESS`; skipped otherwise) runs the comparison on the whole databases and requires equal counts for every record; in `dsp/tests/system/` a test checks `compare_detection` and the script with fixture records and a fake candidate (the record whose counts differ is named). Result recorded in the milestone verification report. The marker `needs_harness` is registered in `dsp/pyproject.toml`, its hook in `libs/sinus-dsp/tests/conftest.py`. As implemented (v0.4.4): the hook takes the path in `SINUS_DSP_HARNESS` when it is set, otherwise the shared library of the `release` build in `libs/sinus-dsp/build/release/harness/` (`sinus_dsp_harness.dll` on Windows, `libsinus_dsp_harness` with the platform's suffix elsewhere); when that file does not exist, every test marked `needs_harness` is skipped with a message naming the path, and the fixture `harness_library` gives the path to the tests.
 
 ### 14.15 Identity and versioning of the library (SRS-037; OP-062)
 
@@ -1430,15 +1484,15 @@ find sinus-dsp/include sinus-dsp/src -type f -not -path '*/.*' -print0 | LC_ALL=
   | xargs -0 sha256sum --text | sha256sum --text
 ```
 
-**Embedding.** `cmake/SourceDigest.cmake`, run in script mode (`cmake -P`) by a custom command that depends on every listed source file and on `VERSION` (the lists use `CONFIGURE_DEPENDS`, so that an added file is seen), computes the digest with CMake's `file(READ)` and `string(SHA256)` and writes `generated/sinus_dsp_identity.cpp`, which defines `library_identity()`; the file is rewritten only when its content changes. The ESP-IDF component runs the same script.
+**Embedding.** `cmake/SourceDigest.cmake`, run in script mode (`cmake -P`) by a custom command that depends on every listed source file and on `VERSION` (the lists use `CONFIGURE_DEPENDS`, so that an added file is seen, except in CMake script mode, §14.13), computes the digest with CMake's `file(READ)` and `string(SHA256)` and writes `generated/sinus_dsp_identity.cpp`, which defines `library_identity()`; the file is rewritten only when its content changes. The ESP-IDF component runs the same script.
 
-**Where it is stated.** The equivalence results (SRS-037); the harness (`sinus_dsp_harness_identity`); later the desktop application and the device information (OP-062, at their milestones, by the same rule).
+**Where it is stated.** The equivalence results (SRS-037); the harness (`sinus_dsp_harness_identity`); later the desktop application and the device information (OP-076, at their milestones, by the same rule; OP-062 is closed for the library).
 
 **Verification notes.** Developer: the digest of a fixture folder equals one computed independently in the test, the CR LF rule, a hidden file left out, the regeneration after a change. QA (SRS-037): the identity in the results equals the version of `VERSION` and a digest that the test computes itself by this method.
 
 ### 14.16 SBOM of the library (OP-046)
 
-The library has no third-party runtime code besides the C++ standard library and the C library of each toolchain (§9). `cmake/Sbom.cmake` writes `sbom-libs.cdx.json` from the template `cmake/sbom.cdx.json.in`: CycloneDX 1.6 JSON, no timestamp and no serial number (deterministic), metadata component `sinus-dsp` (type `library`, the version of `VERSION`, licence `Apache-2.0`, a property `sinus:source-sha256` with the digest of §14.15, a property `sinus:build-target`), and one component for the runtime libraries of the toolchain that built it (name and version of the compiler from CMake, for example `GNU 14.2.0: libstdc++, libgcc, glibc`). The job `libs` uploads the SBOM of its GCC release build as `sbom-libs`. It is not scanned: these components have no package ecosystem in the vulnerability databases, so OSV-Scanner would find no package; the toolchains are reviewed as SOUP (`soup.md`). The SBOM parts of the desktop application (M3), the firmware (M4) and the backend (M5) stay with OP-046.
+The library has no third-party runtime code besides the C++ standard library and the C library of each toolchain (§9). `cmake/Sbom.cmake` writes `sbom-libs.cdx.json` from the template `cmake/sbom.cdx.json.in`: CycloneDX 1.6 JSON, no timestamp and no serial number (deterministic), metadata component `sinus-dsp` (type `library`, the version of `VERSION`, licence `Apache-2.0`, a property `sinus:source-sha256` with the digest of §14.15, a property `sinus:build-target`), and one component for the runtime libraries of the toolchain that built it (name and version of the compiler from CMake, for example `GNU 14.2.0: libstdc++, libgcc, glibc`). The job `libs` uploads the SBOM of its GCC release build as `sbom-libs`. It is not scanned: these components have no package ecosystem in the vulnerability databases, so OSV-Scanner would find no package; the toolchains are reviewed as SOUP (`soup.md`). This closes OP-046 for the library; the SBOM of the desktop application, the firmware and the backend is OP-075, at their milestones. The SBOM parts of the desktop application (M3), the firmware (M4) and the backend (M5) stay with OP-046.
 
 ### 14.17 Tests
 

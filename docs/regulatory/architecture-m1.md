@@ -1259,7 +1259,7 @@ Scope and properties:
 - `Layout` gains `pyproject` (`dsp/pyproject.toml`) and `package_init` (`dsp/sinus_dsp/__init__.py`), so that unit tests on fixture trees cover the rule.
 - Not checked mechanically: that P is raised for a correction release, which needs the history of `main`. The release review checks it (`sdp.md` §3, activity 7).
 
-**C++ items.** This rule covers `dsp`. The versioning and identification of the C++ items is part of their detailed design, written at the start of their milestone (Conventions); for the library it is §14.15 (v0.4): the same version, in a file `VERSION`, and a source digest of its own code by the method above.
+**C++ items.** This rule covers `dsp`. The versioning and identification of the C++ items is part of their detailed design, written at the start of their milestone (Conventions); for the library it is §14.15 (v0.4): the same version, in a file `VERSION`, and a source digest of its own code by the method above. The desktop application and the firmware follow at their milestones (OP-076).
 
 **Verification notes.**
 - Developer's unit tests:

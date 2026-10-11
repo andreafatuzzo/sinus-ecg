@@ -208,3 +208,85 @@ jobs:
           name: coverage-libs
           path: ${{ runner.temp }}/coverage-libs.txt
           if-no-files-found: warn
+
+  # SRS-036: the check of SRS-034 on the ESP32-S3 in Espressif's QEMU, on the vectors of the job
+  # dsp (architecture-m2.md 14.13). The text vectors do not fit the flash image of the emulator, so
+  # the job converts them into a binary pack that the test app reads from a partition. The exit
+  # status of emulator_log.py decides the job: exactly one "SINUS-EQUIVALENCE-END pass" line.
+  libs-esp32s3:
+    needs: dsp
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c
+    env:
+      APP_DIR: libs/sinus-dsp/tests/system/esp32s3_equivalence
+      OUT_DIR: ${{ github.workspace }}/esp32s3-out
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: golden-vectors
+          path: ${{ github.workspace }}/golden-vectors
+      - name: Golden pack (host build of sinus_dsp_golden_pack)
+        run: |
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          . "${IDF_PATH}/export.sh"
+          mkdir -p "${OUT_DIR}"
+          cmake -S libs/sinus-dsp -B "${OUT_DIR}/host" -G Ninja -DCMAKE_BUILD_TYPE=Release -DSINUS_DSP_BUILD_TESTS=OFF
+          cmake --build "${OUT_DIR}/host" --target sinus_dsp_golden_pack
+          "${OUT_DIR}/host/verification/sinus_dsp_golden_pack" --vectors "${GITHUB_WORKSPACE}/golden-vectors" --output "${OUT_DIR}/golden.pack"
+          # The partition golden is 0xE00000 bytes.
+          test "$(stat -c %s "${OUT_DIR}/golden.pack")" -le $((0xE00000))
+      - name: Build the test app (ESP-IDF v6.1)
+        run: |
+          . "${IDF_PATH}/export.sh"
+          idf.py -C "${APP_DIR}" set-target esp32s3
+          idf.py -C "${APP_DIR}" build
+      - name: Flash image of 16 MB (bootloader, partition table, app, pack at 0x200000)
+        run: |
+          . "${IDF_PATH}/export.sh"
+          cd "${APP_DIR}/build"
+          python -m esptool --chip esp32s3 merge_bin -o "${OUT_DIR}/flash.bin" @flash_args 0x200000 "${OUT_DIR}/golden.pack"
+          size=$(stat -c %s "${OUT_DIR}/flash.bin")
+          test "${size}" -le $((16 * 1024 * 1024))
+          # The emulator takes 2, 4, 8 or 16 MB: fill with erased flash (0xFF) up to 16 MB.
+          head -c $((16 * 1024 * 1024 - size)) /dev/zero | tr '\0' '\377' >> "${OUT_DIR}/flash.bin"
+          test "$(stat -c %s "${OUT_DIR}/flash.bin")" -eq $((16 * 1024 * 1024))
+      - name: Run in the emulator (ESP32-S3, QEMU)
+        run: |
+          . "${IDF_PATH}/export.sh"
+          status=0
+          timeout 1800 qemu-system-xtensa -machine esp32s3 -nographic -no-reboot -monitor none \
+            -drive file="${OUT_DIR}/flash.bin",if=mtd,format=raw \
+            -serial file:"${OUT_DIR}/qemu.log" < /dev/null > /dev/null || status=$?
+          echo "qemu exit status ${status}"
+          ls -l "${OUT_DIR}/qemu.log"
+          tail -n 5 "${OUT_DIR}/qemu.log" || true
+      # SRS-036: no line "SINUS-EQUIVALENCE-END pass" (a crash, a timeout, a failed file) fails the job.
+      - name: Equivalence with the reference (ESP32-S3)
+        run: |
+          python3 libs/sinus-dsp/verification/emulator_log.py "${OUT_DIR}/qemu.log" --results "${OUT_DIR}/equivalence-esp32s3.md"
+      # SRS-036: the system test judges the files of the run against the requirement
+      # (SINUS_EMULATOR_DIR: qemu.log and equivalence-esp32s3.md; SINUS_GOLDEN_DIR: the vectors).
+      - name: System test of SRS-036 (results of the emulator run)
+        run: |
+          . "${IDF_PATH}/export.sh"
+          python3 -m pip install --quiet pytest==9.1.1
+          SINUS_EMULATOR_DIR="${OUT_DIR}" SINUS_GOLDEN_DIR="${GITHUB_WORKSPACE}/golden-vectors" \
+            python3 -m pytest -c dsp/pyproject.toml -p no:cacheprovider -rs \
+            libs/sinus-dsp/tests/system/test_srs_036_emulator_equivalence.py
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: equivalence-esp32s3
+          path: |
+            ${{ github.workspace }}/esp32s3-out/equivalence-esp32s3.md
+            ${{ github.workspace }}/esp32s3-out/qemu.log
+            ${{ github.workspace }}/golden-vectors/NOTICE.md
+          if-no-files-found: warn
