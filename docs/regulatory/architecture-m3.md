@@ -3,9 +3,9 @@
 _Part of the software architecture of Sinus. [`architecture.md`](architecture.md) holds the general architecture (§1 to §7 and §9 to §12) and the version, status and revision history of every part. Section numbers are those of the whole architecture: a reference such as §6.2 points to `architecture.md`, §8 to [`architecture-m1.md`](architecture-m1.md), §13 and §14 to [`architecture-m2.md`](architecture-m2.md)._
 
 This file holds three sections, written in this order:
-- **§15, Milestone 3 architecture of the desktop application** (this version): structure, threading, data flow, the stream frame format, the outline of each function, build, CI, tests, the feasibility of SRS-044 and the implementation plan;
-- **§16, display low-pass and mains tolerance** (next version): the detailed design of SRS-044 in `dsp` and `libs/sinus-dsp` and of SRS-054 in `dsp`;
-- **§17, detailed design of the desktop application** (the version after): SRS-039 to SRS-043 and SRS-045 to SRS-053, module by module, on the structure fixed here.
+- **§15, Milestone 3 architecture of the desktop application** (v0.5): structure, threading, data flow, the stream frame format, the outline of each function, build, CI, tests, the feasibility of SRS-044 and the implementation plan;
+- **§16, display low-pass and mains tolerance** (v0.6): the detailed design of SRS-044 in `dsp` and `libs/sinus-dsp` and of SRS-054 in `dsp`;
+- **§17, detailed design of the desktop application** (next version): SRS-039 to SRS-043 and SRS-045 to SRS-053, module by module, on the structure fixed here.
 
 ## 15. Milestone 3 architecture of the desktop application
 
@@ -264,3 +264,316 @@ The groups land in this order; a later group may start when the groups it depend
 | D9 | System verification: SRS-040 on the whole databases, SRS-047 through the test input, the Milestone 3 verification report | SRS-040, SRS-047 | §15.16, §17 | D7, D8 | Test engineer |
 
 Requirements tagged by QA (Verification level Requirement): SRS-039, SRS-041 to SRS-046, SRS-048 to SRS-053. By the test engineer (System): SRS-040, SRS-047, SRS-054. The implementer of a group never verifies it functionally (`sdp.md` §3.1, §6).
+
+## 16. Milestone 3 display low-pass and mains tolerance (SRS-044, SRS-054)
+
+This section is the detailed design (IEC 62304 §5.4) of SRS-044 in `dsp` and `libs/sinus-dsp`, with its effects on the golden vectors (SRS-015, SRS-033), the equivalence (SRS-034 to SRS-037) and the memory of the chain (SRS-032), and of SRS-054 in `dsp`. It builds on §15.7 and §15.17 (filter family and feasibility, approved on 2026-10-11). What holds unchanged: §7.1 (a causal reference; shared design formulas, stage order and initial state), §8.2 (module rules, errors, requirement citations, determinism), every rule of §13 and §14 not named below, ADR 0006, ADR 0007 and ADR 0008. The detection rules, the heart rate and the signal quality index do not change: the display stage reads the conditioned signal and feeds nothing.
+
+### 16.1 Decisions of this section
+
+| Topic | Decision | Section |
+|---|---|---|
+| Filter | Hamming-windowed sinc FIR, cut-off 50 Hz at every accepted sampling frequency, M = ⌊30·fs/1000 + 0.5⌋, N = 2M + 1 taps normalised to a sum of 1; constant delay of M samples | §16.2 |
+| Arithmetic | binary64 in both implementations, one written order of operations (taps in index order; no library convolution); the library rounds the output once to binary32 (the rule of ADR 0008 for conditioning, applied to this stage) | §16.2, §16.6 |
+| Input of the stage | The binary64 output of the mains stage, never its rounded value | §16.3, §16.6 |
+| Start | History filled with the first input of the stage (exactly 0.0 in the chain): the steady state of a constant input, as for every stage (§7.1) | §16.2 |
+| Delay compensation | The display value given with sample k belongs to index k − M; the first M values belong to no sample; the last M samples of a stream get no display value | §16.4 |
+| On and off | Reference `run_pipeline(..., display=True)`; library `Config::display_lowpass` (default `true`); off: the stage is not run | §16.3, §16.6 |
+| Golden vectors | Format version 3: header key `display_delay_samples`, section `[display_coefficients]`, column `display_mv`; readers accept version 3 only; ESP32-S3 pack version 2 | §16.5, §16.7 |
+| Equivalence | `display_mv` compared at every sample within 2e-5 mV, the conditioning tolerance (SRS-044); bound 1.05e-5 mV on the golden set | §16.7 |
+| Memory | About 1 000 bytes more per chain; about 52 600 bytes, limit 65 536 | §16.6 |
+| SRS-054 | System test on the reference, 40 runs; all pass on the prototype; reported in the Milestone 3 verification report | §16.9 |
+| Landing | D1 (reference and format) and D2 (library, reader and pack) merged into `develop` together | §16.11 |
+
+### 16.2 Display low-pass: design (SRS-044)
+
+**Coefficients**, computed at configuration in binary64 by the same expressions in both implementations, each operation in the order written (left to right):
+
+1. M = ⌊30 · fs / 1000 + 0.5⌋: the expression of `round_samples_ms(30, fs_hz)` (§8.2) and of §14.3, "Times in samples" (`std::floor(30.0 * fs_hz / 1000.0 + 0.5)`). N = 2M + 1.
+2. For k = 0 … N − 1, with j = k − M (an integer, converted exactly to binary64), fc = 50.0 Hz and `pi` the binary64 value nearest to π (Python `math.pi`; C++ `3.141592653589793`):
+   - ideal = `2.0 * fc / fs` for j = 0, otherwise `sin(2.0 * pi * fc * j / fs) / (pi * j)`;
+   - window = `0.54 - 0.46 * cos(2.0 * pi * k / (N - 1))`;
+   - raw[k] = window · ideal.
+3. total = raw[0] + raw[1] + … + raw[N − 1], added one at a time in index order (a plain loop; not `numpy.sum`, which adds pairwise, and not `math.fsum`).
+4. h[k] = raw[k] / total (a division, not a multiplication by the reciprocal).
+
+The taps are symmetric (h[k] = h[N − 1 − k], up to the last bit of `sin` and `cos`): the phase is linear and the group delay is M samples at every frequency.
+
+**Filtering**, one output per input sample, causal, with x the input of the stage and x[i] = x[0] for i < 0:
+
+  y[n] = (…((h[0]·x[n] + h[1]·x[n−1]) + h[2]·x[n−2]) + …) + h[N−1]·x[n−N+1]
+
+Each product and each sum is one binary64 operation, in the order of k, with no fused multiply-add.
+
+**Initial state.** The history holds x[0] at every earlier position: the steady state of a constant input equal to the first input (§7.1). In the chain the first input is the output of the mains stage at the first sample, which is exactly 0.0 (§14.3), so the history starts at zero and the first display value is 0.0. A constant input c that is a binary32 value gives exactly c after the rounding to binary32 (the taps sum to 1 within a few units of the last place of binary64; checked by the prototype on 2 000 values from −30 mV to 30 mV at five rates).
+
+**Parameters** (pure computation of the formula; method of §15.17):
+
+| fs | M | N | Delay | Gain 1–30 Hz | Gain at 40 Hz, 50 Hz | Attenuation from 80 Hz to Nyquist | Noise 40 Hz to Nyquist | Σ\|h\| |
+|---|---|---|---|---|---|---|---|---|
+| 125 Hz | 4 | 9 | 32.0 ms | −0.26 to +0.09 dB | −1.8 dB, −5.9 dB | no such band (Nyquist 62.5 Hz, where the gain is −11.6 dB) | −5.6 dB | 1.343 |
+| 250 Hz | 8 | 17 | 32.0 ms | −0.26 to +0.04 dB | −1.8 dB, −6.0 dB | ≥ 50.4 dB | −11.6 dB | 1.350 |
+| 360 Hz | 11 | 23 | 30.556 ms (11/360 s) | −0.33 to 0.00 dB | −2.0 dB, −6.0 dB | ≥ 53.6 dB | −13.9 dB | 1.324 |
+| 500 Hz | 15 | 31 | 30.0 ms | −0.36 to 0.00 dB | −2.0 dB, −6.1 dB | ≥ 51.4 dB | −15.6 dB | 1.294 |
+| 1000 Hz | 30 | 61 | 30.0 ms | −0.36 to 0.00 dB | −2.0 dB, −6.1 dB | ≥ 51.0 dB | −19.0 dB | 1.303 |
+
+- Over every sampling frequency from 125 Hz to 1000 Hz in steps of 0.5 Hz, Σ|h| is at most 1.40 (largest 1.395) and N at most 61 (M = 30 at 1000 Hz). The delay M/fs lies within 0.5/fs of 30 ms.
+- **Delay documented for SRS-044:** 11 samples (30.556 ms) at 360 Hz and 8 samples (32.0 ms) at 250 Hz, constant at every frequency.
+- **Cut-off at low sampling frequencies.** The cut-off stays 50 Hz at every accepted sampling frequency, including 125 Hz, where it is 0.8 of the Nyquist frequency: the formula needs no special case, and the gain from 1 Hz to 30 Hz stays between −0.57 dB and +0.09 dB at every rate (computed every 2.5 Hz of sampling frequency; the lowest at 147.5 Hz, where M = 4 is shortest relative to the rate). At 125 Hz the Nyquist frequency is below 80 Hz, so the attenuation criterion of SRS-044 has no band to apply to; the stage attenuates the Nyquist frequency by 11.6 dB and white noise from 40 Hz to the Nyquist frequency by 5.6 dB. SRS-044 states its criteria at 360 Hz and 250 Hz; the figures at other rates describe the replay of other records (§15.6) and are not requirements. A lower cut-off at low rates was rejected: it would move the gain at 30 Hz toward the ±1 dB limit for a few dB of noise at rates the device does not use.
+
+### 16.3 Reference (`dsp`)
+
+**Module** `dsp/sinus_dsp/display.py` (new; imports `_types`, `_units`, `errors`, `input_checks` only):
+
+```python
+DISPLAY_CUTOFF_HZ: Final = 50.0           # Hz
+DISPLAY_HALF_LENGTH_MS: Final = 30        # ms: M = round_samples_ms(30, fs)
+DISPLAY_MAX_DELAY_SAMPLES: Final = 30     # M at 1000 Hz
+
+def display_delay_samples(fs_hz: float) -> int: ...                                      # SRS-044
+def display_lowpass_taps(fs_hz: float) -> FloatArray: ...                                # SRS-044
+def apply_display_lowpass(taps: FloatArray, conditioned_mv: FloatArray) -> FloatArray: ...  # SRS-044
+def display_lowpass(conditioned_mv: npt.ArrayLike, fs_hz: float) -> FloatArray: ...      # SRS-044
+```
+
+- `display_delay_samples(fs_hz)`: M of §16.2, after `validate_fs(fs_hz)` (§13.2): `InvalidInputError` for a value that is not a real number, is not finite, or lies outside 125 Hz to 1000 Hz.
+- `display_lowpass_taps(fs_hz)`: a new float64 array of the N taps of §16.2, fs checked as above; computed with `math.sin` and `math.cos` on Python floats, in a loop, in the order of §16.2.
+- `apply_display_lowpass(taps, conditioned_mv)`: the filtering of §16.2, vectorised over the samples and looped over the taps:
+
+  ```python
+  n_taps = taps.size
+  padded = numpy.concatenate((numpy.full(n_taps - 1, x[0]), x))
+  y = taps[0] * padded[n_taps - 1 :]
+  for k in range(1, n_taps):
+      y = y + taps[k] * padded[n_taps - 1 - k : padded.size - k]
+  ```
+
+  Each NumPy operation is one correctly rounded binary64 operation per element, so the result depends neither on the machine nor on a BLAS library (unlike `numpy.convolve` and `scipy.signal.lfilter`, §14.11) and equals, bit for bit, the library's binary64 value for the same input. Checks, `InvalidInputError` otherwise: `taps` one-dimensional, of odd length, finite; `conditioned_mv` one-dimensional, of at least one sample, finite. The arguments are not modified; the output is a new array as long as the input.
+- `display_lowpass(conditioned_mv, fs_hz)`: converts the signal with `numpy.asarray(..., dtype=numpy.float64)`, checks it as above and returns `apply_display_lowpass(display_lowpass_taps(fs_hz), x)`. It does not apply the 10 s minimum and the 1000 mV bound of `validate_input`, which concern the raw input of the pipeline.
+
+**Pipeline** (`pipeline.py`):
+
+```python
+def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int, *, display: bool = True) -> PipelineResult: ...
+
+@dataclass(frozen=True)
+class PipelineResult:
+    ...                                   # the fields of §13.1, unchanged, then:
+    display_delay_samples: int            # M (§16.2)
+    display_taps: FloatArray              # the N taps
+    display_mv: FloatArray | None         # the display output, as long as the input; None with display=False
+```
+
+- `display` must be a `bool` (`InvalidInputError` otherwise, raised with the other argument checks, before any computation).
+- Order inside `run_pipeline`: the checks and `_condition` (unchanged); then, if `display`, `display_mv = apply_display_lowpass(taps, conditioned.mains_mv)` on the binary64 output of the mains stage; then the trace, the heart rate and the quality windows exactly as in §13.1. Nothing after the display stage reads its output. `display_delay_samples` and `display_taps` are filled whether `display` is on or off: they are part of the configuration.
+- `detect_beats` and `detect_marked` do not compute the display output (they stop after the trace, §13.3).
+- `STAGES` stays `("baseline", "mains")`: the display stage is a branch, not a stage in series before detection, and the golden vectors give it items of its own (§16.5).
+
+**Citations.** The public functions of `display.py` and `run_pipeline` cite SRS-044; `golden.golden_vector` and `render_golden_vector` cite SRS-044 for the export of the display output (with SRS-015 and SRS-033); `filters.mains_sos` cites SRS-054 (§16.9).
+
+### 16.4 Delay compensation, start and end of a stream (contract with the desktop, §15.7)
+
+- The display value given with the k-th sample of a stream (`SampleOutput::display_mv` after the sample k, or `display_mv[k]` of the reference) is the filtered value of **index k − M** of that stream. The desktop stores it at the session index segment start + k − M (§15.6, §15.7). The compensation is exact: a whole number of samples, the same at every frequency.
+- For k < M the value belongs to no sample (it comes from the history of §16.2) and is discarded. Indices 0 to M − 1 get their values with the samples M to 2M − 1.
+- The last M samples of a stream get no display value: a stream ends at a reset (gap, interruption, change of source or of the mains setting, start of a replay; §15.6) or when the samples stop. These samples are "no data" for the display (§15.7): 30.6 ms at 360 Hz, 32 ms at 250 Hz. The drawn edge of §15.7 is therefore at most the latest index that has a display value; the delay of 0.5 s is far longer than M samples, so this moves the edge only when data stops. The detail is §17.
+- Detections keep their indices (§13.3). The filter is symmetric, so the R peak of the compensated display trace lies at the same index as in the conditioned signal (prototype: no shift on the synthetic ECGs at 30, 75 and 200 bpm at either rate), and the marks of SRS-043 align with the drawn peaks.
+- The desktop takes M from `Chain::display_delay_samples()` (§16.6), never from a formula of its own.
+
+### 16.5 Golden-vector format, version 3 (SRS-015, SRS-033, SRS-044)
+
+Version 3 keeps every rule of §7.3 and §13.8 and adds the display stage. The writer writes version 3 only; the Python and C++ readers accept version 3 only (`format_version` is `3`), so a version 2 file is rejected for its version, at line 2, as version 1 files are since Milestone 2. The files are never stored (§7.5): CI exports them from the commit under test, and a local folder written before this change is written again with `export_golden.py`.
+
+**Header.** The keys of §13.8 in their order, with `format_version=3`, then one more key at the end: `display_delay_samples`, M of §16.2.
+
+**Sections**, always in this order: `[coefficients]`, `[display_coefficients]`, `[signals]`, `[beats]`, `[reference_beats]`, `[heart_rates]`, `[quality_windows]`, `[end]`.
+- `[display_coefficients]`: columns `tap,h`; 2M + 1 rows, one per tap k = 0 … 2M in order: k, then h[k].
+- `[signals]`: columns `input_mv`, `<stage>_mv` for each stage of `stages`, then `display_mv` (version 3: `input_mv,baseline_mv,mains_mv,display_mv`). The `display_mv` of row k is the value given with sample k, **not shifted** by M (§16.4), so that the library's output is compared at the same sample.
+- The other sections as in §13.8.
+
+```
+…
+n_quality_windows=7
+display_delay_samples=11
+[coefficients]
+stage,section,b0,b1,b2,a1,a2
+baseline,0,…
+mains,0,…
+[display_coefficients]
+tap,h
+0,…
+…
+22,…
+[signals]
+input_mv,baseline_mv,mains_mv,display_mv
+…
+```
+
+**Reader rules added** (each named at the line where the text breaks it, §7.3):
+- `display_delay_samples`: an integer of the syntax of §7.3, from 1 to 30 (`DISPLAY_MAX_DELAY_SAMPLES`, `kDisplayMaxDelaySamples`), named at its header line;
+- `[display_coefficients]`: the column line exactly `tap,h`; rows of two fields; `tap` equal to the row number counted from 0; `h` a float of §7.3; 2M + 1 rows, a different count named as the row counts of §7.3 (at the line found where the next row, or the next section, is expected);
+- `[signals]`: the column line of the stages followed by `,display_mv`; each row has one field more than in version 2.
+
+The readers do not check that M or the taps fit the sampling frequency: the equivalence check compares M with the library's (§16.7), the library's unit tests compare the taps, and QA's tests of SRS-015 compare both with the reference functions.
+
+**Interface changes** (`sinus_dsp.golden`):
+
+```python
+FORMAT_VERSION: Final = 3
+
+@dataclass(frozen=True)
+class GoldenVector:
+    ...                                   # the fields of §13.8, unchanged, then:
+    display_delay_samples: int            # M
+    display_taps: FloatArray              # the 2M + 1 taps
+    display_mv: FloatArray                # as long as input_mv, not shifted
+```
+
+`golden_vector` takes the new fields from `run_pipeline(..., display=True)`. `render_golden_vector` rejects with `InvalidInputError` a vector whose M is outside 1 to 30, whose taps are not 2M + 1, whose `display_mv` is not as long as the input, or that holds a value that is not finite (the export then fails naming the input, §7.3). Every text it returns is accepted by `parse_golden_vector`, which gives back an equal vector. `export_golden_vectors`, the script `export_golden.py`, its options and the set of inputs do not change.
+
+**Size.** One more float per row: about 8 MB more for the 32 files; the set is about 30 MB (§13.8: about 22 MB), still not stored.
+
+**Verification notes.**
+- QA (SRS-015 and SRS-033 in version 3; the export part of SRS-044): the tests of §13.8 with `format_version=3`; each file holds `display_delay_samples`, `[display_coefficients]` and the column `display_mv`; the values read back equal, bit for bit, `display_delay_samples(fs)`, `display_lowpass_taps(fs)` and `display_lowpass(mains_mv, fs)` called directly on the `mains_mv` of `run_pipeline` for the same input.
+- Developer's unit tests: one rejected text per new reader rule, with its line (M of 0, of 31, not an integer; a wrong column line of `[display_coefficients]` and of `[signals]`; a missing and an extra tap row; a tap number out of order; a `[signals]` row of three fields); the round trip render → parse; a version 2 file rejected for its version.
+
+### 16.6 Real-time library (`libs/sinus-dsp`)
+
+**Module** `display_lowpass` (new public header `include/sinus/dsp/display_lowpass.hpp`, source `src/display_lowpass.cpp`), citing SRS-044:
+
+```cpp
+// limits.hpp
+inline constexpr std::uint32_t kDisplayMaxDelaySamples = 30;                        // M at 1000 Hz
+inline constexpr std::size_t kDisplayTapCapacity = 2 * kDisplayMaxDelaySamples + 1;  // 61
+
+// display_lowpass.hpp (SRS-044)
+inline constexpr double kDisplayCutoffHz = 50.0;
+inline constexpr double kDisplayHalfLengthMs = 30.0;
+using DisplayTaps = std::array<double, kDisplayTapCapacity>;
+// Preconditions: a sampling frequency that validate accepts.
+[[nodiscard]] std::uint32_t display_delay_samples(double fs_hz) noexcept;        // M (§16.2)
+// Writes the 2M + 1 taps of §16.2 to taps[0 .. 2M] and 0.0 to the rest; returns 2M + 1.
+std::size_t display_lowpass_taps(double fs_hz, DisplayTaps& taps) noexcept;
+
+class DisplayLowpass {
+ public:
+  [[nodiscard]] Status configure(double fs_hz) noexcept;   // kInvalidSamplingFrequency as in §14.5
+  void reset() noexcept;                                    // the next sample starts a new stream
+  // Precondition: a finite value (the Chain gives the binary64 conditioned value).
+  [[nodiscard]] Status process(double conditioned_mv, float& display_mv) noexcept;  // kNotConfigured before configure
+  [[nodiscard]] std::uint32_t delay_samples() const noexcept;   // M; 0 when not configured
+  [[nodiscard]] std::size_t tap_count() const noexcept;         // N; 0 when not configured
+  [[nodiscard]] const DisplayTaps& taps() const noexcept;
+};
+```
+
+- `display_delay_samples` and `display_lowpass_taps`: the formulas of §16.2 with `std::floor`, `std::sin`, `std::cos` and `constexpr double kPi = 3.141592653589793` in the `.cpp` (C++17 has no `std::numbers`); the total added in index order; each tap divided by the total.
+- `process`: on the first sample after `configure` or `reset`, first fills the history with that value (§16.2); stores the value in a ring of N binary64 values indexed by the sample counter modulo N (one private helper, as in §14.4); then `acc = taps[0] * x`, `acc = acc + taps[k] * x[n − k]` for k = 1 … N − 1, and `display_mv = static_cast<float>(acc)`. All floating-point code is in the `.cpp` (§14.3, `-ffp-contract=off`).
+- `ConditionedSample` gains `double conditioned_f64_mv`: the binary64 output of the mains stage, of which `conditioned_mv` is the rounding. `Conditioner::process` sets it; nothing else in the conditioner changes.
+
+**Chain** (`config.hpp`, `chain.hpp`, which also cite SRS-044):
+
+```cpp
+struct Config {
+  double sampling_frequency_hz = 0.0;
+  int mains_frequency_hz = 0;      // 50 or 60
+  bool display_lowpass = true;     // SRS-044: the display stage on (true) or off
+};
+struct SampleOutput {
+  float baseline_mv = 0.0F;
+  float conditioned_mv = 0.0F;
+  float display_mv = 0.0F;         // SRS-044: the display value of index (this sample − M), §16.4
+  …                                // the other fields of §14.4, unchanged
+};
+class Chain {
+ public:
+  …                                // the members of §14.4, unchanged, then:
+  [[nodiscard]] std::uint32_t display_delay_samples() const noexcept;   // M; 0 when not configured
+};
+```
+
+- `configure` (§14.5): the checks and their order do not change (`display_lowpass` has no invalid value). On success the chain also configures its `DisplayLowpass`, whether the stage is on or off, so that `display_delay_samples()` gives M in both cases.
+- `process`: within one sample the order is conditioning; **display** (only if `display_lowpass`: `DisplayLowpass::process(conditioned.conditioned_f64_mv, out.display_mv)`); detection; heart rate; signal quality (§14.4, "Behaviour of `Chain::process`"). Detection and the rest take `conditioned_mv` (binary32) as before; nothing reads the display value.
+- With the stage off, it is not run, and `display_mv` is a quiet NaN at every processed sample (§14.4: a value that does not exist is a quiet NaN; `config().display_lowpass` says whether it exists). With any status other than `kOk`, `display_mv` is 0.0f like the other values (SRS-017, SRS-018: no output of any kind).
+- `reset` (§14.10, SRS-031) also restarts the display stage: after a reset the outputs, the display value included, are those of a newly configured chain given the same samples.
+- The C interface of SRS-038 (§14.14) does not change; its chain has the default configuration (stage on).
+
+**Arithmetic (ADR 0008).** The stage computes like the conditioning stages: binary64 from the binary64 conditioned value, one rounding to binary32 at the output. Filtering the rounded `conditioned_mv` instead would add the rounding of every conditioned value, up to Σ|h| · u · |x|, to the difference from the reference. ADR 0008 is not changed: it names the two stages of Milestone 2, and this section applies its rule to the third.
+
+**Memory (SRS-032, §14.10).** A new row of the table of §14.10: display stage, taps 61 × 8 bytes and history 61 × 8 bytes, M, N, the counter and the start flag: about 1 000 bytes. Total about 52 600 bytes, 80 % of the limit of 65 536 bytes; the `static_assert` of §14.10 is unchanged. No allocation in `configure`, `process` or `reset`; the `no_heap_symbols` check covers the new source, and QA's test of SRS-032 runs its configurations with the stage on (the default). `SampleOutput` grows by 4 bytes and stays outside the chain.
+
+**Cost on the ESP32-S3.** N software binary64 multiplications and N − 1 additions per sample: 45 operations at 360 Hz, about twice the two conditioning stages, still of the order of 1 % of one core (OP-014, measured with the firmware). A firmware that displays nothing can configure the stage off (Milestone 4).
+
+**Verification notes (developer's unit tests).** M and N at every rate from 125 Hz to 1000 Hz in steps of 0.5 Hz equal ⌊30·fs/1000 + 0.5⌋ and 2M + 1, with M ≤ 30; the taps at 125, 250, 360, 500 and 1000 Hz equal the formula, and those at 250 Hz and 360 Hz the `[display_coefficients]` of the golden vectors, within 1e-15 (absolute; `std::sin` and `std::cos` may differ in the last bit between C libraries, §14.3); symmetry within 1e-15; a constant binary32 input gives exactly that value; an impulse after a zero start gives the taps in order, rounded to binary32; `reset` equals a new configuration; `process` before `configure` returns `kNotConfigured`; with `display_lowpass` false, `display_mv` is NaN and every other field of `SampleOutput` equals, bit for bit, that of a chain with the stage on; `display_delay_samples()` is 0 before `configure`.
+
+### 16.7 Equivalence of the display output (SRS-034 to SRS-037, SRS-044)
+
+**Bound.** At each sample the library and the reference compute the same binary64 operations (§16.2) on their binary64 mains outputs, which differ only by the rounding of the input to binary32 carried through the stages (the binary64 recursions add below 1e-12 mV, §14.11). With u = 2⁻²⁴, the difference is therefore at most (G_d + 1) · u · max|x|, as in §14.11, where G_d is the ℓ1 gain from the input to the display output and the 1 is the final rounding to binary32. G_d ≤ 5.59 × 1.40 = 7.83 (both conditioning stages, §14.11, times Σ|h|, §16.2); computed from the impulse responses of the cascade at 125, 200, 250, 333.3, 360, 500 and 1000 Hz with both mains settings, it is at most 2.68. On the golden set (inputs within 20 mV) the bound is 8.83 · u · 20 mV = 1.05e-5 mV, below the tolerance of 2e-5 mV; it stays below it for inputs up to 38 mV in magnitude (50 mV for the conditioning stages, §14.11). A golden input above 38 mV in magnitude added to SRS-015 or SRS-033 needs this bound redone first. The measured difference is expected at the level of the conditioning stages (1.8e-6 mV, §14.11), mostly the final rounding.
+
+**Equivalence check** (`verification/equivalence`, §14.12). One more compared output, after `mains_mv`:
+
+| Output | Compared | Largest difference | Tolerance |
+|---|---|---|---|
+| `display_mv` | first the delay: the file's `display_delay_samples` against `Chain::display_delay_samples()` (a structural difference, text `delay <library>, file <file>`, `At sample` `—`); then every sample | max \|library − file\|, in binary64; `At sample` the sample number, as for `mains_mv` | 2e-5 mV |
+
+The chain is configured with the stage on (the default). The taps are not compared by the check (as the biquad coefficients, §14.4): the developer's unit tests compare them (§16.6). The results (§14.12) state `format version 3` in the row `Golden vectors` and one more row per file; the row `Chain size` gives the new size. SRS-037 needs no change: `display_mv` is one more compared output, with its largest difference, tolerance and outcome. `golden_reader` (C++) reads version 3 with the rules of §16.5; `golden_set` keeps the same 32 identifiers.
+
+**Pack, version 2** (§14.13). The header is unchanged except the pack version, 2; each file starts with the 4 bytes `GVF3`; after the coefficient rows come a `uint32` M and the 2M + 1 taps as `float64`; per sample, the input as `float32` and three `float64` (baseline, mains, display). The target rejects a pack of version 1. Size: 394 340 samples × 28 bytes plus the events, about 11.2 MB, within the partition `golden` (0xE00000 = 14 680 064 bytes), which the job already checks. The emulator run takes a few seconds more.
+
+**CI (SRS-035, SRS-036).** The jobs do not change: `dsp` exports version 3, `libs` checks it with the reader of version 3, `libs-esp32s3` packs it in version 2 and checks it in the emulator. Each reader accepts only its version, so the reference and the library change in the same merge (§16.11).
+
+**Verification notes.**
+- QA (SRS-034, C++ requirement test): the mutation test gains a copy with one `display_mv` value changed by more than 2e-5 mV, which fails and names the file, `display_mv` and the sample; and a copy with `display_delay_samples` and its tap rows changed, which fails with the delay difference.
+- QA (SRS-035, SRS-037): unchanged tests; the expected results texts gain the row `display_mv` and `format version 3`.
+- Test engineer (SRS-036): the system test of the emulator run (§14.13) expects the row `display_mv` for every file and format version 3; the log of a CI run, and of a run on a pack with one display value changed beyond the tolerance, is kept for the Milestone 3 verification report.
+
+### 16.8 Verification of SRS-044
+
+Two requirement tests, one per item (ADR 0006), both by QA: `dsp/tests/requirements/test_srs_044_display_lowpass.py` through `run_pipeline`, and `libs/sinus-dsp/tests/requirements/test_srs_044_display_lowpass.cpp` through `Chain::process`, one sample at a time, each sample the `static_cast<float>` of the binary64 signal. Both compute the same measures with the same criteria, at 360 Hz and 250 Hz, with the mains setting 50 Hz unless stated. "Display" is the display output (`PipelineResult.display_mv`, `SampleOutput::display_mv`), "conditioned" the output of the mains stage (`mains_mv`, `conditioned_mv`), both as binary64 for the measures; n is the number of samples.
+
+| # | Property (SRS-044) | Signal | Measure | Criterion | Expected (prototype on the reference) |
+|---|---|---|---|---|---|
+| 1 | Gain from 1 to 30 Hz | x[n] = sin(2π f n / fs) mV, f = 1, 5, 10, 20, 30 Hz, 10 s each (the shortest input that the reference accepts) | G = 20·log10(RMS(display[n/2 …]) / RMS(conditioned[n/2 …])), the second half | \|G\| ≤ 1 dB | 360 Hz: −0.33 dB (30 Hz) to 0.00 dB; 250 Hz: −0.26 dB (30 Hz) to +0.03 dB |
+| 2 | Attenuation | f = 80, 100, 120 Hz as in 1; at the Nyquist frequency x[n] = cos(π n) = (−1)ⁿ mV (a sine there samples to zero) | G as in 1 | G ≤ −20 dB | 360 Hz: −57.1, −61.1, −61.7 dB, −57.8 dB at 180 Hz; 250 Hz: −70.6, −60.8, −56.1 dB, −50.4 dB at 125 Hz |
+| 3 | Gain and attenuation at every frequency | the taps (`PipelineResult.display_taps`; in the library `display_lowpass_taps`, whose taps the chain uses) | \|H(f)\| = \|Σₖ h[k]·e^(−2πi f k / fs)\| on a 0.25 Hz grid from 1 to 30 Hz and from 80 Hz to the Nyquist frequency (included) | within ±1 dB; ≤ −20 dB | as in §16.2 |
+| 4 | Group delay | sinusoids of 10 s at f − 0.5 Hz and f + 0.5 Hz, f = 1, 10, 20, 30 Hz | at each frequency g, the phase φ of the display and of the conditioned signal by a least-squares fit of a·sin(2π g n / fs) + b·cos(2π g n / fs) over the second half; Δ = (φ_display − φ_conditioned)(f + 0.5) − (φ_display − φ_conditioned)(f − 0.5), wrapped into (−π, π]; τ(f) = −Δ / (2π · 1 Hz) | max τ − min τ ≤ 20 ms, and each τ within 0.01 ms of M/fs (30.556 ms at 360 Hz, 32.000 ms at 250 Hz): the documented constant delay | τ = M/fs at every f, within 1e-4 ms |
+| 5 | R-wave peak | the synthetic ECG of SRS-006 (§7.2 waveform, no interference), 30 s, at 30, 75 and 200 bpm | for each true R centre r with 2·fs ≤ r and r + M + w < n, w = ⌊50·fs/1000⌋: max(display[r+M−w … r+M+w]) / max(conditioned[r−w … r+w]) | every ratio ≥ 0.90 | 360 Hz: 0.990 to 0.991; 250 Hz: 0.993 to 0.994 |
+| 6 | Noise | the synthetic ECG at 75 bpm, 60 s (n = 60·fs), and the same plus noise w: Gaussian samples (below), band-limited by removing every DFT component below 40 Hz, scaled to an RMS of 0.1 mV over the 60 s | e_in = conditioned(ECG + w) − conditioned(ECG), e_out = display(ECG + w) − display(ECG); 20·log10(RMS(e_out) / RMS(e_in)) over the samples from 2·fs to the end | ≤ −6 dB | 360 Hz: −14.4 dB; 250 Hz: −12.0 dB |
+| 7 | Detection unchanged | (a) the synthetic ECGs of SRS-010: 30, 40, 75, 180, 200 bpm, 30 s, with the baseline wander and the interference at 50 Hz (setting 50) and at 60 Hz (setting 60); (b) the inputs of the golden vectors (below) | reference: `run_pipeline(x, fs, mains)` against `run_pipeline(x, fs, mains, display=False)`; library: two chains, `display_lowpass` true and false, given the same samples | reference: every field of `detections`, `heart_rate` and `quality`, and `baseline_mv`, `mains_mv`, identical (floats bit for bit); library: at every sample every field of `SampleOutput` except `display_mv` identical, bit for bit, and `display_mv` NaN with the stage off | identical by construction |
+
+- **Noise generation.** Python: `numpy.random.default_rng(seed).standard_normal(n)` with a seed fixed in the test, then `numpy.fft.rfft`, the bins whose frequency (`rfftfreq(n, 1 / fs)`) is below 40 Hz set to 0, `irfft(…, n)`, then the scaling. C++: the standard distributions differ between standard libraries, so the test uses its own generator (for example SplitMix64 and the Box–Muller transform, written in `tests/requirements/support`) and removes the components below 40 Hz by a direct DFT of those bins (2 400 bins for 60 s, at both rates), then scales. The noise differs between the two tests; each meets the criterion with a margin of about 6 dB.
+- **Inputs of the golden vectors (7 b).** Reference: `synthetic_set()` and `synthetic_event_set()` (26 inputs) in CI, and the six record segments in a separate test marked `needs_data`. Library: the inputs of the vector folder that its SRS-034 test reads, skipped with the reason when the folder is not given, as there.
+- **Delay variation and documentation.** Measure 4 checks both: the variation (criterion of SRS-044) and that the delay is the constant documented in §16.2.
+- SRS-044 has no desktop part: the desktop only draws the output (§15.7, §17).
+
+### 16.9 SRS-054: mains interference removal under a deviation (test engineer)
+
+- **Test.** `dsp/tests/system/test_srs_054_mains_deviation.py`, `@pytest.mark.requirement("SRS-054")`, synthetic only, so it runs in CI (no `needs_data`).
+- **Signals.** The synthetic ECG of SRS-006 at 30, 40, 75, 180 and 200 bpm, 30 s, at 360 Hz and at 250 Hz: the waveform of §7.2, beat k centred on ⌊(0.5 + k·RR)·fs + 0.5⌋ while 0.5 + k·RR ≤ 29.5 s (as the generator of QA's tests of SRS-010; the test engineer writes the same formulas in `tests/system`), plus 1.0 mV · sin(2π · 0.3 Hz · t) and 0.2 mV · sin(2π · f · t), t = n / fs, phase 0, added in this order. f = 49.5 Hz and 50.5 Hz with the mains setting 50 Hz; f = 59.5 Hz and 60.5 Hz with 60 Hz: 2 rates × 5 heart rates × 4 frequencies = 40 runs.
+- **Run.** `run_pipeline(x, fs, setting).beats`.
+- **Criteria** (those of SRS-006, as SRS-010 applies them): exactly one detection within ⌊0.150·fs⌋ samples of each true R centre and no other detection; indices strictly increasing and at least ⌈0.200·fs⌉ samples apart.
+- **Result.** The test fails if any run fails, and its message lists every failing run (fs, rate, frequency, setting) with its violations. The test engineer records the 40 outcomes in the Milestone 3 verification report, with the deviations for which the criterion holds; if a run fails, the design is not changed silently: the result is reported and the project manager opens an open point (SRS-054, rationale).
+- **Expected** (prototype on the reference of this branch, 2026-10-11): all 40 runs pass. For the report, not as a criterion: the 0.2 mV interference alone leaves, in the conditioned output from 5 s on, a residue of about 0.103 mV in amplitude at 49.5 and 50.5 Hz and 0.090 mV at 59.5 and 60.5 Hz: the notch (Q = 30, §8.6) attenuates a deviation of 0.5 Hz by about 6 dB only, and detection still meets SRS-006 because its band-pass (5–15 Hz) and thresholds reject the residue. On the display output the residue is reduced further by the display stage (−6.0 dB at 50 Hz, −14.0 dB at 60 Hz at 360 Hz).
+- **Citation.** The docstring of `filters.mains_sos` cites SRS-054 (the notch is what SRS-054 checks), so that SRS-054 is implemented in `dsp`; its system test lands on the same branch (ADR 0004, ADR 0006).
+
+### 16.10 Identity, digest and reports
+
+- D1 changes files under `dsp/sinus_dsp/` (`display.py`, `pipeline.py`, `golden.py`, the docstring of `filters.py`): the source digest changes (§8.14), so both validation reports are regenerated in the same change and `software_check.py` passes. Detection does not change, so the regenerated reports differ from the current ones only in the row `Software` (and `Runtime` if the machine's versions differ): any other difference shows a change of detection and stops the merge. The version stays `0.3.0.dev0`.
+- D2 changes `libs/sinus-dsp/include` and `src`: the library digest changes (§14.15); no stored file holds it (the equivalence results are CI artifacts).
+- The golden vectors carry the new reference digest; CI compares the library only with vectors of the same run (§7.5).
+
+### 16.11 Implementation order and verification by role
+
+D1 and D2 are developed on one branch, D1 first (SRS-044: the reference is written first), and merged into `develop` together, when both groups, QA's tests and the system test of SRS-054 pass: each reader accepts only its format version (§16.5), so D1 alone would fail the job `libs`.
+
+| Step | Group | Task | Requirements | Design |
+|---|---|---|---|---|
+| 1 | D1 | `display.py`: constants, `display_delay_samples`, `display_lowpass_taps`, `apply_display_lowpass`, `display_lowpass` | SRS-044 | §16.2, §16.3 |
+| 2 | D1 | `run_pipeline(..., display=True)` and the three fields of `PipelineResult` | SRS-044 | §16.3 |
+| 3 | D1 | Golden format version 3: `GoldenVector`, `golden_vector`, `render_golden_vector`, `parse_golden_vector` | SRS-015, SRS-033, SRS-044 | §16.5 |
+| 4 | D1 | `filters.mains_sos` cites SRS-054 | SRS-054 | §16.9 |
+| 5 | D1 | Both validation reports regenerated; traceability matrix regenerated | — | §16.10 |
+| 6 | D2 | `limits.hpp` capacities; `display_lowpass.hpp` and `.cpp` | SRS-044 | §16.6 |
+| 7 | D2 | `ConditionedSample::conditioned_f64_mv`; `Config::display_lowpass`; `SampleOutput::display_mv`; `Chain` (configure, process, reset, `display_delay_samples`) | SRS-044, SRS-031, SRS-032 | §16.6 |
+| 8 | D2 | `golden_reader` version 3; `equivalence` (`display_mv`, delay); `equivalence_report`; `golden_pack` version 2 and the target's pack reader | SRS-034 to SRS-037 | §16.7 |
+
+**Verification by role.** QA: SRS-044 in both items (§16.8); SRS-015 and SRS-033 tests moved to version 3 (§16.5); the SRS-034 mutation with `display_mv` and the expected texts of SRS-035 and SRS-037 (§16.7); SRS-032 run again with the new chain. Test engineer: SRS-054 (§16.9); SRS-036 system test with `display_mv` (§16.7). Developer: the unit tests of §16.5 and §16.6. QA's existing tests that check version 2 or its column lines are updated by QA, not by the developer (`sdp.md` §3.1).
