@@ -1,6 +1,6 @@
 # Software architecture
 
-_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.5, 2026-10-11. Status: approved by the project owner up to v0.4.4 (the dates are in the revision history); v0.4.1 is editorial; v0.5 (Milestone 3 architecture of the desktop application, §15, and ADR 0009) proposed, pending approval._
+_Inspired by IEC 62304 §5.3 (architectural design) and §5.4 (detailed design). Version 0.5, 2026-10-11. Status: approved by the project owner up to v0.4.4 (the dates are in the revision history); v0.4.1 is editorial; v0.5 (Milestone 3 architecture of the desktop application, §15, and ADR 0009) approved by the project owner on 2026-10-11, with the decisions on OP-082 and OP-083._
 
 This document describes **how** Sinus is built:
 - the software items and what each is responsible for;

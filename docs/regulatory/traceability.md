@@ -44,10 +44,10 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 | SRS-036 | Equivalence on the device processor | libs/sinus-dsp | M2 | System | `libs/sinus-dsp/verification/emulator_log.py:3`<br>`libs/sinus-dsp/verification/emulator_log.py:48`<br>`libs/sinus-dsp/verification/include/sinus/dsp/verification/golden_pack.hpp:3`<br>`libs/sinus-dsp/verification/include/sinus/dsp/verification/sha256.hpp:3`<br>`libs/sinus-dsp/verification/src/golden_pack.cpp:1`<br>`libs/sinus-dsp/verification/src/sha256.cpp:1`<br>`libs/sinus-dsp/verification/tools/golden_pack_main.cpp:1` | `libs/sinus-dsp/tests/system/test_srs_036_emulator_equivalence.py::test_emulator_run_meets_srs_036`<br>`libs/sinus-dsp/tests/system/test_srs_036_emulator_equivalence.py::test_job_runs_on_every_push_in_the_emulator_on_the_set`<br>`libs/sinus-dsp/tests/system/test_srs_036_emulator_equivalence.py::test_verdict_script_on_recorded_logs` | — |
 | SRS-037 | Content of the equivalence results | libs/sinus-dsp | M2 | Requirement | `libs/sinus-dsp/verification/include/sinus/dsp/verification/equivalence_report.hpp:3`<br>`libs/sinus-dsp/verification/src/equivalence_report.cpp:1`<br>`libs/sinus-dsp/verification/tools/equivalence_main.cpp:1` | `libs/sinus-dsp/tests/requirements/test_srs_037_equivalence_results.cpp::Srs037Fail.AMissingAndAnUnexpectedFileAreNamedInTheResults`<br>`libs/sinus-dsp/tests/requirements/test_srs_037_equivalence_results.cpp::Srs037Fail.FailingOutputsAreReportedAsFail`<br>`libs/sinus-dsp/tests/requirements/test_srs_037_equivalence_results.cpp::Srs037Header.ItemsOfTheResultsFile`<br>`libs/sinus-dsp/tests/requirements/test_srs_037_equivalence_results.cpp::Srs037Identity.BuildTargetIsStatedAsGiven`<br>`libs/sinus-dsp/tests/requirements/test_srs_037_equivalence_results.cpp::Srs037Identity.FilesFromTwoReferencesAreStated`<br>`libs/sinus-dsp/tests/requirements/test_srs_037_equivalence_results.cpp::Srs037Identity.LibraryVersionAndSourceDigestAreThoseQaComputes`<br>`libs/sinus-dsp/tests/requirements/test_srs_037_equivalence_results.cpp::Srs037Identity.ReferenceSoftwareIsThatOfTheFiles`<br>`libs/sinus-dsp/tests/requirements/test_srs_037_equivalence_results.cpp::Srs037Known.ReportedLargestDifferenceEqualsTheChange`<br>`libs/sinus-dsp/tests/requirements/test_srs_037_equivalence_results.cpp::Srs037Rows.EveryFileAndOutputHasLargestDifferenceToleranceAndOutcome`<br>`libs/sinus-dsp/tests/requirements/test_srs_037_equivalence_results.cpp::Srs037Rows.ResultsAreReproducible` | — |
 | SRS-038 | Detection by the real-time library on the reference databases | libs/sinus-dsp, dsp | M2 | System | `dsp/scripts/compare_library.py:113`<br>`dsp/scripts/compare_library.py:3`<br>`dsp/sinus_dsp/evaluation/harness.py:107`<br>`dsp/sinus_dsp/evaluation/harness.py:152`<br>`dsp/sinus_dsp/evaluation/harness.py:182`<br>`dsp/sinus_dsp/evaluation/harness.py:3`<br>`dsp/sinus_dsp/evaluation/harness.py:49`<br>`dsp/sinus_dsp/evaluation/harness.py:72`<br>`libs/sinus-dsp/harness/include/sinus_dsp_harness.h:1`<br>`libs/sinus-dsp/harness/src/sinus_dsp_harness.cpp:1` | `dsp/tests/system/test_srs_038_compare_library_script.py::test_compare_library_script_reports_equal_counts`<br>`libs/sinus-dsp/tests/system/test_srs_038_detection_on_databases.py::test_counts_equal_to_the_reference`<br>`libs/sinus-dsp/tests/system/test_srs_038_detection_on_databases.py::test_library_identity_is_that_of_the_version_file` | — |
-| SRS-039 | Replay source | desktop | M3 | Requirement | — | **none** | OP-083 |
+| SRS-039 | Replay source | desktop | M3 | Requirement | — | **none** | — |
 | SRS-040 | Replay gives the results of the real-time library | desktop | M3 | System | — | **none** | OP-007 |
 | SRS-041 | Data source indication | desktop | M3 | Requirement | — | **none** | — |
-| SRS-042 | Test input (UDP, local host only) | desktop | M3 | Requirement | — | **none** | OP-082 |
+| SRS-042 | Test input (UDP, local host only) | desktop | M3 | Requirement | — | **none** | — |
 | SRS-043 | Live waveform with beat marks | desktop | M3 | Requirement | — | **none** | — |
 | SRS-044 | Display low-pass | dsp, libs/sinus-dsp | M3 | Requirement | — | **none in dsp**<br>**none in libs/sinus-dsp** | — |
 | SRS-045 | Signal status | desktop | M3 | Requirement | — | **none** | OP-078 |
@@ -55,8 +55,8 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 | SRS-047 | Data interruption | desktop | M3 | System | — | **none** | — |
 | SRS-048 | Signal quality mark | desktop | M3 | Requirement | — | **none** | OP-074 |
 | SRS-049 | Intended-use statement | desktop | M3 | Requirement | — | **none** | — |
-| SRS-050 | Mains frequency setting | desktop | M3 | Requirement | — | **none** | OP-083 |
-| SRS-051 | Session recording | desktop | M3 | Requirement | — | **none** | OP-082 |
+| SRS-050 | Mains frequency setting | desktop | M3 | Requirement | — | **none** | — |
+| SRS-051 | Session recording | desktop | M3 | Requirement | — | **none** | — |
 | SRS-052 | Identification | desktop | M3 | Requirement | — | **none** | OP-076 |
 | SRS-053 | Accessible text of heart rate, reason and signal status | desktop | M3 | Requirement | — | **none** | — |
 | SRS-054 | Mains interference removal under a deviation of the mains frequency | dsp | M3 | System | — | **none** | — |
@@ -99,8 +99,6 @@ Outcome of `--release-gate` on milestones M0, M1, M2, M3: **fail**
 - OP-075: open point still targets M3; close or retarget it
 - OP-076: open point still targets M3; close or retarget it
 - OP-081: open point still targets M3; close or retarget it
-- OP-082: open point still targets M3; close or retarget it
-- OP-083: open point still targets M3; close or retarget it
 - dsp/pyproject.toml: version 0.3.0.dev0 is a development version, not a release
 
 ## Gaps
@@ -109,4 +107,4 @@ Outcome of `--release-gate` on milestones M0, M1, M2, M3: **fail**
 - Implemented requirements without tests: none
 - Unknown IDs referenced in code/tests: none
 - Open points citing undefined IDs: none
-- Open points still open: 38 (see `open-points.md`)
+- Open points still open: 36 (see `open-points.md`)
