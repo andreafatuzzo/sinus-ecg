@@ -582,7 +582,7 @@ D1 and D2 are developed on one branch, D1 first (SRS-044: the reference is writt
 
 ## 17. Milestone 3 detailed design of the desktop application
 
-This section is the detailed design (IEC 62304 §5.4) of the desktop application on the structure of §15. **Part 1** (v0.7, §17.1 to §17.16) covers groups D4 and D5 of §15.18: the WFDB reader and writer of `core` (OP-050) and the sources and processing of `core`, with SRS-039, SRS-040, the source rules of SRS-041 and the processing part of SRS-050. Part 2 (next version) covers D6 (display model, marks, signal status, heart-rate display, quality mark: SRS-043, SRS-045, SRS-046, SRS-048), D7 (UDP test input, recorder: SRS-042, SRS-051, SRS-052) and D8 (user interface: the display part of SRS-041, SRS-049, the setting of SRS-050, the About box of SRS-052, SRS-053). What holds unchanged: §15 and §16.4, ADR 0007, ADR 0009, and the library interface of §14.4 with §16.6.
+This section is the detailed design (IEC 62304 §5.4) of the desktop application on the structure of §15. **Part 1** (v0.7, §17.1 to §17.16) covers groups D4 and D5 of §15.18: the WFDB reader and writer of `core` (OP-050) and the sources and processing of `core`, with SRS-039, SRS-040, the source rules of SRS-041 and the processing part of SRS-050. **Part 2** (v0.8, §17.17 to §17.29) covers D6 (display model, marks, signal status, heart-rate display, quality mark: SRS-043, SRS-045, SRS-046, SRS-048), D7 (UDP test input, recorder: SRS-042, SRS-051, SRS-052 in recordings) and the design of the system test of SRS-047. Part 3 (next version) covers D8 (user interface: the display part of SRS-041, SRS-049, the setting of SRS-050, the About box of SRS-052, SRS-053). What holds unchanged: §15 and §16.4, ADR 0007, ADR 0009, and the library interface of §14.4 with §16.6.
 
 ### 17.1 Conventions of `core`
 
@@ -817,7 +817,7 @@ class WfdbRecordingWriter {
 ```
 
 - `open`: `record_name` matches `[A-Za-z0-9_]{1,64}` (`kInvalidName`); the format and metadata satisfy the rules above, with the gain above 0 and `fs_millihertz` from 125 000 to 1 000 000 (`kInvalidMetadata`); none of `<n>.hea`, `<n>.dat`, `<n>.hea.partial`, `<n>.dat.partial` exists in `folder` (`kAlreadyExists`: nothing is ever overwritten); then `<n>.dat.partial` is created (`kWriteFailed` if it cannot be).
-- `append`: each sample becomes `d = std::round(static_cast<double>(x) * gain) + baseline` (half away from zero); d outside −32767 to 32767 is `kSampleOutOfFormat` (−32768 is the invalid-sample code; OP-082 (a): a failure, never a clipped value). For gain 1000 the product of a binary32 value and 1000 is exact in binary64, so the stored value is within half an adu of the source (SRS-051); for a replay, written with the source's gain and baseline, `d` is the source's own value (the binary32 rounding moves (d − b)/g by at most 2⁻²⁴ relative, far below half an adu for |d − b| < 65 536), so the round trip is exact. Values go to a 64 KiB buffer written to the stream when full; the stream state is checked after each write (`kWriteFailed`, which covers a full disk). The first value and the running sum (for the checksum) are kept.
+- `append`: each sample becomes `d = std::round(static_cast<double>(x) * gain) + baseline` (half away from zero); a sample that is not finite, and d outside −32767 to 32767, is `kSampleOutOfFormat` (the finiteness is checked first: a NaN fails every comparison) (−32768 is the invalid-sample code; OP-082 (a): a failure, never a clipped value). For gain 1000 the product of a binary32 value and 1000 is exact in binary64, so the stored value is within half an adu of the source (SRS-051); for a replay, written with the source's gain and baseline, `d` is the source's own value (the binary32 rounding moves (d − b)/g by at most 2⁻²⁴ relative, far below half an adu for |d − b| < 65 536), so the round trip is exact. Values go to a 64 KiB buffer written to the stream when full; the stream state is checked after each write (`kWriteFailed`, which covers a full disk). The first value and the running sum (for the checksum) are kept.
 - `add_event`: stamps `at_sample` = the current sample count; an event at sample count 0 is not stored (the recording starts with a segment anyway); a second event at the same position replaces nothing and is not stored; the 10 001st event is `kTooManyEvents`.
 - `finish`: 0 samples is `kEmptyRecording`; otherwise it flushes and closes `<n>.dat.partial`, writes `<n>.hea.partial` (record line, signal line, comment lines), closes it, checks both, renames `<n>.dat.partial` to `<n>.dat`, then `<n>.hea.partial` to `<n>.hea` (`std::filesystem::rename` with an error code). Any failure is `kWriteFailed`; the files are left as they are, and without `<n>.hea` nothing loads as a record (RC-020).
 - **After a failure** every later call returns `kWriterFailed` and writes nothing; the `.partial` files stay (SRS-051: "a file that names itself incomplete"). The writer never deletes a file.
@@ -915,6 +915,7 @@ struct Frame {
   TimePoint received_at{};          // receipt on the application clock (scheduled release for a replay)
   std::uint32_t source_session = 0; // the selection it belongs to (§17.12)
   bool starts_segment = false;      // replay of a recorded event (§17.11); false from the codec
+  RecordingEvent replayed_event{};  // with starts_segment: the recorded event it reproduces (§17.25)
 };
 enum class StreamItemKind : std::uint8_t { kFrame, kReplayPaused, kReplayResumed, kReplayEnded };
 struct StreamItem {
@@ -1036,7 +1037,7 @@ class ReplaySource {       // thread-safe: one mutex guards the state
 };
 ```
 
-- **Frames.** Starting at record position `start_sample`, each frame holds `nominal_frame_samples(fs)` samples (18 at 360 Hz, 13 at 250 Hz; 6 to 50 over 125 to 1000 Hz), fewer only for the last frame of the record or before a recorded event; samples are `wfdb.sample_mv(p)`. Wire fields: `source` 3, `stream_id` 1, `sequence` 0, 1, 2, …, `fs_millihertz` of the header, `flags` 0; `first_sample` is the stream position: 0 for the first sample, increased by the frame's count, and by `missing_samples` at each recorded event. In memory: `source_session` as constructed, `received_at` = the scheduled release time, `starts_segment` true on the first frame after a recorded event at a position after `start_sample` (events at or before it are skipped).
+- **Frames.** Starting at record position `start_sample`, each frame holds `nominal_frame_samples(fs)` samples (18 at 360 Hz, 13 at 250 Hz; 6 to 50 over 125 to 1000 Hz), fewer only for the last frame of the record or before a recorded event; samples are `wfdb.sample_mv(p)`. Wire fields: `source` 3, `stream_id` 1, `sequence` 0, 1, 2, …, `fs_millihertz` of the header, `flags` 0; `first_sample` is the stream position: 0 for the first sample, increased by the frame's count, and by `missing_samples` at each recorded event. In memory: `source_session` as constructed, `received_at` = the scheduled release time, `starts_segment` true on the first frame after a recorded event at a position after `start_sample` (events at or before it are skipped), with `replayed_event` a copy of that event (v0.8: a recording of the replay copies it, §17.25).
 - **Pacing** (SRS-039). The frame whose last sample has stream position L is due at t0 + `release_offset(L + 1, fs, speed)`, where `release_offset` computes, in integers, q = (count · 1000) / (fs_mHz · speed), r = the remainder, and q · 10⁹ + ⌊r · 10⁹ / (fs_mHz · speed)⌋ ns (no overflow for 24 h plus the largest gaps). Every due time is computed from t0, never accumulated, so no drift builds up: the frame holding the sample 60·fs − 1 of the replay is due exactly 60/speed s after t0, and a scheduling delay of the thread does not carry over to later frames (on Windows the timer granularity is about 16 ms, below the 1 % of 6 s at 10 times).
 - **`poll(now, sink)`**: when playing, offers in order every frame due at or before `now`; a refused offer stops the poll and the frame is offered again at the next poll (`next_due` = now + 5 ms). After the last frame it offers the notice `kReplayEnded` (time: the last frame's due time) and enters `kEnded`; `finished` is true from then on and in `kStopped`. A pending pause or resume notice is offered first (below). Otherwise `next_due` is the next frame's due time; while paused it is now + 1 s (the thread is woken by `resume`).
 - **Pause and resume** (SRS-039 v0.9.1). `pause(now)` stops the releases and queues the notice `kReplayPaused` at `now`; `resume(now)` adds `now − pause time` to t0, queues `kReplayResumed` at `now`, and the releases continue with the next sample, in the same stream and segment. The speed and the start position cannot change on a source: a change is `stop()` and a new `ReplaySource` with a new session, which starts a new segment (SRS-039, SRS-031).
@@ -1157,7 +1158,7 @@ struct Snapshot {
   std::uint64_t generation = 0;
   TimePoint taken_at{};
   ProcessorState processor;
-  // D6 adds the display window, marks, status, heart rate and quality mark (§17 part 2)
+  LiveViewData view;   // D6: display model, marks, status, heart rate, quality mark (§17.23)
 };
 class SnapshotExchange {
  public:
@@ -1253,4 +1254,449 @@ QA's tests are in `desktop/tests/requirements/` (`sinus_desktop_requirement_test
 
 D4 is verified by the developer's tests and the cross-checks alone (OP-050 closes when it is merged). D5 lands with QA's tests of SRS-039, SRS-041 (source rules) and SRS-050 (processing) and the test engineer's subset test of SRS-040, on the same branch, because its code cites them (ADR 0004).
 
-**Part 2** (next version of this section) designs D6 (display model and drawing input, marks, signal status, heart-rate display, quality mark: SRS-043, SRS-045, SRS-046, SRS-048, on `ResultSink`-like hooks of the processor and its `tick`), D7 (UDP test input with its rejection counters, the recorder thread on `WfdbRecordingWriter` with the events of §17.12: SRS-042, SRS-051, SRS-052 in recordings) and D8 (main window, banner texts, the word "REPLAY" in the waveform area, mains control, replay controls, record command, About box, accessibility: the display part of SRS-041, SRS-049, the setting of SRS-050, SRS-052, SRS-053), and the test engineer's SRS-047 (D9).
+**Part 2** (v0.8, §17.17 onwards) designs D6, D7 and the test of SRS-047; D8 follows in part 3. As planned in v0.7, part 2 was to design D6 (display model and drawing input, marks, signal status, heart-rate display, quality mark: SRS-043, SRS-045, SRS-046, SRS-048, on `ResultSink`-like hooks of the processor and its `tick`), D7 (UDP test input with its rejection counters, the recorder thread on `WfdbRecordingWriter` with the events of §17.12: SRS-042, SRS-051, SRS-052 in recordings) and D8 (main window, banner texts, the word "REPLAY" in the waveform area, mains control, replay controls, record command, About box, accessibility: the display part of SRS-041, SRS-049, the setting of SRS-050, SRS-052, SRS-053), and the test engineer's SRS-047 (D9).
+
+### 17.17 Part 2: scope and modules (D6, D7)
+
+Part 2 (v0.8) designs group D6 (the display model and the drawing input, the marks, the signal status, the heart-rate display and the quality mark, in `core`: SRS-043, SRS-045, SRS-046, SRS-048), group D7 (the UDP test input in `core` and `io`, the recorder in `core`: SRS-042, SRS-051, SRS-052 in recordings) and the system test of SRS-047 (D9). The conventions of §17.1 hold; `io` follows them too, except that it uses Qt types inside its classes.
+
+| Module | Group | Content |
+|---|---|---|
+| `core/display_texts` | D6 | every text that `core` gives the user interface: status, reasons, heart rate, quality mark, test input (§17.18) |
+| `core/display_model` | D6 | `DisplayModel` (values, frame timings, marks, drawn edge), `make_drawing_input` (§17.19) |
+| `core/signal_status` | D6 | `StreamActivity`, `SignalStatus`, `evaluate_signal_status` (§17.20) |
+| `core/heart_rate_display` | D6 | `HeartRateDisplay`, `RestartHold`, `evaluate_heart_rate_display` (§17.21) |
+| `core/live_view` | D6 | `QualityMark`, `LiveViewData`, `LiveView` (§17.22, §17.23) |
+| `core/test_input` | D7 | `TestInputReceiver`, counters, selection of the test input (§17.24) |
+| `io/udp_test_input` | D7 | `UdpTestInput` (socket and thread) (§17.24) |
+| `core/recorder` | D7 | `RecordingRequest`, `RecordingChannel`, `RecorderThread`, recorder status and texts (§17.25) |
+
+`stream_processor` and `snapshot` (D5) are extended as §17.23 and §17.25 state.
+
+### 17.18 Display texts (D6, D7; SRS-041, SRS-042, SRS-045, SRS-046, SRS-048)
+
+All texts are ASCII and are given by `core` (`display_texts.hpp`); the user interface shows them as they are (D8). QA's tests compare with these constants, and the user interface's tests with the text shown.
+
+```cpp
+enum class StatusReason : std::uint8_t {
+  kNone, kNoData, kDataInterrupted, kReplayPaused, kReplayEnded, kCheckingSignalQuality, kLowSignalQuality,
+};
+enum class HeartRateReason : std::uint8_t {
+  kNone, kNoData, kNotEnoughBeats, kNoRecentBeat, kOutOfRange, kSignalNotUsable, kDataInterrupted,
+  kReplayPaused, kReplayEnded,
+};
+enum class QualityMark : std::uint8_t { kNone, kUsable, kNotUsable };
+[[nodiscard]] std::string_view status_text(const SignalStatus& status) noexcept;
+[[nodiscard]] std::string_view status_reason_text(StatusReason reason) noexcept;
+[[nodiscard]] std::string heart_rate_text(const HeartRateDisplay& heart_rate);   // the value or "--"
+[[nodiscard]] std::string_view heart_rate_reason_text(HeartRateReason reason) noexcept;
+[[nodiscard]] std::string_view quality_mark_text(QualityMark mark) noexcept;
+inline constexpr std::string_view kTestInputLabel = "TEST INPUT";
+inline constexpr std::string_view kTestInputWarning = "The test input is never to be used with a worn device.";
+```
+
+| Function | Value | Text |
+|---|---|---|
+| `status_text` | usable / not usable | `usable` / `not usable` |
+| `status_reason_text` | `kNone` | (empty: the status is usable) |
+| | `kNoData` | `no data` |
+| | `kDataInterrupted` | `data interrupted` |
+| | `kReplayPaused` | `replay paused` |
+| | `kReplayEnded` | `replay ended` |
+| | `kCheckingSignalQuality` | `checking signal quality` |
+| | `kLowSignalQuality` | `low signal quality` |
+| `heart_rate_text` | a value v | `<v> bpm`, v in decimal without sign or leading zero (`std::to_string`, which does not depend on the locale): `72 bpm` |
+| | withheld | `--` (two hyphen-minus characters) |
+| `heart_rate_reason_text` | `kNone` | (empty: a value is shown) |
+| | `kNoData` | `no data` |
+| | `kNotEnoughBeats` | `not enough beats` |
+| | `kNoRecentBeat` | `no recent beat` |
+| | `kOutOfRange` | `out of range` |
+| | `kSignalNotUsable` | `signal not usable` |
+| | `kDataInterrupted` | `data interrupted` |
+| | `kReplayPaused` | `replay paused` |
+| | `kReplayEnded` | `replay ended` |
+| `quality_mark_text` | `kNone` | (empty: no window in the current segment yet) |
+| | `kUsable` | `Signal usable` |
+| | `kNotUsable` | `Signal not usable: low quality` |
+
+The words of SRS-045, SRS-046 and SRS-048 are used as written. Two texts are not in those lists and are reported for the requirements (§17.29): `no data`, the status and heart-rate reason before the first sample of a source and with no source; and the heart-rate reason `signal not usable` while the status reason is `checking signal quality`. The labels that name each text ("Signal status", "Heart rate", …), the banner and the record command's texts are part 3 (D8).
+
+### 17.19 Display model and drawing input (D6; SRS-043)
+
+**Parameters.**
+
+```cpp
+inline constexpr Duration kDisplayDelay = std::chrono::milliseconds(500);   // SRS-043
+inline constexpr Duration kMarkLookahead = std::chrono::milliseconds(100);  // below
+// Samples of the 10 s window: 10 · fs rounded half up, from fs in mHz (3600 at 360 Hz, 2500 at 250 Hz, 1285 at 128.5 Hz).
+[[nodiscard]] constexpr std::uint64_t window_samples(std::uint32_t fs_millihertz) noexcept {
+  return (static_cast<std::uint64_t>(fs_millihertz) + 50U) / 100U;
+}
+```
+
+**Model.** One `DisplayModel` per timeline (§17.12): values in session indices, the timing of the frames, and the marks.
+
+```cpp
+enum class MarkShape : std::uint8_t { kFilled, kHollow };          // reliable, start-up (SRS-022)
+enum class MarkState : std::uint8_t { kPending, kShown, kSuppressed };
+struct BeatMark { std::uint64_t index = 0; MarkShape shape = MarkShape::kFilled; MarkState state = MarkState::kPending; };
+struct FrameTiming { std::uint64_t first_index = 0; std::uint16_t count = 0; TimePoint received_at{}; };
+class DisplayModel {   // a value type: copied into each snapshot (copy assignment reuses the capacity)
+ public:
+  static constexpr std::size_t kFrameTimingCapacity = 1024;
+  static constexpr std::size_t kMarkCapacity = 256;
+  void clear() noexcept;                                                  // no timeline
+  void start_timeline(std::uint32_t fs_millihertz, std::uint32_t release_speed);   // allocates; all "no data"
+  void add_frame(std::uint64_t first_index, std::uint16_t count, TimePoint received_at) noexcept;
+  void set_value(std::uint64_t index, float display_mv) noexcept;
+  void add_mark(std::uint64_t index, MarkShape shape) noexcept;
+  void decide_marks(TimePoint now, bool status_usable) noexcept;
+  [[nodiscard]] bool has_timeline() const noexcept;
+  [[nodiscard]] std::uint32_t fs_millihertz() const noexcept;
+  [[nodiscard]] std::uint64_t window_samples() const noexcept;
+  [[nodiscard]] float value(std::uint64_t index) const noexcept;          // quiet NaN: no data
+  [[nodiscard]] std::optional<std::uint64_t> drawn_edge(TimePoint now) const noexcept;
+  [[nodiscard]] const std::vector<BeatMark>& marks() const noexcept;      // increasing index
+};
+```
+
+- **Values.** A ring of C = 2·W floats (W = `window_samples`), a quiet NaN meaning "no data" (the build has no `-ffast-math`, §15.15). It holds the session indices from `newest − C + 1` to `newest`, where `newest` is the last index of the latest frame given to `add_frame`. When `add_frame` moves `newest` forward, every entry of the new indices is set to "no data" first: the samples lost in a gap, the M samples at the end of every segment that never get a display value (§16.4), and the samples not yet filtered stay "no data". `set_value` stores a value whose index lies in the ring and ignores any other; `value` returns "no data" outside the ring. The latest index given a value is kept (`latest_value_index`). C = 2·W keeps 10 s ahead of the drawn window, more than the 0.5 s of the delay at 10 times speed (5 s of samples).
+- **Frame timings.** A ring of 1024 `FrameTiming`, the newest last. The time of acquisition of sample i of frame f, with `last = first_index + count − 1` and r = fs · speed (`release_speed` is the replay speed, 1 for every other source), is `received_at − (last − i) / r` (§15.7; v0.8: for a replay the samples of a frame are spread at the release rate, so the times grow from frame to frame at every speed). 1024 frames cover at least 1.02 s at 1000 frames per second, more than the delay plus the look-ahead.
+- **Drawn edge** at time t: the largest index i with a value (i ≤ `latest_value_index`) whose time of acquisition is at most t − 0.5 s. Computed in integers: the frames are taken from the newest; for frame f, d = `received_at` − (t − 0.5 s) in ns; d ≤ 0 gives `last`; d ≥ 1 s gives none (no frame spans 1 s: at most 64 samples at 125 Hz, 0.512 s); otherwise k = ⌈d · fs_mHz · speed / 10¹²⌉ (below 10¹⁶, no overflow), which gives `last − k` when k < count and none otherwise. The first frame, from the newest, that gives an index gives the edge (older frames hold smaller indices), then `min(edge, latest_value_index)`. No index: no edge (`std::nullopt`), unless frame timings were dropped from the ring, in which case the edge is the oldest kept frame's `first_index − 1` (only a sender far faster than real time reaches this). When data stop, the edge stops at the last sample with a value (§15.7, §16.4); during a pause of a replay it stops 0.5 s after the pause and starts again 0.5 s after the resume.
+- **Marks.** `add_mark` inserts in increasing index (a mark at an index already present is ignored), in state `kPending`, and drops the oldest when 256 marks are held or when the index left the ring. `decide_marks(now, usable)` decides every pending mark whose index is at most `drawn_edge(now + kMarkLookahead)`: `kShown` when the status is usable, `kSuppressed` otherwise. A decision is never changed: a mark shown stays shown and a suppressed mark is never drawn (SRS-043, §15.7). The look-ahead of 100 ms decides a mark before the trace reaches it, so that it appears with its R peak although the processor decides at most every 50 ms (§17.23); a mark reported within 0.35 s (SRS-021) in frames of at most about 0.1 s (18 samples at 360 Hz: 47 ms) is known at most 0.40 s after its acquisition and decided between 0.40 s and 0.45 s, before the trace reaches it at 0.5 s. A mark reported later (search-back, or frames longer than 0.1 s) has its index behind the edge and is decided at its report: it is added onto the trace already drawn, at its index. The status used is that of the decision, up to 100 ms before the trace reaches the mark.
+- `start_timeline` reuses the vectors' capacity when the window has the same size; `clear` keeps it.
+
+**Drawing input.** What the waveform widget paints (D8); computed in `core` so that SRS-043 is tested without Qt.
+
+```cpp
+struct TraceColumn {
+  std::int32_t x_px = 0;
+  float first_mv = 0.0F, last_mv = 0.0F, min_mv = 0.0F, max_mv = 0.0F;   // of the samples of the column, in index order
+  bool joins_previous = false;   // the previous column holds the sample just before this column's first
+};
+struct DrawnMark { std::uint64_t index = 0; std::int32_t x_px = 0; MarkShape shape = MarkShape::kFilled; };
+struct DrawingInput {
+  bool has_edge = false;
+  std::uint64_t first_index = 0, edge_index = 0;   // the window drawn: first_index .. edge_index
+  std::int32_t cursor_x_px = 0;                    // sweep_x_px(edge_index + 1)
+  std::vector<TraceColumn> columns;                // increasing index
+  std::vector<DrawnMark> marks;                    // shown marks of the window, increasing index
+};
+// floor((index mod W) · width_px / W): the fixed position of an index in the sweep (§15.7).
+[[nodiscard]] std::int32_t sweep_x_px(std::uint64_t index, std::uint64_t window_samples, std::int32_t width_px) noexcept;
+void make_drawing_input(const DisplayModel& model, TimePoint now, std::int32_t width_px, DrawingInput& out);
+```
+
+- No timeline, no edge, or `width_px < 1`: `has_edge` false and both vectors empty. Otherwise E = `drawn_edge(now)`, `first_index` = E − W + 1 (0 when E < W − 1): the window spans 10 s once the timeline has 10 s (SRS-043).
+- The indices from `first_index` to E are taken in order. A **run** is a maximal stretch of consecutive indices with values that does not cross the left border (an index with `index mod W == 0` starts a new run): a gap, the M samples of a segment end and the border of the sweep therefore break the trace, and nothing is ever drawn across them (HAZ-012). Within a run, consecutive samples with the same `x_px` form one column (minimum, maximum, first and last value: no sample is skipped when there are more samples than pixels); `joins_previous` is true for every column of a run but its first. The widget draws, for each column, a vertical line from `min_mv` to `max_mv` and, when `joins_previous`, a line from the previous column's `last_mv` to its `first_mv`. When there are fewer samples than pixels, each column holds one sample and the lines join them.
+- `marks`: the marks in state `kShown` with an index from `first_index` to E, at `sweep_x_px(index)`. Pending marks are not drawn, even when the look-ahead has passed them.
+- The vertical scale (mV to pixels) and the shape of the marks (filled or hollow triangle above the trace, §15.7) are part 3; `out`'s vectors keep their capacity from one call to the next.
+- The waveform widget repaints at about 60 Hz (D8): the drawing input is exact at each paint, and the repaint period (16.7 ms) keeps the drawn edge within 20 ms of the 0.5 s on the screen (SRS-043).
+
+### 17.20 Signal status (D6; SRS-045)
+
+```cpp
+enum class StreamActivity : std::uint8_t { kNoData, kPlaying, kPaused, kEnded };
+struct SignalStatus { bool usable = false; StatusReason reason = StatusReason::kNoData; };
+struct SignalStatusInputs {
+  StreamActivity activity = StreamActivity::kNoData;
+  bool interrupted = false;      // 1 s without samples while playing (§17.12)
+  bool has_window = false;       // a window was reported in the current segment
+  bool window_usable = false;    // the latest one is marked usable (SRS-027)
+};
+[[nodiscard]] SignalStatus evaluate_signal_status(const SignalStatusInputs& in) noexcept;
+```
+
+The processor maps its `run_state` (§17.12): `kNoSource` and `kWaiting` to `kNoData`, `kRunning` to `kPlaying`, `kPaused` and `kEnded` to themselves. The status is not usable with the first reason that applies, in this order, and usable otherwise:
+
+1. `kNoData`: no source, or no sample yet since the source was selected.
+2. `kDataInterrupted`: playing and `interrupted`. While paused or ended the 1 s rule does not run (SRS-045 v0.9.1), so a replay that stalled and was then paused reads "replay paused".
+3. `kReplayPaused`, `kReplayEnded`: the replay is paused, or has ended (SRS-039).
+4. `kCheckingSignalQuality`: no window yet in the current segment, that is since the start of the stream or the last reset (SRS-031): a gap, an interruption, a change of the mains setting and a new stream all start one (§17.12), and the status reads "checking signal quality" until the first window of the new segment, about 10.5 s.
+5. `kLowSignalQuality`: the latest window of the segment is not usable.
+
+**Timing** (on the application clock; verified with `FakeClock`, §17.27): an interruption is set by `tick` at most 50 ms after the 1 s has passed, so "data interrupted" is in the snapshot at most 1.05 s after the last frame and on the screen 1.07 s after it (the snapshot is copied at the next paint), within 2 s. A pause and the end are in-band notices handled at once. A window is applied at the sample at which the library reports it, in the batch of its frame; with SRS-027 and SRS-028 a signal that turns constant gives a window not usable at most 5 s + 0.5 s + 1 s after the start of the stretch, and the frame of that sample is handled on arrival, so the status changes within 6.6 s, within 7 s. The 1 s rule counts from the last activity (§17.12): the sample's frame, or a resume. The boundary is "at least 1 s" (§17.12): at exactly 1 s the data are interrupted (SRS-047 says "for 1 s"; SRS-045 says "no more than 1 s" for usable; the overlap of one instant is resolved this way).
+
+### 17.21 Heart-rate display (D6; SRS-046)
+
+```cpp
+struct HeartRateDisplay { bool has_value = false; std::int32_t bpm = 0; HeartRateReason reason = HeartRateReason::kNoData; };
+class RestartHold {   // SRS-046: withheld until 4 intervals after the status became usable
+ public:
+  static constexpr std::uint32_t kIntervals = 4;
+  void clear() noexcept;                                         // not active
+  void arm(std::uint64_t after_index) noexcept;                  // active; counts from 0
+  void on_detection(std::uint64_t index, sinus::dsp::Mark mark) noexcept;
+  [[nodiscard]] bool active() const noexcept;
+  [[nodiscard]] std::uint64_t after_index() const noexcept;
+  [[nodiscard]] std::uint32_t intervals() const noexcept;
+};
+struct HeartRateDisplayInputs {
+  SignalStatus status;
+  bool hold_active = false;
+  bool has_event = false;                       // a library event in the current segment
+  sinus::dsp::HeartRateStatus event_status = sinus::dsp::HeartRateStatus::kNotEnoughBeats;
+  float event_bpm = 0.0F;                       // of the latest event
+};
+[[nodiscard]] HeartRateDisplay evaluate_heart_rate_display(const HeartRateDisplayInputs& in) noexcept;
+```
+
+**Rules**, the first that applies:
+
+1. Status not usable: withheld, reason from the status reason: `kNoData` → `kNoData`, `kDataInterrupted` → `kDataInterrupted`, `kReplayPaused` → `kReplayPaused`, `kReplayEnded` → `kReplayEnded`, `kCheckingSignalQuality` and `kLowSignalQuality` → `kSignalNotUsable`.
+2. Restart hold active: withheld, `kNotEnoughBeats` (SRS-046 as written, whatever the library reports during the hold).
+3. No library event in the segment: withheld, `kNotEnoughBeats` (the library's state at the start of a stream, SRS-026).
+4. Latest event `kNotEnoughBeats`, `kNoRecentBeat`, `kOutOfRange`: withheld with that reason.
+5. Latest event `kValid`: v = `std::lround(static_cast<double>(bpm))` (half away from zero); v outside 30 to 200, or `bpm` not finite, is withheld with `kOutOfRange` (the library already reports a value outside 30–200 as out of range, so this only guards the rounding); otherwise the value v.
+
+The value is the latest event's, with no smoothing; a withheld display has no value at all (`has_value` false, `bpm` 0), so the previous value cannot be shown (SRS-046). The latest event is cleared at every segment start and source selection.
+
+**Restart hold.** At every change of the status from not usable to usable, the hold is armed with `after_index` = the session index of the last sample processed when the change happened: the sample at which the library reported the usable window (§17.23), or the last sample before a resume. It also applies to the first usable status after the start of a stream or a reset, which follows "checking signal quality" (a reading of "after the status has become usable again" that makes one rule for every not usable stretch; reported in §17.29). `on_detection` (every detection of the segment, in report order): a detection whose index is not above `after_index` is ignored (**the tie rule: "after the sample" is strictly after**; a detection at that index, or reported with the window at the same sample, does not count, as in the library, §13.5: index greater than `reset_at`); otherwise, when it and the previous counted detection are both reliable, one interval is counted; a start-up detection counts no interval and breaks the chain (SRS-024: intervals between consecutive reliable detections). With 4 intervals the hold ends, at the report of the fifth reliable detection after `after_index`, which is the sample at which the library reports its heart rate. The hold is cleared at each segment start and source selection (the next usable status arms it again). A change to not usable during the hold leaves it to the next arming.
+
+**Refresh.** The display is evaluated after every item and tick (§17.23) and published in the snapshot, so a value is in the snapshot when its frame is handled (0 s behind on the application clock) and is refreshed at least every 50 ms; the GUI copies it at its next paint (SRS-046: at least once per second, at most 1 s behind).
+
+### 17.22 Quality mark (D6; SRS-048)
+
+`QualityMark` is set when the library reports a window (`kUsable` or `kNotUsable` from `QualityWindow::usable`), in the batch of the frame that holds the report sample, so the mark of each window is in the next snapshot (at most 50 ms later) and on the screen at the next paint, within 1 s of the report. It is cleared (`kNone`, empty text) at every segment start and source selection. No index value or other figure of the window leaves `core` for the display: `LiveViewData` holds the mark only.
+
+### 17.23 Live view in the processor (D6)
+
+```cpp
+struct LiveViewData {                 // copied into every snapshot (Snapshot::view, §17.13)
+  DisplayModel display;
+  SignalStatus status;
+  HeartRateDisplay heart_rate;
+  QualityMark quality = QualityMark::kNone;
+  RestartHold hold;                   // for tests and the log; not displayed
+};
+class LiveView {
+ public:
+  void on_source_selected() noexcept;                               // everything cleared, no timeline
+  void on_segment_start(bool new_timeline, std::uint32_t fs_millihertz, std::uint32_t release_speed);
+  void on_frame(std::uint64_t first_session_index, std::uint16_t count, TimePoint received_at) noexcept;
+  void on_sample(std::uint64_t segment_session_start, std::uint64_t library_index,
+                 std::uint32_t display_delay_samples, const sinus::dsp::SampleOutput& output) noexcept;
+  void update(const SignalStatusInputs& inputs, TimePoint now) noexcept;
+  [[nodiscard]] const LiveViewData& data() const noexcept;
+};
+```
+
+`LiveView` keeps the inputs of the status that come from the library (window seen, latest mark), the latest heart-rate event and the last processed session index; `update` takes the rest from the processor.
+
+- `on_source_selected`: `DisplayModel::clear`, status `kNoData`, heart rate withheld (`kNoData`), quality `kNone`, hold cleared, latest event cleared. The marks and the heart rate disappear at a change of source (SRS-041).
+- `on_segment_start`: with `new_timeline` (`kSourceStart`, `kRateChange`) `start_timeline(fs, speed)`; in every case the window flags, the latest event, the quality mark and the hold are cleared. The values and marks of the earlier segments of the timeline stay drawn.
+- `on_frame`: `add_frame`.
+- `on_sample`, in this order for the sample s (session index `start + library_index`): (1) with `library_index ≥ M`, `set_value(start + library_index − M, output.display_mv)` (§16.4; M from `Chain::display_delay_samples()`); (2) each detection: `add_mark(start + index, kHollow` for `Mark::kStartUp`, `kFilled` otherwise`)` and `hold.on_detection(start + index, mark)`; (3) the window, if any: window flags and quality mark; then the status is evaluated with activity `kPlaying` and `interrupted` false (a sample is arriving), and a change to usable arms the hold with s; (4) the latest heart-rate event (the last of `heart_rates`). Detections reported at s have indices at most s, so the order of (2) and (3) does not change which detections count.
+- `update(inputs, now)`: status from `inputs`; a change to usable arms the hold with the last processed session index; `decide_marks(now, status.usable)`; heart-rate display. 
+
+**Calls of the processor** (extension of §17.12): `apply(kSelectSource)` calls `on_source_selected`; in "handling a frame", after step 3 `on_segment_start` when a segment starts (also within the frame for `kLibraryError`, with `new_timeline` false), then `on_frame` with the session index of the frame's first sample, and in step 4 `on_sample` after `ResultSink::on_sample`; at the end of `handle` (frames and notices) `update(inputs, item time)`, the item time being `received_at` (the notice time for a notice), so that `handle` needs no clock; `tick(now)` calls `update(inputs, now)` after the 1 s rule. New accessor: `[[nodiscard]] const LiveViewData& StreamProcessor::view() const noexcept;`. The worker publishes `Snapshot{generation, taken_at, processor state, view}` after each batch and tick (§17.13).
+
+### 17.24 Test input (D7; SRS-042)
+
+**Core.**
+
+```cpp
+inline constexpr std::uint16_t kDefaultTestInputPort = 45000;
+inline constexpr std::uint16_t kMinTestInputPort = 1024;        // to 65535
+inline constexpr std::string_view kTestInputAddress = "127.0.0.1";
+[[nodiscard]] std::string test_input_address_text(std::uint16_t port);   // "127.0.0.1:45000"
+// tag kTestInput, mains kSetting, description.address "127.0.0.1" and port
+[[nodiscard]] SourceSelection test_input_selection(std::uint16_t port, std::uint32_t session);
+struct TestInputCounters {
+  std::uint64_t datagrams = 0;                                 // every datagram read
+  std::uint64_t accepted = 0;                                  // decoded and given to the queue
+  std::uint64_t rejected_sender = 0;                           // sender not a loopback address
+  std::array<std::uint64_t, kFrameRejectionKinds> rejected{};  // by FrameRejection; [kAccepted] stays 0
+  std::uint64_t queue_full = 0;                                // accepted, dropped by a full FrameQueue
+  [[nodiscard]] std::uint64_t rejected_total() const noexcept; // rejected_sender + sum of rejected
+};
+enum class DatagramOutcome : std::uint8_t { kAccepted, kRejectedSender, kRejectedFrame, kQueueFull };
+class TestInputReceiver {      // one per start of the input; on_datagram from one thread at a time
+ public:
+  TestInputReceiver(FrameQueue& queue, std::uint32_t source_session) noexcept;
+  [[nodiscard]] DatagramOutcome on_datagram(const std::uint8_t* bytes, std::size_t size,
+                                            bool sender_is_loopback, TimePoint received_at) noexcept;
+  [[nodiscard]] TestInputCounters counters() const noexcept;   // any thread (relaxed atomics)
+};
+```
+
+`on_datagram`: `datagrams` +1; a sender that is not a loopback address is counted (`rejected_sender`) and nothing is decoded; otherwise `decode_frame` (§17.9): a rejection is counted under its reason and the datagram is dropped; an accepted frame gets `received_at`, `source_session` and `starts_segment` false and is offered to the queue (`offer`; a refusal is counted in `queue_full` and the frame dropped, the policy of `offer_or_drop`, §17.10). A rejected datagram never reaches the queue, so it changes no output (SRS-042). Every check of the content (length, magic, CRC, sampling frequency, finite samples within 1000 mV, …) is the codec's. A frame with the device tag (1) is valid on the wire and is dropped by the processor as another source (SRS-041). A lost frame (a later `sequence` or `first_sample`), a frame out of order and a duplicate are the processor's continuity rules (§17.12 step 2): the later frame starts a segment `kGap` (or `kInterruption` after 1 s without samples), and the earlier frame that arrives after it is dropped and counted (`dropped_out_of_order`), never given to the library: a lost or out-of-order frame gives a gap and a new segment (SRS-042; SRS v0.9 decision).
+
+**io.**
+
+```cpp
+namespace sinus::desktop::io {
+struct TestInputStart { bool ok = false; std::string message; };
+class UdpTestInput {
+ public:
+  UdpTestInput() noexcept;           // off: no thread, no socket
+  ~UdpTestInput();                   // stop()
+  [[nodiscard]] TestInputStart start(std::uint16_t port, core::FrameQueue& queue, std::uint32_t source_session,
+                                     const core::Clock& clock);
+  void stop() noexcept;              // closes the socket, ends and joins the thread
+  [[nodiscard]] bool running() const noexcept;
+  [[nodiscard]] std::uint16_t port() const noexcept;
+  [[nodiscard]] core::TestInputCounters counters() const noexcept;   // of the current or the last run
+};
+}
+```
+
+- `start`: a port below 1024 is refused with `Test input: port <p> is not allowed (1024 to 65535)`. Otherwise a `QThread` starts with a receiver object moved to it; in that thread (a blocking queued call) a `QUdpSocket` is created, its receive buffer set to 1 MiB (`QAbstractSocket::ReceiveBufferSizeSocketOption`, best effort) and bound with `bind(QHostAddress(QHostAddress::LocalHost), port, QAbstractSocket::DontShareAddress)`: only the IPv4 loopback address, and exclusively (on Windows `DontShareAddress` uses `SO_EXCLUSIVEADDRUSE`, so no other program can bind the same port and read the frames; on Linux and macOS exclusive binding is the default). A failed bind ends the thread and returns `Test input: cannot open UDP port <p> on 127.0.0.1: <QAbstractSocket::errorString()>`; the input stays off. A socket bound to the loopback address only is not reachable from another address of the computer, and does not open the port in the firewall.
+- **Receiving.** On `readyRead`, while `hasPendingDatagrams()`: `readDatagram(buffer, 297, &sender, nullptr)` into a buffer of `kMaxFrameBytes + 1` bytes (a longer datagram is truncated to 297 bytes, which no valid frame has, so it is rejected as `kBadLength`); the time is `clock.now()`; `on_datagram(buffer, bytes read, sender.isLoopback(), now)`. A datagram that cannot be read (−1) is counted as `kTooShort`.
+- **Off at every start.** The application creates `UdpTestInput` off and never stores its state (no setting is persisted in Milestone 3); the user turns it on (part 3).
+- **Order of a change of source** (as §17.12): stop the current source and join it; push `kSelectSource(test_input_selection(port, session))` with a new session; `start`; if it fails, push `kSelectSource` of no source and show the message. Turning off: `stop`, then `kSelectSource` of no source; the status becomes "no data".
+- **Texts.** While the input is the source, the banner reads `TEST INPUT` and `test_input_address_text(port)`, and the window shows `kTestInputWarning` (§17.18; placement in part 3). The counters are shown in the main window (part 3).
+
+### 17.25 Recording (D7; SRS-051, SRS-052 in recordings)
+
+The writer is §17.6 (D4); D7 adds the path from the processor to it, on its own thread, and the rules that decide when a recording starts and ends and which events it holds.
+
+```cpp
+struct RecordingRequest {
+  std::filesystem::path folder;
+  std::string record_name;           // default_recording_name(...) unless the user names it
+  RecordingFormat format;            // gain and baseline from the application; fs_millihertz set by the processor
+  RecordingMetadata metadata;        // start_utc and the four identity fields from the application;
+                                     // source, source_name and mains set by the processor
+};
+[[nodiscard]] RecordingFormat test_input_recording_format();                        // "1000", 1000.0, 0
+[[nodiscard]] RecordingFormat replay_recording_format(const ReplayRecord& record);  // signal 0: gain_text, gain, baseline
+[[nodiscard]] std::string format_utc_millis(std::int64_t unix_ms);      // "2026-10-11T10:20:30.123Z"
+[[nodiscard]] std::string default_recording_name(std::int64_t unix_ms); // "sinus_20261011_102030"
+enum class RecordingEnd : std::uint8_t { kStopped, kReplayEnded, kSourceChanged, kMainsChanged, kRateChanged, kMaximumLength };
+enum class RecorderState : std::uint8_t { kIdle, kRecording, kSaved, kFailed, kNotStarted };
+struct RecorderStatus {
+  RecorderState state = RecorderState::kIdle;
+  std::string record_name;
+  std::uint64_t samples = 0;         // written so far
+  std::string message;               // table below
+  std::uint64_t generation = 0;      // +1 at every change
+};
+class RecordingChannel {             // producer: the processing thread; consumer: RecorderThread
+ public:
+  static constexpr std::size_t kCapacity = 1024;      // items (51 s of 18-sample frames)
+  explicit RecordingChannel(Wakeup* consumer = nullptr);
+  [[nodiscard]] bool post_open(RecordingRequest request);   // the request goes to a slot under a mutex
+  [[nodiscard]] bool post_samples(const float* samples_mv, std::size_t count) noexcept;   // count 1..64
+  [[nodiscard]] bool post_event(RecordingEventKind kind, std::uint64_t missing_samples,
+                                std::uint64_t duration_ms) noexcept;
+  [[nodiscard]] bool post_finish(RecordingEnd end) noexcept;
+  void post_not_started(std::string_view cause);            // status kNotStarted at once
+  void mark_overflow() noexcept;                            // the producer could not post: the recording fails
+  [[nodiscard]] bool busy() const noexcept;                 // items queued, or a writer open
+  [[nodiscard]] bool failed() const noexcept;               // the current recording failed
+  [[nodiscard]] RecorderStatus status() const;              // any thread
+};
+class RecorderThread {
+ public:
+  explicit RecorderThread(RecordingChannel& channel);
+  ~RecorderThread();                 // stop()
+  void start();
+  void stop() noexcept;              // handles the items already posted, finishes an open recording (kStopped), joins
+};
+```
+
+- **Items.** A fixed-size ring of `kCapacity` plain items (kind, up to 64 samples, event fields, end), single producer and single consumer as `FrameQueue`; only `post_open` and `post_not_started` allocate (at a command, never per sample). A post that finds the ring full returns false.
+- **Commands** (extension of §17.12): `CommandKind` gains `kStartRecording` (with `Command::recording`, a `RecordingRequest`) and `kStopRecording`; `ProcessorState` gains `RecordingPhase recording` (`kOff`, `kPending`, `kOn`) and `recording_samples`; `StreamProcessor::set_recording_channel(RecordingChannel*)` (none: the commands are ignored).
+  - `kStartRecording`: refused (`post_not_started`) with `a recording is already running` when the phase is not `kOff` or the channel is busy, and with `no data source is playing` when the selection is not the test input or a replay, or `run_state` is `kNoSource` or `kEnded`; otherwise the phase becomes `kPending` and the request is kept. The recording starts at the next accepted frame (waiting for data and a paused replay are allowed).
+  - `kStopRecording`: `kOn` → `post_finish(kStopped)`; `kPending` → not started, `stopped before any sample arrived`. Phase `kOff`.
+  - `kSelectSource`: `kOn` → `post_finish(kSourceChanged)`; `kPending` → not started, `the source changed`.
+  - `kSetMains` that changes the setting while the selection follows the setting: `kOn` → `post_finish(kMainsChanged)` before the change (a record holds one mains frequency, §17.6); `kPending` stays pending and takes the new value.
+  - Notice `kReplayEnded`: `kOn` → `post_finish(kReplayEnded)`; `kPending` → not started, `the replay ended`. A pause adds nothing: the samples continue after the resume, without an event.
+- **At each accepted frame** (after step 3 of §17.12, before step 4), when the phase is not `kOff`:
+  1. `kOn` and `channel.failed()`: phase `kOff` (the recorder has reported the failure).
+  2. `kOn` and the segment reason is `kRateChange`: `post_finish(kRateChanged)`, phase `kOff` (a record has one sampling frequency).
+  3. `kOn` and `recording_samples + count` above 86 400 · fs (`86400 · fs_millihertz / 1000`, the 24 h of the reader, §17.4): `post_finish(kMaximumLength)`, phase `kOff`.
+  4. `kOn` and the frame starts a segment: one event, at the current position of the recording: if `frame.starts_segment` (a replayed recorded event), a copy of `frame.replayed_event` (kind, `missing_samples`, `duration_ms`), so that a recording of a replay of a recording holds the same events; else for `kInterruption`, `kInterruption` with the segment's `missing_samples` and `duration_ms` = ⌊(`received_at` − last activity) / 1 ms⌋; for `kGap` and `kNewStream`, `kGap` with the segment's `missing_samples`; for the other reasons none (`kSourceStart`, `kRateChange` and `kMainsChange` cannot occur while recording; `kLibraryError` is no break of the samples). A gap that lasts 1 s or more on the application clock is therefore an `interruption` event with its `missing_samples`, a shorter one a `gap` event.
+  5. `kPending`: the request is completed: `format.fs_millihertz` = the frame's; `metadata.source` = `kTest` for the test input, `kReplayed` for a replay (also of a recorded session, SRS-051); `source_name` = `test_input_address_text(port)` or the replayed record's name; `mains` = `mains_in_use`; `post_open`; phase `kOn`, `recording_samples` 0. No event at this frame (the recording starts with it).
+  6. `kOn`: `post_samples` with the frame's samples as received (never the display values), `recording_samples` + count.
+  Any post that returns false: `mark_overflow`, phase `kOff`.
+- **Recorder thread.** Waits on its `Wakeup` and handles the items in order: open → `WfdbRecordingWriter::open` (status `kRecording`, or `kFailed` with the writer's message; no file exists after a failed open, except `.dat.partial` after a `kWriteFailed` at its creation, which the writer leaves); samples → `append`; event → `add_event`; finish → `finish` (`kSaved`, or `kFailed`). Any writer failure: `abandon`, `failed()` true, status `kFailed`, and every later item of that recording is discarded. Before each item it checks the overflow mark: a marked recording is abandoned and fails. `post_open` clears `failed()` and the mark. The files are therefore complete only after `finish` has renamed them (§17.6); otherwise only `.partial` files exist, which the offline loader does not read as a record (SRS-051, RC-020).
+- **Status texts** (`RecorderStatus::message`; shown in the main window, part 3; `<n>` the record name, `<N>` the samples written):
+
+| State | Message |
+|---|---|
+| `kRecording` | `Recording <n>` |
+| `kSaved` | `Recording <n> saved (<N> samples)`, followed, for an end other than `kStopped`, by `; ended because ` and: `the replay ended`, `the source changed`, `the mains frequency changed`, `the sampling frequency changed`, `it reached 24 h` |
+| `kFailed` | the writer's message (§17.5, `Recording <n>: <cause>`), followed by `; the incomplete files end in .partial` when a `.partial` file exists; after an overflow: `Recording <n>: samples were lost because the recorder could not keep up; the incomplete files end in .partial` |
+| `kNotStarted` | `Recording not started: <cause>` with the causes above |
+
+- **Metadata and identity** (SRS-051, SRS-052): the application fills `start_utc` = `format_utc_millis` of `std::chrono::system_clock` at the command (`core` has no wall clock: the conversion uses the days-to-civil algorithm of H. Hinnant, "chrono-Compatible Low-Level Date Algorithms", no `gmtime`), `desktop_version` and `desktop_source_sha256` from `core::desktop_identity()` (the item identity generated by the build, §15.12), `library_version` and `library_source_sha256` from `sinus::dsp::library_identity()`; the format from `test_input_recording_format()` or `replay_recording_format(record)`. The writer's rules check every field (§17.6). The default name is `sinus_` and the UTC date and time of the command, `YYYYMMDD_HHMMSS`; the folder and the name are chosen in part 3.
+- **Exactness** (SRS-051, half of the resolution): §17.6. For the test input at 1000 adu/mV a sample beyond ±32.767 mV fails the recording (OP-082 (a)).
+- At the end of the application, the GUI pushes `kStopRecording`, stops the sources and the worker, then `RecorderThread::stop()`, so a running recording is saved.
+
+### 17.26 Changes to part 1 in this version
+
+- §17.6: a sample that is not finite is `kSampleOutOfFormat` (a NaN would pass the range test).
+- §17.9 and §17.11: `Frame::replayed_event`, set by the replay with `starts_segment` (§17.25, step 4).
+- §17.12: the calls of `LiveView` (§17.23), the recording commands, phase and channel (§17.25), `StreamProcessor::view()`.
+- §17.13: `Snapshot::view`.
+- §15.7: the acquisition times of a replay's samples are spread at the release rate (§17.19); the drawn edge is computed from the frame timings, not carried per sample.
+
+### 17.27 Verification by requirement (D6, D7)
+
+QA's tests are in `desktop/tests/requirements/`, tagged `// Verifies: SRS-nnn`, with `FakeClock` and the interfaces above; a test that needs a real socket or thread says so. **Fixtures added for D6** to the fixture script of §17.8 (format 16, gain 1000, one signal; with their `.expected` files):
+
+| Record | Content |
+|---|---|
+| `d6_ecg75_360`, `d6_ecg180_360`, `d6_ecg75_250`, `d6_ecg180_250` | 60 s of `synthetic_ecg(fs, bpm, "clean")` repeated end to end, as `replay16` |
+| `d6_flat_360` | 75 bpm at 360 Hz: 20 s of ECG, 30 s held at the value of the sample at 20 s, 20 s of ECG (70 s) |
+| `d6_noise_360` | 20 s of ECG, 20 s of white Gaussian noise of 0.1 mV RMS alone (seed 20261011), 20 s of ECG |
+| `d6_small_beat_360` | the event input `small-beat` of §13.9 at 360 Hz (one beat found by search-back, reported 0.62 s after its index) |
+
+The streams are made as in §17.15: frames of `nominal_frame_samples` built from `sample_mv` with `received_at` at the release times (a `ReplaySource` at speed 1 on a `FakeClock`, or frames built by hand with the test input's tag), handed to a `StreamProcessor`, with `tick` every 50 ms of the fake clock; the view is read with `view()` and drawn with `make_drawing_input(view.display, now, width)` at widths 800 and 4000 px.
+
+**SRS-043** (QA): on the four `d6_ecg*` records: once 10 s have been drawn, `edge_index − first_index + 1 = window_samples`; at every step t, the sample `edge_index` was acquired at most 0.5 s before t and the sample `edge_index + 1` (when received) later than that (exact with the fake clock; the 20 ms of SRS-043 are those of the repaint, part 3); every mark in the drawing input lies within 0.020 · fs samples of the largest display value within ±0.1 s of it (the R peak of the drawn waveform); every reliable detection after the status is first usable is shown, and is present in the first drawing input whose edge reaches its index. `d6_small_beat_360`: the search-back detection is reported after the edge passed its index; it is absent from the drawing inputs before its report and present at its index in every later one within the window. `d6_flat_360`: from the step at which the status becomes not usable, no mark changes to shown until it is usable again; the columns of the flat stretch are drawn (values present) and the edge keeps advancing. Runs: a stream with one frame removed has no column joining across the lost samples (`joins_previous` false at the first column after them). At a change of source the drawing input is empty and `marks()` is empty (SRS-041).
+
+**SRS-045** (QA): `evaluate_signal_status` on every combination of its inputs gives the reason of the first rule that applies (§17.20). Through the processor: from the first frame to the first window, `kCheckingSignalQuality`; on `d6_ecg75_360`, usable after the first window; on `d6_flat_360` not usable with `kLowSignalQuality` at most 7 s after 20 s of the stream (first step at which it holds, on the fake clock), and on `d6_noise_360` not usable during the noise (the windows lying in it); frames stopped for 3 s: `kDataInterrupted` at most 1.95 s after the `received_at` of the last frame (2 s less the repaint period) and the next frame starts a segment with `kCheckingSignalQuality`; a replay of `replay16` paused (`kReplayPaused`, at the step of the pause) and resumed (no interruption, no new segment), then played to the end (`kReplayEnded` at the step of the notice); with several causes (paused while the latest window is not usable; interrupted during checking) the first reason of the list; no source and a selected test input before its first frame: `kNoData`. While not usable, the edge advances and the values are present.
+
+**SRS-046** (QA): `evaluate_heart_rate_display` and `RestartHold` with hand-made inputs, and `LiveView` fed with hand-built `SampleOutput`s at 360 Hz: a valid 72.5 gives 73 and `73 bpm`, 72.49 gives 72; each library reason and each status reason gives `--` and its text of §17.18; an out-of-range event gives `--` and `out of range`; in no case is the previous value shown (after any withheld state the display has no value until a new valid event after the hold); after a not usable stretch, with the library reporting valid values at once, the display stays `--` with `not enough beats` until the report of the fifth reliable detection whose index is above the sample at which the status became usable, and a detection at exactly that index does not count (tie rule); a start-up detection in the chain breaks it. Through the processor on `d6_ecg75_360`: the value shown equals the latest library event rounded at every step, and is in the view at the step of the frame that carried it. Inspection of the absence of colour scale and sound: part 3.
+
+**SRS-048** (QA): on `d6_noise_360` and `d6_flat_360`, after each window reported, `view().quality` at the end of that frame's `handle` is the window's mark, and `quality_mark_text` gives `Signal usable` or `Signal not usable: low quality`; `LiveViewData` has no field with the index (checked by the test of part 3 on the main window).
+
+**SRS-042** (QA): *core*: `TestInputReceiver` with a datagram of each rejection of §17.9 (too short, magic, version, type, sample count, length, CRC, source 3, reserved, sampling frequency, flags, a NaN, an infinity, 1000.1 mV) counts it under its reason, offers nothing, and a stream with those datagrams interleaved gives the same outputs (`ResultSink`) as without them; a datagram with `sender_is_loopback` false is counted and offers nothing; frames of `d6_ecg75_360` give detections and a valid heart rate; a stream with one frame removed gives a segment `kGap`, and every output after it equals that of a new `sinus::dsp::Chain` given the samples after the gap; two frames swapped give a `kGap` segment at the later one and the earlier one counted in `dropped_out_of_order`; a duplicate is counted and dropped. *io* (real loopback socket, `SteadyClock`): a new `UdpTestInput` is not running, and a socket of the test can bind 127.0.0.1:port (nothing holds it); after `start`, valid datagrams sent by the test to 127.0.0.1:port reach the queue, and binding the same port again (from the test, with `DontShareAddress`) fails; a datagram sent to another IPv4 address of the computer (the first non-loopback address of `QNetworkInterface::allAddresses()`; `GTEST_SKIP` when none) at the port is not received (`datagrams` unchanged after 500 ms); a port below 1024 and a port already bound are refused with their messages; `kTestInputWarning` and `kTestInputLabel` are the texts of §17.18 (their display: part 3).
+
+**SRS-051** (QA): with a `RecordingChannel`, a `RecorderThread` and a folder of the test (`SINUS_DESKTOP_RECORDING_DIR` when set, a temporary folder otherwise):
+- *Replay*: the first 60 s of `replay16` replayed (`FakeClock`) and recorded (`kStopRecording` applied after the frame that holds sample 21 599): `read_wfdb_record` and `parse_recording_comments` give 21 600 samples equal to the source's `sample_mv` (exactly: the source's gain), fs 360, gain `200`, `source=replayed`, `source_name=replay16`, `mains_hz=50`, `start_utc` as given, the identities of SRS-052, no event. `replay212` the same with its gain and baseline.
+- *Test input*: 10 s of frames, then 3 s without frames whose counter jumps by 1080 samples, then 10 s, then 10 frames lost (0.5 s) with the next one 0.55 s after the previous: the recording has the samples received (N = sum of the counts), an event `interruption` at the position of the first sample after the 3 s with `missing_samples=1080` and `duration_ms` ≥ 3000, and an event `gap` with `missing_samples=180` at its position; every sample is within 0.5/1000 mV of the frame's value; `source=test`, `source_name=127.0.0.1:<port>`.
+- *Replay of a recording*: that recording replayed and recorded again is `source=replayed` with `source_name` the first recording's name and the same events (kind, position, missing samples, duration).
+- *Failure*: a folder that does not exist gives `kFailed` with the writer's message and no file; on Linux when not run as root (`geteuid() != 0`), a read-only folder (mode 0555) gives `kFailed` and no file; on Linux, a file size limit (`setrlimit(RLIMIT_FSIZE)` of 100 KiB with `SIGXFSZ` ignored, restored after the test) makes a write fail during a recording of 200 s at 360 Hz (two buffers of 64 KiB), as a full disk does through the same path: `kFailed`, the message ends with `.partial`, `<n>.hea` does not exist. The other cases `GTEST_SKIP` with their reason. Each refusal of §17.25 gives `kNotStarted` and its message.
+- *Offline loader*: `dsp/tests/requirements/test_srs051_desktop_recordings.py` (marker `SRS-051`; skipped with its reason when `SINUS_DESKTOP_RECORDING_DIR` is unset, as in the `dsp` job) loads every complete recording of that folder with `load_record(path, annotator=None)`: the count, the fs and the samples (within 0.5/gain · (1 + 1e-9) mV of the `<n>.source` file that the C++ test writes beside each recording, as in §17.8 check 4), and the comment lines; and checks that no `.partial` record loads (the failure cases). The `desktop` job sets the variable and runs it after `ctest`.
+
+**SRS-052, recordings** (QA): the four identity lines of each recording equal the versions in `desktop/VERSION` and `libs/sinus-dsp/VERSION` and the digests that the test computes itself with the methods of §15.12 and §14.15 from the source tree (`SINUS_DESKTOP_SOURCE_ROOT`, a compile definition of the test executable: the repository root), using `core::Sha256` on the bytes. The About box: part 3.
+
+**Developer's unit tests** (no tag): `window_samples` at 125, 128.5, 250, 360 and 1000 Hz; the ring (no data for new indices, gaps larger than C, values outside the ring ignored); `drawn_edge` against a direct computation over all samples, at speeds 1 and 10, with frames of 1, 18 and 64 samples, at the boundary (a sample acquired exactly 0.5 s before is drawn), with the frame-timing ring overflowed; mark insertion order, duplicates, capacity, decisions never changed, look-ahead; `make_drawing_input` runs, columns, joins, border of the sweep, narrow and wide widths, empty cases; `evaluate_signal_status` and `evaluate_heart_rate_display` tables; `RestartHold` chain and tie; texts; `format_utc_millis` (1970-01-01, 2000-02-29, 2026-10-11, the end of 9999) and `default_recording_name`; `TestInputReceiver` counters across threads; the channel ring full, `mark_overflow`, `busy`; the recorder thread with a writer failure in the middle; every recording rule of §17.25 with the processor and a channel without a thread (items read back with a test consumer).
+
+### 17.28 System test of SRS-047 (D9, test engineer)
+
+In `desktop/tests/system/` (`// Verifies: SRS-047`), ctest label `slow`, about 65 s, in the `desktop` and `desktop-windows` jobs. The code that implements SRS-047 (the 1 s rule of §17.12 and the status and heart-rate rules of §17.20 and §17.21) cites SRS-047 only in D9, with this test (ADR 0004).
+
+- **Set-up.** The whole live path on the real clock: `UdpTestInput` (io) → `FrameQueue` → `ProcessingWorker` with `StreamProcessor` on `SteadyClock` → `SnapshotExchange`; a `ResultSink` on the processor that stores every segment and every output; an observer thread that copies the snapshot every 5 ms (`copy_if_newer`) and logs the steady time, `taken_at`, `status_reason_text`, `heart_rate_text` and `heart_rate_reason_text`. The selection is `test_input_selection(port, 1)` with the default 50 Hz.
+- **Stream.** The samples of `replay16` (75 bpm, 360 Hz, 21 960 samples), in frames of 18 samples encoded with `encode_frame` (tag 2), sent from a `QUdpSocket` of the test to 127.0.0.1:port, frame j at t0 + (last sample + 1)/360 s on the steady clock, computed from t0. Positions 0 to 7 199 are sent (20 s); then nothing for 3 s; positions 7 200 to 14 399 follow with the sequence and `first_sample` continuing (an interruption without lost samples), sent from t0 + 23 s; then the 10 frames of positions 14 400 to 14 579 are not sent (0.5 s lost: the sequence and `first_sample` jump); then 14 580 to 21 959 at their times. The pauses are measured from the send time of the last frame before them.
+- **Criteria.**
+  1. *Interruption shown*: the first snapshot with status reason and heart-rate reason `data interrupted` has `taken_at` at most 1.95 s after the send time of the last frame before the 3 s pause (2 s less the repaint period); from that snapshot to the first snapshot after the restart, every snapshot shows `--` with `data interrupted`, and no snapshot after it shows a value until the end of the hold below (the last value is never shown again).
+  2. *Restart*: the frame of position 7 200 starts a segment `kInterruption`; the outputs of the sink for that segment equal, sample by sample (exactly: the same code on the same inputs), those of a new `sinus::dsp::Chain` (360 Hz, 50 Hz) given the samples from 7 200 up to the next segment; its detections with an index in the first 2 s of the segment are marked start-up (at least one); the first snapshot with a value comes after the report of the fifth reliable detection of the segment (four intervals; the restart hold of §17.21 is later still, since it counts from the first usable status).
+  3. *Gap under 1 s*: the frame of position 14 580 starts a segment `kGap` with `missing_samples` 180; no snapshot from the last frame before the loss to the end shows `data interrupted`; the segment's outputs equal those of a new chain given the samples from 14 580; the heart rate is withheld until its fourth interval, as in 2.
+  4. The run is valid only if the sender kept its schedule: every frame sent within 20 ms of its time (else the test fails with the delays found, not with a criterion).
+- The log of snapshots is written to the test output when a criterion fails.
+
+### 17.29 Implementation order of D6 and D7; part 3
+
+| Step | Group | Task | Cites | Design |
+|---|---|---|---|---|
+| 13 | D6 | `display_texts` | SRS-045, SRS-046, SRS-048 | §17.18 |
+| 14 | D6 | `display_model` (model, edge, marks, drawing input) | SRS-043 | §17.19 |
+| 15 | D6 | `signal_status`, `heart_rate_display` | SRS-045, SRS-046 | §17.20, §17.21 |
+| 16 | D6 | `live_view`; the calls of the processor, `view()`, `Snapshot::view` | SRS-043, SRS-045, SRS-046, SRS-048 | §17.22, §17.23 |
+| 17 | D6 | the `d6_*` fixtures and their `.expected` files | — | §17.27 |
+| 18 | D7 | `test_input` (core), `udp_test_input` (io; Qt Network linked to `io` only) | SRS-042 | §17.24 |
+| 19 | D7 | `Frame::replayed_event` and its setting in `ReplaySource` (if D5 has merged without it) | — | §17.26 |
+| 20 | D7 | `recorder` (channel, thread, texts, UTC), the recording commands and rules of the processor; `wfdb_writer` and `recording_metadata` gain their citations | SRS-051, SRS-052 | §17.25 |
+| 21 | D7 | the `desktop` job sets `SINUS_DESKTOP_RECORDING_DIR` and runs QA's Python check after `ctest` | — | §17.27 |
+
+D6 lands with QA's tests of SRS-043, SRS-045, SRS-046 and SRS-048 (at the level of `core`; the texts on the screen are checked again in part 3), D7 with those of SRS-042, SRS-051 and the recording part of SRS-052, each on the branch of its code (ADR 0004). SRS-047 is cited and tested in D9 (§17.28).
+
+**Readings reported for the requirements** (to be confirmed in `srs.md`; the design implements them and changes only a constant or a rule if they are decided otherwise): (1) SRS-045 and SRS-046 have no reason for the time before the first sample of a source and with no source: the design shows `no data` for both. (2) SRS-046 lists no heart-rate reason for "checking signal quality": the design shows `signal not usable`. (3) SRS-046 "after the status has become usable again" is applied to every change from not usable to usable, including the first after the start of a stream or a reset: the first heart rate of a stream comes four intervals after the first usable window (about 10.5 s + 3.2 s at 75 bpm, 18.5 s at 30 bpm). (4) The marks of a stream's first 10.5 s are never drawn, since the status is "checking signal quality" then (SRS-043 with SRS-045): the hollow start-up marks of the first 2 s are therefore not seen; they are seen when detection learns its levels again in a usable signal.
+
+**Part 3** (next version) designs D8: the main window, the top bar with the intended-use statement and the banner, the waveform widget on `make_drawing_input` (vertical scale, mark shapes, the word "REPLAY"), the status, heart-rate and quality panels with their accessible names, the mains setting, the replay controls, the test-input controls and counters, the record command and its status, the About box, and the accessibility test method (SRS-041 display, SRS-043 widget, SRS-045, SRS-046 and SRS-048 texts shown, SRS-049, SRS-050 setting, SRS-052 About, SRS-053).
