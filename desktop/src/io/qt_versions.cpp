@@ -1,6 +1,7 @@
 #include "io/qt_versions.hpp"
 
 #include <qtversion.h>
+
 #include <string>
 
 namespace sinus::desktop::io {
