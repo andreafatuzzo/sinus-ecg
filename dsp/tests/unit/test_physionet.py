@@ -227,7 +227,7 @@ class _Response:
     def read(self) -> bytes:
         return self._body
 
-    def __enter__(self) -> "_Response":
+    def __enter__(self) -> _Response:
         return self
 
     def __exit__(self, *args: object) -> None:

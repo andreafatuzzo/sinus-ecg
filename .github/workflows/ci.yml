@@ -37,6 +37,9 @@ jobs:
       # level, implemented => tested (docs/adr/0004-test-tagging-and-traceability-gates.md)
       - name: Traceability checks
         run: uv run python scripts/traceability.py --check
+      # The hash-pinned pytest of the job libs-esp32s3 names the versions of uv.lock (OP-077)
+      - name: Pinned requirements of the emulator job
+        run: uv run python scripts/check_pinned_requirements.py
       # Subset report check (SRS-016, architecture §8.11): records 100, 105, 108, 119, 203 and
       # 207 of the MIT-BIH Arrhythmia Database 1.0.0. The cache is only a copy: every run
       # verifies it against the pinned checksum list, and a missing or altered file is
@@ -277,7 +280,9 @@ jobs:
       - name: System test of SRS-036 (results of the emulator run)
         run: |
           . "${IDF_PATH}/export.sh"
-          python3 -m pip install --quiet pytest==9.1.1
+          # pytest and its dependencies by hash; the dsp job checks the versions against dsp/uv.lock
+          python3 -m pip install --quiet --require-hashes \
+            -r "${APP_DIR}/requirements-pytest.txt"
           SINUS_EMULATOR_DIR="${OUT_DIR}" SINUS_GOLDEN_DIR="${GITHUB_WORKSPACE}/golden-vectors" \
             python3 -m pytest -c dsp/pyproject.toml -p no:cacheprovider -rs \
             libs/sinus-dsp/tests/system/test_srs_036_emulator_equivalence.py
