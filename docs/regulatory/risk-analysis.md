@@ -1,6 +1,6 @@
 # Risk analysis
 
-_Inspired by ISO 14971:2019. Version 0.4.3, 2026-10-10. Status: Milestone 2; version 0.4.1 confirmed by the project owner on 2026-10-07 (the open point cited by version 0.4.1 opened by decision of the project owner on 2026-10-07); the known anomaly of version 0.4.2 recorded by decision of the project owner on 2026-10-09; version 0.4.3 records the Milestone 2 results._
+_Inspired by ISO 14971:2019. Version 0.4.3, 2026-10-10. Status: Milestone 2; version 0.4.1 confirmed by the project owner on 2026-10-07 (the open point cited by version 0.4.1 opened by decision of the project owner on 2026-10-07); the known anomaly of version 0.4.2 recorded by decision of the project owner on 2026-10-09; version 0.4.3 records the Milestone 2 results, approved by the project owner on 2026-10-11._
 
 ## Conventions
 
