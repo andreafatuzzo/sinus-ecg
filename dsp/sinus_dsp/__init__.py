@@ -9,4 +9,4 @@ traceability matrix.
 
 # Equal to [project] version in dsp/pyproject.toml; follows the milestone register
 # (docs/regulatory/sdp.md §4). Checked by scripts/traceability.py --check.
-__version__ = "0.2.0.dev0"
+__version__ = "0.2.0"

@@ -151,13 +151,13 @@ sinus-ecg/
 - [x] EC57 subset report regenerated in CI
 
 **Milestone 2: Portable C++ DSP library**
-- [ ] `libs/sinus-dsp`: C++17, no dynamic allocation in the real-time path, builds for host and ESP32
-- [ ] FIR/IIR biquad filters: baseline high-pass, 50/60 Hz notch
-- [ ] Streaming Pan–Tompkins QRS detector, with beats at the start of a stream marked as not yet reliable
-- [ ] Heart rate from RR intervals (Kalman filter), robust to isolated missed or extra beats, with a Python reference
-- [ ] Per-window signal quality index (SQI), with a Python reference, validated on the noise stress records
-- [ ] Equivalence with the Python reference on golden vectors, within a defined tolerance, on the host and on the ESP32-S3 in an emulator
-- [ ] Same detection results as the Python reference on the whole MIT-BIH databases
+- [x] `libs/sinus-dsp`: C++17, no dynamic allocation in the real-time path, builds for host and ESP32
+- [x] FIR/IIR biquad filters: baseline high-pass, 50/60 Hz notch
+- [x] Streaming Pan–Tompkins QRS detector, with beats at the start of a stream marked as not yet reliable
+- [x] Heart rate from RR intervals, robust to isolated missed or extra beats, with a Python reference
+- [x] Per-window signal quality index (SQI), with a Python reference, validated on the noise stress records (three criteria not met, see the Milestone 2 verification report)
+- [x] Equivalence with the Python reference on golden vectors, within a defined tolerance, on the host and on the ESP32-S3 in an emulator
+- [x] Same detection results as the Python reference on the whole MIT-BIH databases
 
 **Milestone 3: Qt desktop application with replay**
 - [ ] Live plot with R-peak marks, heart rate and SQI indicator
@@ -217,4 +217,4 @@ Code (firmware, DSP library and reference, desktop application, backend) is lice
 
 ## Status
 
-🚧 Early development: Milestone 0 (foundations) and Milestone 1 (Python reference) released; Milestone 2 (portable C++ DSP library) in progress.
+🚧 Early development: Milestones 0 (foundations), 1 (Python reference) and 2 (portable C++ DSP library) released.

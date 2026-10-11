@@ -14,6 +14,7 @@ Milestone verification reports are not generated: each is written once, at the r
 | Milestone | Verification report |
 |---|---|
 | M1 | [`m1-verification-report.md`](m1-verification-report.md) |
+| M2 | [`m2-verification-report.md`](m2-verification-report.md) |
 
 ## Data sources
 
