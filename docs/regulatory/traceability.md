@@ -58,7 +58,7 @@ Rules: [ADR 0004](../adr/0004-test-tagging-and-traceability-gates.md). Milestone
 | SRS-050 | Mains frequency setting | desktop | M3 | Requirement | — | **none** | — |
 | SRS-051 | Session recording | desktop | M3 | Requirement | — | **none** | — |
 | SRS-052 | Identification | desktop | M3 | Requirement | — | **none** | OP-076 |
-| SRS-053 | Accessible text of heart rate, reason and signal status | desktop | M3 | Requirement | — | **none** | — |
+| SRS-053 | Accessible text of heart rate, reason and signal status | desktop | M3 | Requirement | — | **none** | OP-084 |
 | SRS-054 | Mains interference removal under a deviation of the mains frequency | dsp | M3 | System | `dsp/sinus_dsp/filters.py:118` | `dsp/tests/system/test_srs_054_mains_deviation.py::test_detection_meets_srs_010_criteria_under_a_mains_deviation_of_half_a_hertz` | — |
 
 ## Milestones
@@ -96,6 +96,7 @@ Outcome of `--release-gate` on milestones M0, M1, M2, M3: **fail**
 - OP-075: open point still targets M3; close or retarget it
 - OP-076: open point still targets M3; close or retarget it
 - OP-081: open point still targets M3; close or retarget it
+- OP-084: open point still targets M3; close or retarget it
 - dsp/pyproject.toml: version 0.3.0.dev0 is a development version, not a release
 
 ## Gaps
@@ -104,4 +105,4 @@ Outcome of `--release-gate` on milestones M0, M1, M2, M3: **fail**
 - Implemented requirements without tests: none
 - Unknown IDs referenced in code/tests: none
 - Open points citing undefined IDs: none
-- Open points still open: 36 (see `open-points.md`)
+- Open points still open: 37 (see `open-points.md`)
