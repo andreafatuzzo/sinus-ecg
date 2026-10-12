@@ -1,0 +1,16 @@
+bad_format kUnsupportedFormat
+bad_units kUnsupportedUnits
+truncated kTruncatedSignal
+empty kEmptyRecord
+multiseg kUnsupportedRecord
+skew kUnsupportedRecord
+offset kUnsupportedRecord
+two_files kUnsupportedRecord
+fs_low kUnsupportedRecord
+no_fs kMalformedHeader
+bad_checksum kChecksumMismatch
+bad_initval kChecksumMismatch
+invalid_code kInvalidSampleValue
+name_mismatch kUnsupportedRecord
+too_big kSampleOutOfRange
+session_bad_mains kMalformedRecording

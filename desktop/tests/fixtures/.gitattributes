@@ -1,0 +1,3 @@
+# The WFDB fixtures are compared byte for byte with what make_wfdb_fixtures.py writes: no line-end
+# conversion, on any system.
+wfdb/** -text

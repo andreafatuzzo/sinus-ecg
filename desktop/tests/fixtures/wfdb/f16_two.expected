@@ -1,0 +1,30 @@
+record=f16_two
+fs_millihertz=250000
+sample_count=25
+sha256_binary32=a4c132c0cd8e47f4b3467d69038ab995a870aebc88a5bcf2c448e4cf07d1eb1f
+rows=25
+-1000 bff0147ae147ae14 bf80a3d7
+-963 bfeef9db22d0e560 bf77ced9
+-926 bfedcac083126e98 bf6e5604
+-889 bfec9ba5e353f7cf bf64dd2f
+-852 bfeb6c8b43958106 bf5b645a
+-815 bfea3d70a3d70a3d bf51eb85
+-778 bfe90e5604189375 bf4872b0
+-741 bfe7df3b645a1cac bf3ef9db
+-704 bfe6b020c49ba5e3 bf358106
+-667 bfe5810624dd2f1b bf2c0831
+-630 bfe451eb851eb852 bf228f5c
+-593 bfe322d0e5604189 bf191687
+-556 bfe1f3b645a1cac1 bf0f9db2
+-519 bfe0c49ba5e353f8 bf0624dd
+-482 bfdf2b020c49ba5e bef95810
+-445 bfdccccccccccccd bee66666
+-408 bfda6e978d4fdf3b bed374bc
+-371 bfd810624dd2f1aa bec08312
+-334 bfd5b22d0e560419 bead9168
+-297 bfd353f7ced91687 be9a9fbe
+-260 bfd0f5c28f5c28f6 be87ae14
+-223 bfcd2f1a9fbe76c9 be6978d5
+-186 bfc872b020c49ba6 be439581
+-149 bfc3b645a1cac083 be1db22d
+-112 bfbdf3b645a1cac1 bdef9db2

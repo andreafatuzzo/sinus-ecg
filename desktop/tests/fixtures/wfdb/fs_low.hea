@@ -1,0 +1,2 @@
+fs_low 1 100 10
+fs_low.dat 16 200/mV 16 0 0 50 0 ECG

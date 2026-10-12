@@ -66,6 +66,7 @@ endif()
 add_library(sinus_desktop_core STATIC
   src/core/command_line.cpp src/core/identity.cpp src/core/build_info.cpp
   src/core/sha256.cpp src/core/wfdb_header.cpp src/core/wfdb_reader.cpp
+  src/core/recording_metadata.cpp src/core/wfdb_writer.cpp src/core/reference_databases.cpp
   "${SINUS_DESKTOP_IDENTITY}")
 target_include_directories(sinus_desktop_core PUBLIC "${SINUS_DESKTOP_SRC}")
 target_link_libraries(sinus_desktop_core PUBLIC sinus::dsp)

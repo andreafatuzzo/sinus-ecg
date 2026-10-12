@@ -1,0 +1,11 @@
+session_bad_mains 1 360 360
+session_bad_mains.dat 16 1000(0)/mV 16 0 0 20225 0 ECG
+# sinus_recording=1
+# start_utc=2026-10-11T10:20:30.123Z
+# source=test
+# source_name=127.0.0.1:45000
+# mains_hz=55
+# desktop_version=0.3.0.dev0
+# desktop_source_sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+# library_version=0.3.0.dev0
+# library_source_sha256=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210

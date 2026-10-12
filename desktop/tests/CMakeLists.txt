@@ -39,7 +39,10 @@ string(STRIP "${_library_version}" _library_version)
 # Developer's unit tests of core, without Qt: the executable also proves that core needs no Qt.
 add_executable(sinus_desktop_core_unit_tests
   unit/test_identity.cpp unit/test_command_line.cpp unit/test_source_digest.cpp
-  unit/test_sha256.cpp unit/test_wfdb_header.cpp unit/test_wfdb_reader.cpp)
+  unit/test_sha256.cpp unit/test_wfdb_header.cpp unit/test_wfdb_reader.cpp
+  unit/test_recording_metadata.cpp unit/test_wfdb_writer.cpp unit/test_reference_databases.cpp
+  unit/test_wfdb_fixtures.cpp)
+target_include_directories(sinus_desktop_core_unit_tests PRIVATE support)
 # The SHA-256 of the library's verification code computes the expected digest independently.
 target_link_libraries(sinus_desktop_core_unit_tests PRIVATE sinus_desktop_core
                       sinus::dsp_verification GTest::gtest_main)
@@ -51,6 +54,13 @@ target_compile_definitions(sinus_desktop_core_unit_tests PRIVATE
   "SINUS_DESKTOP_TEST_OTHER_QT=${_other_qt}")
 sinus_desktop_apply_test_flags(sinus_desktop_core_unit_tests)
 sinus_desktop_discover(sinus_desktop_core_unit_tests unit)
+
+# Test tool of the WFDB cross-check on the reference databases (architecture-m3.md 17.8):
+#   sinus_desktop_wfdb_dump <record_path>
+add_executable(sinus_desktop_wfdb_dump tools/wfdb_dump.cpp)
+target_include_directories(sinus_desktop_wfdb_dump PRIVATE support)
+target_link_libraries(sinus_desktop_wfdb_dump PRIVATE sinus_desktop_core)
+sinus_desktop_apply_test_flags(sinus_desktop_wfdb_dump)
 
 # Developer's unit tests of io and ui.
 add_executable(sinus_desktop_unit_tests unit/test_qt_versions.cpp unit/test_main_window.cpp
@@ -82,5 +92,5 @@ foreach(kind requirement system)
   sinus_desktop_apply_test_flags(sinus_desktop_${kind}_tests)
   sinus_desktop_discover(sinus_desktop_${kind}_tests ${kind})
 endforeach()
-# The subset run of the replay and the WFDB cross-checks of the writer come with their groups
-# (architecture-m3.md 15.16, 15.18).
+# The WFDB cross-checks with the Python reference run with pytest after ctest (the desktop CI job,
+# architecture-m3.md 17.8). The subset run of the replay comes with its group (15.16, 15.18).

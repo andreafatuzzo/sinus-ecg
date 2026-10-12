@@ -319,7 +319,9 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-          cache-dependency-glob: tools/cpp/uv.lock
+          cache-dependency-glob: |
+            tools/cpp/uv.lock
+            dsp/uv.lock
       - run: uv sync --locked --project ../tools/cpp
       # The CMake package of Qt GUI needs the OpenGL headers; Qt's libraries load fontconfig,
       # freetype, xkbcommon, EGL and D-Bus from the system.
@@ -344,13 +346,24 @@ jobs:
         run: >-
           uv run --project ../tools/cpp clang-format --dry-run --Werror
           $(find src tests -name '*.cpp' -o -name '*.hpp')
+      # The C++ test WfdbRecordingWriterCrossCheck.WritesRecords writes its recordings into
+      # SINUS_DESKTOP_WFDB_DIR; the Python cross-checks then read them with the offline loader of
+      # dsp (architecture-m3.md 17.8). Only this ctest run sets it: the writer never overwrites.
       - name: GCC 14, preset release
         env:
           CXX: g++-14
+          SINUS_DESKTOP_WFDB_DIR: ${{ runner.temp }}/wfdb-recordings
         run: |
           uv run --project ../tools/cpp cmake --fresh --preset release
           uv run --project ../tools/cpp cmake --build --preset release
           uv run --project ../tools/cpp ctest --preset release
+      - name: WFDB cross-checks with the Python reference (after ctest)
+        working-directory: dsp
+        env:
+          SINUS_DESKTOP_WFDB_DIR: ${{ runner.temp }}/wfdb-recordings
+        run: |
+          uv sync --locked
+          uv run pytest -c pyproject.toml -rs ../desktop/tests/python
       - name: SBOM (GCC 14, release)
         run: uv run --project ../tools/cpp cmake --build --preset release --target sinus_desktop_sbom
       - uses: actions/upload-artifact@v7.0.1
@@ -393,9 +406,8 @@ jobs:
           name: coverage-desktop
           path: ${{ runner.temp }}/coverage-desktop.txt
           if-no-files-found: warn
-      # Later groups add here the Python cross-checks of the WFDB writer (SINUS_DESKTOP_WFDB_DIR)
-      # and the subset run of the replay on the six records of the subset report, with the cache
-      # of the dsp download script (architecture-m3.md 15.14, 15.16).
+      # A later group adds here the subset run of the replay on the six records of the subset
+      # report, with the cache of the dsp download script (architecture-m3.md 15.14, 15.16).
 
   # Desktop application on Windows (architecture-m3.md 15.14): Qt's LLVM-MinGW build of the pinned
   # version with the LLVM-MinGW toolchain that Qt names, installed and checked as in the job
