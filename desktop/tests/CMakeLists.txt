@@ -38,7 +38,8 @@ string(STRIP "${_library_version}" _library_version)
 
 # Developer's unit tests of core, without Qt: the executable also proves that core needs no Qt.
 add_executable(sinus_desktop_core_unit_tests
-  unit/test_identity.cpp unit/test_command_line.cpp unit/test_source_digest.cpp)
+  unit/test_identity.cpp unit/test_command_line.cpp unit/test_source_digest.cpp
+  unit/test_sha256.cpp unit/test_wfdb_header.cpp unit/test_wfdb_reader.cpp)
 # The SHA-256 of the library's verification code computes the expected digest independently.
 target_link_libraries(sinus_desktop_core_unit_tests PRIVATE sinus_desktop_core
                       sinus::dsp_verification GTest::gtest_main)
