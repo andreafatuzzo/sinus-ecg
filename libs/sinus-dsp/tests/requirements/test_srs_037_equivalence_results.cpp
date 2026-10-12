@@ -151,15 +151,16 @@ const char* const kNotice =
     "version 1.0.0, made available by PhysioNet under the Open Data Commons Attribution License "
     "v1.0, https://opendatacommons.org/licenses/by/1-0/; the results above are computed from them.";
 
-const std::vector<std::string> kOutputs = {"baseline_mv",      "mains_mv",    "beats",
-                                           "beat_reported_at", "heart_rates", "quality_windows"};
+const std::vector<std::string> kOutputs = {"baseline_mv",    "mains_mv",         "display_mv",
+                                           "beats",          "beat_reported_at", "heart_rates",
+                                           "quality_windows"};
 
 // Part of the requirement: the check states the build target, the reference software, the version
 // of the library with the identifier of its source code, and the outcome, in the documented form.
 // Input: the results file written by the tool on the exported folder. Expected: the title; the
 // items Build target, Library, Reference, Golden vectors, Chain size, Database notice, Outcome in
 // this order; a build target for the computer; the golden-vector row "32 files of 32 expected,
-// format version 2"; the notice sentence of the record segments; the outcome pass.
+// format version 3"; the notice sentence of the record segments; the outcome pass.
 // Verifies: SRS-037
 TEST(Srs037Header, ItemsOfTheResultsFile) {
   SKIP_WITHOUT_GOLDEN_DIR();
@@ -175,7 +176,7 @@ TEST(Srs037Header, ItemsOfTheResultsFile) {
   const std::string target = r.item("Build target");
   EXPECT_EQ(target.rfind("computer (", 0), 0U) << target;
   EXPECT_EQ(target.back(), ')');
-  EXPECT_EQ(r.item("Golden vectors"), "32 files of 32 expected, format version 2");
+  EXPECT_EQ(r.item("Golden vectors"), "32 files of 32 expected, format version 3");
   EXPECT_EQ(r.item("Chain size"),
             std::to_string(sizeof(sinus::dsp::Chain)) + " bytes, limit 65536");
   EXPECT_EQ(r.item("Database notice"), kNotice);
@@ -265,7 +266,7 @@ TEST(Srs037Identity, BuildTargetIsStatedAsGiven) {
 
 // Part of the requirement: "for each golden-vector file and each compared output, the largest
 // difference found, its tolerance and the outcome". Input: the tool's results on the export, and
-// QA's own run. Expected: 32 x 6 rows, in the order of the set (code-point order of the file
+// QA's own run. Expected: 32 x 7 rows, in the order of the set (code-point order of the file
 // names) and of the outputs; every tolerance is the approved one; every outcome is pass; the
 // largest difference of the conditioning, heart-rate and quality outputs equals QA's own largest
 // difference (computed in binary64 on the library's binary32 outputs), at the same sample; for
@@ -289,7 +290,7 @@ TEST(Srs037Rows, EveryFileAndOutputHasLargestDifferenceToleranceAndOutcome) {
           << id << " " << kOutputs[o] << " tolerance text " << row[4];
       const double largest = std::strtod(row[2].c_str(), nullptr);
       EXPECT_NEAR(largest, expected[o].largest, 1e-12) << id << " " << kOutputs[o] << " " << row[2];
-      if (o < 2 || o == 4 || o == 5) {
+      if (o < 3 || o == 5 || o == 6) {
         if (expected[o].largest > 0.0) {
           EXPECT_EQ(row[3], std::to_string(expected[o].sample)) << id << " " << kOutputs[o];
         }
@@ -321,10 +322,11 @@ TEST(Srs037Rows, ResultsAreReproducible) {
 // the rounding of the comparison.
 // Input: a folder of the export in which one value of the baseline, of the mains, of one valid
 // heart rate and of one window index are changed (four different files) by +1.2e-5 mV, -1.5e-5 mV,
-// +6e-5 bpm and +0.005; the other differences are of the order of 1e-7 or less. Expected: the
-// reported largest difference of each is the amount, within QA's own difference at that sample
-// (the rounding of the library's output); the sample is the changed one; all rows pass, the
-// outcome is pass; the other outputs of those files are as in the unchanged export.
+// +6e-5 bpm and +0.005, and one display value by +1.4e-5 mV (a fifth file); the other differences
+// are of the order of 1e-7 or less. Expected: the reported largest difference of each is the
+// amount, within QA's own difference at that sample (the rounding of the library's output); the
+// sample is the changed one; all rows pass, the outcome is pass; the other outputs of those files
+// are as in the unchanged export.
 // Verifies: SRS-037
 TEST(Srs037Known, ReportedLargestDifferenceEqualsTheChange) {
   SKIP_WITHOUT_GOLDEN_DIR();
@@ -336,8 +338,9 @@ TEST(Srs037Known, ReportedLargestDifferenceEqualsTheChange) {
   };
   const std::vector<Change> changes = {{"syn-fs360-hr075-bw-mains50", 0, 1.2e-5, 4321},
                                        {"syn-fs250-hr040-bw-mains60", 1, -1.5e-5, 2500},
-                                       {"syn-fs360-hr180-clean", 4, 6e-5, 0},
-                                       {"mitdb-108-first60s", 5, 0.005, 17}};
+                                       {"syn-fs360-hr180-clean", 5, 6e-5, 0},
+                                       {"mitdb-108-first60s", 6, 0.005, 17},
+                                       {"syn-fs250-hr180-bw-mains50", 2, 1.4e-5, 3500}};
   std::vector<Change> resolved = changes;
   TempFolder folder;
   std::vector<std::string> skipped;
@@ -358,7 +361,10 @@ TEST(Srs037Known, ReportedLargestDifferenceEqualsTheChange) {
     } else if (c.output == 1) {
       own_difference[n] = std::fabs(run.mains_out[c.row] - v.mains_out[c.row]);
       edited.set_field("[signals]", c.row, 2, sinus_qa::number_text(v.mains_out[c.row] + c.delta));
-    } else if (c.output == 4) {
+    } else if (c.output == 2) {
+      own_difference[n] = std::fabs(run.display[c.row] - v.display[c.row]);
+      edited.set_field("[signals]", c.row, 3, sinus_qa::number_text(v.display[c.row] + c.delta));
+    } else if (c.output == 5) {
       std::size_t k = 0;
       while (k < v.rates.size() && v.rates[k].status != "valid") {
         ++k;
@@ -401,8 +407,8 @@ TEST(Srs037Known, ReportedLargestDifferenceEqualsTheChange) {
       if (o == c.output) {
         EXPECT_NEAR(reported, std::fabs(c.delta), own_difference[n] + 1e-12)
             << c.id << " " << row[1] << " reported " << row[2];
-        if (o <= 4) {
-          const std::uint64_t sample = o < 2 ? c.row : own().vectors.at(c.id).rates[c.row].sample;
+        if (o <= 5) {
+          const std::uint64_t sample = o < 3 ? c.row : own().vectors.at(c.id).rates[c.row].sample;
           EXPECT_EQ(row[3], std::to_string(sample)) << c.id << " " << row[1];
         } else {
           bool found = false;
@@ -481,7 +487,7 @@ TEST(Srs037Fail, AMissingAndAnUnexpectedFileAreNamedInTheResults) {
   folder.link_or_copy(path_of(golden_dir(), "syn-fs360-hr075-clean"), "syn-extra.golden.txt");
   const Report r = parse_report(
       render_equivalence_report(check_folder(folder.str()), make_report_info("computer (test)")));
-  EXPECT_EQ(r.item("Golden vectors"), "31 files of 32 expected, format version 2");
+  EXPECT_EQ(r.item("Golden vectors"), "31 files of 32 expected, format version 3");
   EXPECT_EQ(r.item("Outcome"), "fail");
   std::size_t missing = 0;
   std::size_t extra = 0;

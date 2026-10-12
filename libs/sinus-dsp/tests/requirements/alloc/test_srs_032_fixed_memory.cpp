@@ -216,49 +216,53 @@ TEST(Srs032FixedMemory, CounterSeesDynamicRequests) {
 // Case: no dynamic memory request while configured, processing samples or reset.
 // Input: configure at 125, 250, 360, 500 and 1000 Hz (both mains settings), 20 s of the interfered
 // synthetic ECG, a limit sample, an invalid sample (NaN), the stopped samples, reset, 5 s more,
-// a rejected configuration (NaN Hz, mains 49), and a final valid configuration, all counted.
+// a rejected configuration (NaN Hz, mains 49), and a final valid configuration, all counted;
+// each with the display stage on (the default) and off.
 // Expected: zero requests, for new, delete, and (on Linux) malloc, calloc, realloc and free.
 // Verifies: SRS-032
 TEST(Srs032FixedMemory, NoDynamicRequestInConfigureProcessAndReset) {
   for (const int fs : {125, 250, 360, 500, 1000}) {
     for (const int mains : {50, 60}) {
-      // Prepared outside the counted region.
-      const std::vector<float> ecg =
-          sinus_qa::synthetic_ecg(fs, 75, static_cast<std::size_t>(20 * fs), mains);
-      const std::vector<float> more =
-          sinus_qa::synthetic_ecg(fs, 180, static_cast<std::size_t>(5 * fs), mains);
-      SampleOutput out;
-      Status last = Status::kOk;
-      Status bad_status = Status::kOk;
-      Status stopped_status = Status::kOk;
-      Status limit_status = Status::kOk;
-      bool all_ok = true;
-      unsigned long n = 0;
-      {
-        const Counting counting;
-        last = g_chain.configure(Config{static_cast<double>(fs), mains});
-        for (const float x : ecg) {
-          all_ok = all_ok && g_chain.process(x, out) == Status::kOk;
+      for (const bool display : {true, false}) {
+        // Prepared outside the counted region.
+        const std::vector<float> ecg =
+            sinus_qa::synthetic_ecg(fs, 75, static_cast<std::size_t>(20 * fs), mains);
+        const std::vector<float> more =
+            sinus_qa::synthetic_ecg(fs, 180, static_cast<std::size_t>(5 * fs), mains);
+        SampleOutput out;
+        Status last = Status::kOk;
+        Status bad_status = Status::kOk;
+        Status stopped_status = Status::kOk;
+        Status limit_status = Status::kOk;
+        bool all_ok = true;
+        unsigned long n = 0;
+        {
+          const Counting counting;
+          last = g_chain.configure(Config{static_cast<double>(fs), mains, display});
+          for (const float x : ecg) {
+            all_ok = all_ok && g_chain.process(x, out) == Status::kOk;
+          }
+          limit_status = g_chain.process(sinus::dsp::kMaxAbsSampleMv, out);
+          bad_status = g_chain.process(std::numeric_limits<float>::quiet_NaN(), out);
+          stopped_status = g_chain.process(0.1F, out);
+          g_chain.reset();
+          for (const float x : more) {
+            all_ok = all_ok && g_chain.process(x, out) == Status::kOk;
+          }
+          const Status rejected =
+              g_chain.configure(Config{std::numeric_limits<double>::quiet_NaN(), 49});
+          all_ok = all_ok && rejected == Status::kInvalidSamplingFrequency;
+          all_ok = all_ok && g_chain.configure(Config{static_cast<double>(fs), mains, display}) ==
+                                 Status::kOk;
+          n = Counting::requests();
         }
-        limit_status = g_chain.process(sinus::dsp::kMaxAbsSampleMv, out);
-        bad_status = g_chain.process(std::numeric_limits<float>::quiet_NaN(), out);
-        stopped_status = g_chain.process(0.1F, out);
-        g_chain.reset();
-        for (const float x : more) {
-          all_ok = all_ok && g_chain.process(x, out) == Status::kOk;
-        }
-        const Status rejected =
-            g_chain.configure(Config{std::numeric_limits<double>::quiet_NaN(), 49});
-        all_ok = all_ok && rejected == Status::kInvalidSamplingFrequency;
-        all_ok = all_ok && g_chain.configure(Config{static_cast<double>(fs), mains}) == Status::kOk;
-        n = Counting::requests();
+        EXPECT_EQ(last, Status::kOk);
+        EXPECT_EQ(limit_status, Status::kOk);
+        EXPECT_EQ(bad_status, Status::kInvalidSample);
+        EXPECT_EQ(stopped_status, Status::kStopped);
+        EXPECT_TRUE(all_ok);
+        EXPECT_EQ(n, 0UL) << "fs " << fs << " mains " << mains << " display " << display;
       }
-      EXPECT_EQ(last, Status::kOk);
-      EXPECT_EQ(limit_status, Status::kOk);
-      EXPECT_EQ(bad_status, Status::kInvalidSample);
-      EXPECT_EQ(stopped_status, Status::kStopped);
-      EXPECT_TRUE(all_ok);
-      EXPECT_EQ(n, 0UL) << "fs " << fs << " mains " << mains;
     }
   }
 }
