@@ -32,7 +32,7 @@ get_filename_component(SINUS_DSP_DIR_NAME "${CMAKE_CURRENT_SOURCE_DIR}" NAME)
 set(SINUS_DSP_IDENTITY "${CMAKE_CURRENT_BINARY_DIR}/generated/sinus_dsp_identity.cpp")
 add_custom_command(
   OUTPUT "${SINUS_DSP_IDENTITY}"
-  COMMAND ${CMAKE_COMMAND} -DLIBS_ROOT=${SINUS_DSP_LIBS_ROOT} -DITEM=${SINUS_DSP_DIR_NAME}
+  COMMAND ${CMAKE_COMMAND} -DROOT=${SINUS_DSP_LIBS_ROOT} -DITEM=${SINUS_DSP_DIR_NAME}
           -DVERSION_FILE=${CMAKE_CURRENT_SOURCE_DIR}/VERSION -DOUTPUT=${SINUS_DSP_IDENTITY}
           -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SourceDigest.cmake"
   DEPENDS ${SINUS_DSP_SOURCES} ${SINUS_DSP_HEADERS} "${CMAKE_CURRENT_SOURCE_DIR}/VERSION"
@@ -46,7 +46,7 @@ add_library(sinus::dsp ALIAS sinus_dsp)
 target_include_directories(sinus_dsp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 sinus_dsp_apply_flags(sinus_dsp)
 if(SINUS_DSP_TIDY)
-  # The tools project of tools/ puts the pinned clang-tidy first on PATH (uv run).
+  # The tools project of tools/cpp puts the pinned clang-tidy first on PATH (uv run).
   find_program(SINUS_DSP_CLANG_TIDY NAMES clang-tidy REQUIRED)
   # -Wno-unknown-warning-option: the GCC-only warnings of Flags.cmake are unknown to clang-tidy.
   set(_tidy_command "${SINUS_DSP_CLANG_TIDY};--config-file=${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy"

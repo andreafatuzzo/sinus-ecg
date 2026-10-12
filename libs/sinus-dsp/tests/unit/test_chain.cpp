@@ -6,7 +6,9 @@
 #include <vector>
 
 #include "sinus/dsp/chain.hpp"
+#include "sinus/dsp/conditioner.hpp"
 #include "sinus/dsp/config.hpp"
+#include "sinus/dsp/display_lowpass.hpp"
 #include "sinus/dsp/heart_rate.hpp"
 #include "sinus/dsp/qrs_detector.hpp"
 #include "synthetic_beats.hpp"
@@ -260,3 +262,164 @@ TEST(Chain, ResetRestartsHeartRateAndWindows) {
 }
 
 }  // namespace
+
+// --- display stage (architecture-m3.md 16.6) ---------------------------------------------------
+
+namespace {
+
+std::vector<float> display_test_signal(double fs) {
+  std::vector<float> x =
+      sinus_test::synthetic_beats(fs, 30.0, sinus_test::regular_beats(0.4, 0.8, 29.5));
+  for (std::size_t k = 0; k < x.size(); ++k) {
+    const double t = static_cast<double>(k) / fs;
+    x[k] += 0.8F + static_cast<float>(0.3 * std::sin(2.0 * 3.141592653589793 * 0.3 * t) +
+                                      0.1 * std::sin(2.0 * 3.141592653589793 * 50.0 * t));
+  }
+  return x;
+}
+
+void expect_same_except_display(const SampleOutput& a, const SampleOutput& b, std::size_t n) {
+  ASSERT_EQ(a.baseline_mv, b.baseline_mv) << n;
+  ASSERT_EQ(a.conditioned_mv, b.conditioned_mv) << n;
+  ASSERT_EQ(a.detection_count, b.detection_count) << n;
+  for (std::size_t i = 0; i < a.detection_count; ++i) {
+    ASSERT_EQ(a.detections[i].index, b.detections[i].index) << n;
+    ASSERT_EQ(a.detections[i].reported_at, b.detections[i].reported_at) << n;
+    ASSERT_EQ(a.detections[i].mark, b.detections[i].mark) << n;
+    ASSERT_EQ(a.detections[i].path, b.detections[i].path) << n;
+  }
+  ASSERT_EQ(a.heart_rate_count, b.heart_rate_count) << n;
+  for (std::size_t i = 0; i < a.heart_rate_count; ++i) {
+    ASSERT_EQ(a.heart_rates[i].sample, b.heart_rates[i].sample) << n;
+    ASSERT_EQ(a.heart_rates[i].beat_index, b.heart_rates[i].beat_index) << n;
+    ASSERT_EQ(a.heart_rates[i].has_beat, b.heart_rates[i].has_beat) << n;
+    ASSERT_EQ(a.heart_rates[i].status, b.heart_rates[i].status) << n;
+    ASSERT_EQ(std::isnan(a.heart_rates[i].bpm), std::isnan(b.heart_rates[i].bpm)) << n;
+    if (!std::isnan(a.heart_rates[i].bpm)) {
+      ASSERT_EQ(a.heart_rates[i].bpm, b.heart_rates[i].bpm) << n;
+    }
+  }
+  ASSERT_EQ(a.has_window, b.has_window) << n;
+  if (a.has_window) {
+    ASSERT_EQ(a.window.first_sample, b.window.first_sample) << n;
+    ASSERT_EQ(a.window.last_sample, b.window.last_sample) << n;
+    ASSERT_EQ(a.window.reported_at, b.window.reported_at) << n;
+    ASSERT_EQ(a.window.index, b.window.index) << n;
+    ASSERT_EQ(a.window.usable, b.window.usable) << n;
+  }
+}
+
+}  // namespace
+
+TEST(ChainDisplay, TheStageIsOnByDefault) {
+  EXPECT_TRUE(Config{}.display_lowpass);
+  EXPECT_TRUE((Config{360.0, 50}).display_lowpass);
+}
+
+TEST(ChainDisplay, DelayIsZeroUntilConfiguredAndMOnOrOff) {
+  Chain chain;
+  EXPECT_EQ(chain.display_delay_samples(), 0U);
+  ASSERT_EQ(chain.configure(Config{360.0, 50}), Status::kOk);
+  EXPECT_EQ(chain.display_delay_samples(), 11U);
+  ASSERT_EQ(chain.configure(Config{250.0, 60, false}), Status::kOk);
+  EXPECT_EQ(chain.display_delay_samples(), 8U);
+  EXPECT_FALSE(chain.config().display_lowpass);
+  EXPECT_EQ(chain.configure(Config{360.0, 55}), Status::kInvalidMainsFrequency);
+  EXPECT_EQ(chain.display_delay_samples(), 0U);
+  ASSERT_EQ(chain.configure(Config{1000.0, 50}), Status::kOk);
+  EXPECT_EQ(chain.display_delay_samples(), 30U);
+  EXPECT_EQ(chain.configure(Config{50.0, 50}), Status::kInvalidSamplingFrequency);
+  EXPECT_EQ(chain.display_delay_samples(), 0U);
+}
+
+TEST(ChainDisplay, IsTheDisplayLowpassOfTheBinary64ConditionedValue) {
+  for (const double fs : {250.0, 360.0}) {
+    const std::vector<float> x = display_test_signal(fs);
+    Chain chain;
+    ASSERT_EQ(chain.configure(Config{fs, 50}), Status::kOk);
+    sinus::dsp::Conditioner conditioner;
+    ASSERT_EQ(conditioner.configure(Config{fs, 50}), Status::kOk);
+    sinus::dsp::DisplayLowpass display;
+    ASSERT_EQ(display.configure(fs), Status::kOk);
+    SampleOutput out;
+    for (std::size_t n = 0; n < x.size(); ++n) {
+      ASSERT_EQ(chain.process(x[n], out), Status::kOk);
+      sinus::dsp::ConditionedSample c{};
+      ASSERT_EQ(conditioner.process(x[n], c), Status::kOk);
+      float want = 0.0F;
+      ASSERT_EQ(display.process(c.conditioned_f64_mv, want), Status::kOk);
+      ASSERT_EQ(out.display_mv, want) << fs << " sample " << n;
+    }
+  }
+}
+
+TEST(ChainDisplay, TheFirstDisplayValueIsZero) {
+  Chain chain;
+  ASSERT_EQ(chain.configure(Config{360.0, 50}), Status::kOk);
+  SampleOutput out;
+  ASSERT_EQ(chain.process(3.25F, out), Status::kOk);
+  EXPECT_EQ(out.display_mv, 0.0F);
+}
+
+TEST(ChainDisplay, OffGivesNanAndTheSameOtherOutputs) {
+  for (const double fs : {250.0, 360.0}) {
+    for (const int mains : {50, 60}) {
+      const std::vector<float> x = display_test_signal(fs);
+      Chain on;
+      ASSERT_EQ(on.configure(Config{fs, mains, true}), Status::kOk);
+      Chain off;
+      ASSERT_EQ(off.configure(Config{fs, mains, false}), Status::kOk);
+      SampleOutput a;
+      SampleOutput b;
+      std::size_t detections = 0;
+      for (std::size_t n = 0; n < x.size(); ++n) {
+        ASSERT_EQ(on.process(x[n], a), Status::kOk);
+        ASSERT_EQ(off.process(x[n], b), Status::kOk);
+        ASSERT_TRUE(std::isnan(b.display_mv)) << n;
+        ASSERT_FALSE(std::isnan(a.display_mv)) << n;
+        expect_same_except_display(a, b, n);
+        detections += a.detection_count;
+      }
+      EXPECT_GT(detections, 30U);
+    }
+  }
+}
+
+TEST(ChainDisplay, NoDisplayValueWithAStatusOtherThanOk) {
+  Chain chain;
+  SampleOutput out;
+  out.display_mv = 1.0F;
+  EXPECT_EQ(chain.process(0.1F, out), Status::kNotConfigured);
+  EXPECT_EQ(out.display_mv, 0.0F);
+  for (const bool display : {true, false}) {
+    ASSERT_EQ(chain.configure(Config{360.0, 50, display}), Status::kOk);
+    ASSERT_EQ(chain.process(0.1F, out), Status::kOk);
+    out.display_mv = 1.0F;
+    EXPECT_EQ(chain.process(kNan, out), Status::kInvalidSample);
+    EXPECT_EQ(out.display_mv, 0.0F);
+    out.display_mv = 1.0F;
+    EXPECT_EQ(chain.process(0.1F, out), Status::kStopped);
+    EXPECT_EQ(out.display_mv, 0.0F);
+  }
+}
+
+TEST(ChainDisplay, ResetRestartsTheDisplayStage) {
+  const double fs = 360.0;
+  const std::vector<float> x = display_test_signal(fs);
+  Chain fresh;
+  ASSERT_EQ(fresh.configure(Config{fs, 50}), Status::kOk);
+  Chain used;
+  ASSERT_EQ(used.configure(Config{fs, 50}), Status::kOk);
+  SampleOutput out;
+  for (std::size_t n = 100; n < 1500; ++n) {
+    ASSERT_EQ(used.process(x[n], out), Status::kOk);
+  }
+  used.reset();
+  SampleOutput want;
+  for (std::size_t n = 0; n < x.size(); ++n) {
+    ASSERT_EQ(used.process(x[n], out), Status::kOk);
+    ASSERT_EQ(fresh.process(x[n], want), Status::kOk);
+    ASSERT_EQ(out.display_mv, want.display_mv) << n;
+    expect_same_except_display(out, want, n);
+  }
+}

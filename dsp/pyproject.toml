@@ -29,7 +29,7 @@ dev = [
 include = ["sinus_dsp*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "../libs/sinus-dsp/tests"]
+testpaths = ["tests", "../libs/sinus-dsp/tests", "../desktop/tests"]
 # tests/unit: developer unit tests (no requirement marker)
 # tests/requirements: QA functional tests; tests/system: test-engineer system tests
 # Tagging rules and CI gates: docs/adr/0004-test-tagging-and-traceability-gates.md

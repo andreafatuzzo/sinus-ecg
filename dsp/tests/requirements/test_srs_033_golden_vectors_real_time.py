@@ -13,7 +13,8 @@ of the reference functions called directly on the same input. The set of files c
 detection marked start-up after detection has learned its signal levels again, a heart rate
 withheld for each reason, and a window marked not usable."
 
-The format is architecture section 13.8, read by the test's own reader (`read_golden_file`);
+The format is architecture sections 13.8 and 16.5 (version 3), read by the test's own reader
+(`read_golden_file`);
 the event inputs are those of section 13.9, built here from its table (`make_event_ecg`).
 The export is run on the synthetic ECG subset fixture, so that the 18 + 8 synthetic files and
 the 6 record segments are all checked.

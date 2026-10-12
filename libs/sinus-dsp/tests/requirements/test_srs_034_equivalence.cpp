@@ -106,7 +106,7 @@ INSTANTIATE_TEST_SUITE_P(GoldenSet, Srs034File, ::testing::ValuesIn(sinus_qa::ex
                          });
 
 // Part of the requirement: "every file passes", by the library's own check.
-// Input: the folder of the vectors. Expected: all 32 files are compared and pass, with the six
+// Input: the folder of the vectors. Expected: all 32 files are compared and pass, with the seven
 // outputs each, and the set passes.
 // Verifies: SRS-034
 TEST(Srs034Set, TheCheckPassesEveryFileOfTheExport) {
@@ -119,7 +119,7 @@ TEST(Srs034Set, TheCheckPassesEveryFileOfTheExport) {
   for (const FileResult& f : set.files) {
     EXPECT_EQ(f.status, FileStatus::kCompared) << f.input_id << " " << f.detail;
     EXPECT_TRUE(f.passed()) << f.input_id;
-    EXPECT_EQ(f.outputs.size(), 6U) << f.input_id;
+    EXPECT_EQ(f.outputs.size(), 7U) << f.input_id;
     for (const OutputResult& o : f.outputs) {
       EXPECT_TRUE(o.pass) << f.input_id << " " << o.output;
     }
@@ -169,7 +169,7 @@ void expect_only_failing(const FileResult& file, const std::string& name) {
   ASSERT_EQ(file.status, FileStatus::kCompared) << file.detail;
   EXPECT_EQ(file.input_id, kFileId);
   EXPECT_FALSE(file.passed());
-  ASSERT_EQ(file.outputs.size(), 6U);
+  ASSERT_EQ(file.outputs.size(), 7U);
   for (const OutputResult& o : file.outputs) {
     EXPECT_EQ(o.pass, o.output != name) << o.output;
   }
@@ -219,6 +219,48 @@ TEST(Srs034Detects, ConditioningOutputsBeyondTwoTimesTenToMinusFiveMv) {
   }
 }
 
+// Part of the requirement (SRS-044 display output): display_mv within 2e-5 mV at every sample.
+// Input: one sample of the display_mv column changed by +-1.9e-5 (just inside) and by +-2.1e-5
+// (just outside), at sample 6543. Expected: inside passes; outside fails the output display_mv
+// only, at that sample, with the tolerance 2e-5.
+// Verifies: SRS-034, SRS-044
+TEST(Srs034Detects, DisplayOutputBeyondTwoTimesTenToMinusFiveMv) {
+  SKIP_WITHOUT_GOLDEN_DIR();
+  constexpr std::size_t kRow = 6543;
+  const std::vector<double>& column = subject().parsed.display;
+  ASSERT_GT(column.size(), kRow);
+  for (const double delta : {1.9e-5, -1.9e-5}) {
+    VectorText edited(subject().text);
+    edited.set_field("[signals]", kRow, 3, sinus_qa::number_text(column[kRow] + delta));
+    expect_passes(check_edited(edited));
+  }
+  for (const double delta : {2.1e-5, -2.1e-5}) {
+    VectorText edited(subject().text);
+    edited.set_field("[signals]", kRow, 3, sinus_qa::number_text(column[kRow] + delta));
+    const FileResult result = check_edited(edited);
+    expect_only_failing(result, "display_mv");
+    const OutputResult* o = find_output(result, "display_mv");
+    ASSERT_NE(o, nullptr);
+    EXPECT_EQ(o->sample, kRow);
+    EXPECT_DOUBLE_EQ(o->tolerance, 2e-5);
+  }
+}
+
+// Part of the requirement (SRS-044 display output): the output order of the check: baseline_mv,
+// mains_mv, display_mv, then the detections. Input: the unchanged file. Expected: seven outputs,
+// display_mv third.
+// Verifies: SRS-034, SRS-044
+TEST(Srs034Detects, DisplayOutputIsTheThirdOfSevenOutputs) {
+  SKIP_WITHOUT_GOLDEN_DIR();
+  expect_passes(check_edited(VectorText(subject().text)));
+  const FileResult r = check_edited(VectorText(subject().text));
+  ASSERT_EQ(r.outputs.size(), 7U);
+  EXPECT_EQ(r.outputs[0].output, "baseline_mv");
+  EXPECT_EQ(r.outputs[1].output, "mains_mv");
+  EXPECT_EQ(r.outputs[2].output, "display_mv");
+  EXPECT_EQ(r.outputs[3].output, "beats");
+}
+
 // The vector of the subject file as the library's reader gives it, and a mutated copy checked.
 using sinus::dsp::verification::GoldenVector;
 
@@ -259,6 +301,30 @@ TEST(Srs034Detects, TheUnchangedCopyPasses) {
   const FileResult r = check_mutated([](GoldenVector&) {});
   ASSERT_EQ(r.status, FileStatus::kCompared) << r.detail;
   EXPECT_TRUE(r.passed());
+}
+
+// Part of the requirement (SRS-044 display output): the delay of the file equals the delay of the
+// library. Input: a copy of the vector with display_delay_samples one larger and two more tap rows
+// (the samples unchanged), and one with it one smaller and two taps fewer. Expected: the output
+// display_mv fails with the difference "delay <library>, file <file>" (the library gives 11 at
+// 360 Hz); the file does not pass.
+// Verifies: SRS-034, SRS-044
+TEST(Srs034Detects, ADisplayDelayDifferentFromTheLibrarys) {
+  SKIP_WITHOUT_GOLDEN_DIR();
+  const std::uint32_t m = subject_vector().display_delay_samples;
+  ASSERT_EQ(m, 11U);
+  for (const int change : {1, -1}) {
+    const FileResult r = check_mutated([&](GoldenVector& v) {
+      v.display_delay_samples = static_cast<std::uint32_t>(static_cast<int>(m) + change);
+      v.display_taps.resize(2 * v.display_delay_samples + 1, 0.0);
+    });
+    ASSERT_EQ(r.status, FileStatus::kCompared) << r.detail;
+    EXPECT_FALSE(r.passed());
+    const OutputResult* o = find_output(r, "display_mv");
+    ASSERT_NE(o, nullptr);
+    EXPECT_FALSE(o->pass);
+    EXPECT_EQ(o->difference, "delay 11, file " + std::to_string(static_cast<int>(m) + change));
+  }
 }
 
 // Part of the requirement: the same mark for each detection. Input: the mark of one detection

@@ -31,6 +31,10 @@ jobs:
       # Python tests of the C++ items use the configuration of dsp (architecture-m2.md 13.12)
       - run: uv run ruff check --config pyproject.toml ../libs
       - run: uv run ruff format --check --config pyproject.toml ../libs
+      - run: uv run ruff check --config pyproject.toml ../desktop
+      - run: uv run ruff format --check --config pyproject.toml ../desktop
+      # The install script of Qt (architecture-m3.md 15.14) is checked like the scripts of dsp
+      - run: uv run mypy --strict ../desktop/qt/install_qt.py
       - run: uv run mypy
       - run: uv run pytest
       # Matrix up to date, requirement and milestone fields, test tag placement and verification
@@ -115,7 +119,7 @@ jobs:
   # its group. SRS-035: the equivalence check on the vectors of the job dsp decides this job. The
   # compilers are those of
   # the runner image (GCC 14 and Clang 18); the development tools are pinned by
-  # libs/sinus-dsp/tools/uv.lock.
+  # tools/cpp/uv.lock.
   libs:
     needs: dsp
     runs-on: ubuntu-24.04
@@ -132,23 +136,23 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-          cache-dependency-glob: libs/sinus-dsp/tools/uv.lock
-      - run: uv sync --locked --project tools
+          cache-dependency-glob: tools/cpp/uv.lock
+      - run: uv sync --locked --project ../../tools/cpp
       - uses: actions/download-artifact@v8.0.1
         with:
           name: golden-vectors
           path: ${{ github.workspace }}/golden-vectors
       - name: clang-format
         run: >-
-          uv run --project tools clang-format --dry-run --Werror
+          uv run --project ../../tools/cpp clang-format --dry-run --Werror
           $(find include src tests verification -name '*.cpp' -o -name '*.hpp' -o -name '*.cc' -o -name '*.h')
       - name: GCC 14, preset release
         env:
           CXX: g++-14
         run: |
-          uv run --project tools cmake --fresh --preset release
-          uv run --project tools cmake --build --preset release
-          uv run --project tools ctest --preset release
+          uv run --project ../../tools/cpp cmake --fresh --preset release
+          uv run --project ../../tools/cpp cmake --build --preset release
+          uv run --project ../../tools/cpp ctest --preset release
       # SRS-035: a missing or failing file gives a non-zero exit status and fails the job; the
       # results are uploaded after the check, also when it failed.
       - name: Equivalence with the reference (GCC 14, release)
@@ -164,7 +168,7 @@ jobs:
             ${{ github.workspace }}/golden-vectors/NOTICE.md
           if-no-files-found: warn
       - name: SBOM (GCC 14, release)
-        run: uv run --project tools cmake --build --preset release --target sinus_dsp_sbom
+        run: uv run --project ../../tools/cpp cmake --build --preset release --target sinus_dsp_sbom
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: sbom-libs
@@ -174,37 +178,37 @@ jobs:
         env:
           CXX: g++-14
         run: |
-          uv run --project tools cmake --fresh --preset asan-ubsan
-          uv run --project tools cmake --build --preset asan-ubsan
-          uv run --project tools ctest --preset asan-ubsan
+          uv run --project ../../tools/cpp cmake --fresh --preset asan-ubsan
+          uv run --project ../../tools/cpp cmake --build --preset asan-ubsan
+          uv run --project ../../tools/cpp ctest --preset asan-ubsan
       - name: Clang 18, preset release
         env:
           CXX: clang++-18
         run: |
-          uv run --project tools cmake --fresh --preset release
-          uv run --project tools cmake --build --preset release
-          uv run --project tools ctest --preset release
+          uv run --project ../../tools/cpp cmake --fresh --preset release
+          uv run --project ../../tools/cpp cmake --build --preset release
+          uv run --project ../../tools/cpp ctest --preset release
       - name: Clang 18, preset asan-ubsan
         env:
           CXX: clang++-18
         run: |
-          uv run --project tools cmake --fresh --preset asan-ubsan
-          uv run --project tools cmake --build --preset asan-ubsan
-          uv run --project tools ctest --preset asan-ubsan
+          uv run --project ../../tools/cpp cmake --fresh --preset asan-ubsan
+          uv run --project ../../tools/cpp cmake --build --preset asan-ubsan
+          uv run --project ../../tools/cpp ctest --preset asan-ubsan
       - name: clang-tidy (GCC build, preset tidy)
         env:
           CXX: g++-14
         run: |
-          uv run --project tools cmake --fresh --preset tidy
-          uv run --project tools cmake --build --preset tidy
+          uv run --project ../../tools/cpp cmake --fresh --preset tidy
+          uv run --project ../../tools/cpp cmake --build --preset tidy
       - name: Coverage (GCC, preset coverage)
         env:
           CXX: g++-14
         run: |
-          uv run --project tools cmake --fresh --preset coverage
-          uv run --project tools cmake --build --preset coverage
-          uv run --project tools ctest --preset coverage
-          uv run --project tools gcovr --root . --filter 'include/' --filter 'src/' --filter 'build/coverage/generated/' --gcov-executable gcov-14 --print-summary --txt "${RUNNER_TEMP}/coverage-libs.txt" build/coverage
+          uv run --project ../../tools/cpp cmake --fresh --preset coverage
+          uv run --project ../../tools/cpp cmake --build --preset coverage
+          uv run --project ../../tools/cpp ctest --preset coverage
+          uv run --project ../../tools/cpp gcovr --root . --filter 'include/' --filter 'src/' --filter 'build/coverage/generated/' --gcov-executable gcov-14 --print-summary --txt "${RUNNER_TEMP}/coverage-libs.txt" build/coverage
       - uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
@@ -295,3 +299,144 @@ jobs:
             ${{ github.workspace }}/esp32s3-out/qemu.log
             ${{ github.workspace }}/golden-vectors/NOTICE.md
           if-no-files-found: warn
+
+  # Desktop application (architecture-m3.md 15.14): Qt of desktop/qt/version.txt installed by
+  # aqtinstall from tools/cpp, its archives checked against the committed SHA-256 list; the
+  # compilers of the runner image (GCC 14 and Clang 18); every test on the offscreen platform.
+  # The cache of the Qt installation is only a copy: the install script checks the kept archives
+  # against the list on every run.
+  desktop:
+    runs-on: ubuntu-24.04
+    env:
+      QT_QPA_PLATFORM: offscreen
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/cpp/uv.lock
+      - run: uv sync --locked --project ../tools/cpp
+      # The CMake package of Qt GUI needs the OpenGL headers; Qt's libraries load fontconfig,
+      # freetype, xkbcommon, EGL and D-Bus from the system.
+      - name: System libraries used by Qt
+        run: >-
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          libgl-dev libegl-dev libxkbcommon-dev libfontconfig1 libfreetype6 libdbus-1-3
+          fonts-dejavu-core
+      - name: Cache of the Qt installation
+        uses: actions/cache@v6.1.0
+        with:
+          path: ${{ runner.temp }}/qt
+          key: qt-linux-${{ hashFiles('desktop/qt/version.txt', 'desktop/qt/*-linux-*.sha256', 'desktop/qt/install_qt.py', 'tools/cpp/uv.lock') }}
+      - name: Qt install and check of the archives
+        id: qt
+        run: >-
+          uv run --project ../tools/cpp python qt/install_qt.py --dest "${RUNNER_TEMP}/qt"
+          --github-output "${GITHUB_OUTPUT}"
+      - name: Qt on the search path of CMake
+        run: echo "CMAKE_PREFIX_PATH=${{ steps.qt.outputs.qt-prefix }}" >> "${GITHUB_ENV}"
+      - name: clang-format
+        run: >-
+          uv run --project ../tools/cpp clang-format --dry-run --Werror
+          $(find src tests -name '*.cpp' -o -name '*.hpp')
+      - name: GCC 14, preset release
+        env:
+          CXX: g++-14
+        run: |
+          uv run --project ../tools/cpp cmake --fresh --preset release
+          uv run --project ../tools/cpp cmake --build --preset release
+          uv run --project ../tools/cpp ctest --preset release
+      - name: SBOM (GCC 14, release)
+        run: uv run --project ../tools/cpp cmake --build --preset release --target sinus_desktop_sbom
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sbom-desktop
+          path: desktop/build/release/sbom-desktop.cdx.json
+          if-no-files-found: error
+      # LeakSanitizer reads desktop/tests/sanitizers/lsan.supp (set by tests/CMakeLists.txt).
+      - name: GCC 14, preset asan-ubsan
+        env:
+          CXX: g++-14
+        run: |
+          uv run --project ../tools/cpp cmake --fresh --preset asan-ubsan
+          uv run --project ../tools/cpp cmake --build --preset asan-ubsan
+          uv run --project ../tools/cpp ctest --preset asan-ubsan
+      - name: Clang 18, preset release
+        env:
+          CXX: clang++-18
+        run: |
+          uv run --project ../tools/cpp cmake --fresh --preset release
+          uv run --project ../tools/cpp cmake --build --preset release
+          uv run --project ../tools/cpp ctest --preset release
+      - name: clang-tidy (GCC build, preset tidy)
+        env:
+          CXX: g++-14
+        run: |
+          uv run --project ../tools/cpp cmake --fresh --preset tidy
+          uv run --project ../tools/cpp cmake --build --preset tidy
+      - name: Coverage (GCC, preset coverage)
+        env:
+          CXX: g++-14
+        run: |
+          uv run --project ../tools/cpp cmake --fresh --preset coverage
+          uv run --project ../tools/cpp cmake --build --preset coverage
+          uv run --project ../tools/cpp ctest --preset coverage
+          uv run --project ../tools/cpp gcovr --root . --filter 'src/' --filter 'build/coverage/generated/' --gcov-executable gcov-14 --print-summary --txt "${RUNNER_TEMP}/coverage-desktop.txt" build/coverage
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: coverage-desktop
+          path: ${{ runner.temp }}/coverage-desktop.txt
+          if-no-files-found: warn
+      # Later groups add here the Python cross-checks of the WFDB writer (SINUS_DESKTOP_WFDB_DIR)
+      # and the subset run of the replay on the six records of the subset report, with the cache
+      # of the dsp download script (architecture-m3.md 15.14, 15.16).
+
+  # Desktop application on Windows (architecture-m3.md 15.14): Qt's LLVM-MinGW build of the pinned
+  # version with the LLVM-MinGW toolchain that Qt names, installed and checked as in the job
+  # desktop; release build and every test on the offscreen platform.
+  desktop-windows:
+    runs-on: windows-2025
+    env:
+      QT_QPA_PLATFORM: offscreen
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/cpp/uv.lock
+      - run: uv sync --locked --project ../tools/cpp
+      - name: Cache of the Qt installation
+        uses: actions/cache@v6.1.0
+        with:
+          path: ${{ runner.temp }}/qt
+          key: qt-windows-${{ hashFiles('desktop/qt/version.txt', 'desktop/qt/*-windows-*.sha256', 'desktop/qt/install_qt.py', 'tools/cpp/uv.lock') }}
+      - name: Qt and its toolchain, install and check of the archives
+        id: qt
+        run: >-
+          uv run --project ../tools/cpp python qt/install_qt.py --dest "${RUNNER_TEMP}/qt"
+          --github-output "${GITHUB_OUTPUT}"
+      # Qt's toolchain first on PATH (its compiler and C++ runtime), then Qt's DLLs for the tests.
+      - name: Qt and its toolchain on the search paths
+        run: |
+          echo "CMAKE_PREFIX_PATH=${{ steps.qt.outputs.qt-prefix }}" >> "${GITHUB_ENV}"
+          echo "CXX=${{ steps.qt.outputs.toolchain-bin }}/clang++.exe" >> "${GITHUB_ENV}"
+          echo "CC=${{ steps.qt.outputs.toolchain-bin }}/clang.exe" >> "${GITHUB_ENV}"
+          echo "${{ steps.qt.outputs.qt-prefix }}/bin" >> "${GITHUB_PATH}"
+          echo "${{ steps.qt.outputs.toolchain-bin }}" >> "${GITHUB_PATH}"
+      - name: LLVM-MinGW of Qt, preset release
+        run: |
+          uv run --project ../tools/cpp cmake --fresh --preset release
+          uv run --project ../tools/cpp cmake --build --preset release
+          uv run --project ../tools/cpp ctest --preset release

@@ -12,6 +12,9 @@ namespace sinus::dsp {
 struct ConditionedSample {
   float baseline_mv;
   float conditioned_mv;
+  // SRS-044: the binary64 output of the mains stage, of which conditioned_mv is the rounding; the
+  // input of the display low-pass (architecture-m3.md 16.6).
+  double conditioned_f64_mv;
 };
 
 class Conditioner {

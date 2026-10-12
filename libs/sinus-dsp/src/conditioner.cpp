@@ -27,7 +27,7 @@ void Conditioner::reset() noexcept {
 
 Status Conditioner::process(float sample_mv, ConditionedSample& out) noexcept {
   if (!configured_) {
-    out = ConditionedSample{0.0F, 0.0F};
+    out = ConditionedSample{0.0F, 0.0F, 0.0};
     return Status::kNotConfigured;
   }
   const auto x = static_cast<double>(sample_mv);
@@ -40,7 +40,8 @@ Status Conditioner::process(float sample_mv, ConditionedSample& out) noexcept {
     started_ = true;
   }
   const double conditioned = mains_.step(baseline);  // the binary64 value, never its rounding
-  out = ConditionedSample{static_cast<float>(baseline), static_cast<float>(conditioned)};
+  out =
+      ConditionedSample{static_cast<float>(baseline), static_cast<float>(conditioned), conditioned};
   return Status::kOk;
 }
 

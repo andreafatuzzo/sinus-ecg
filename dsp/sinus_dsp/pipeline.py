@@ -15,6 +15,8 @@ from typing import Final
 import numpy.typing as npt
 
 from sinus_dsp._types import FloatArray, IndexArray
+from sinus_dsp.display import apply_display_lowpass, display_lowpass_taps
+from sinus_dsp.errors import InvalidInputError
 from sinus_dsp.filters import apply_sos, baseline_sos, mains_sos
 from sinus_dsp.heart_rate import HeartRateEvent, track_heart_rate
 from sinus_dsp.input_checks import validate_input, validate_mains
@@ -43,6 +45,9 @@ class PipelineResult:
     detections: Detections
     heart_rate: tuple[HeartRateEvent, ...]
     quality: QualityWindows
+    display_delay_samples: int  # SRS-044: M (architecture §16.2)
+    display_taps: FloatArray  # SRS-044: the 2 * M + 1 taps
+    display_mv: FloatArray | None  # SRS-044: as long as the input; None with display=False
 
 
 @dataclass(frozen=True)
@@ -76,7 +81,9 @@ def _condition(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> _Condit
     )
 
 
-def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> PipelineResult:
+def run_pipeline(
+    signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int, *, display: bool = True
+) -> PipelineResult:
     """Condition a raw ECG and detect its QRS complexes.
 
     SRS-006: the detected QRS sample indices, in the time base of the input. SRS-010: the
@@ -88,6 +95,9 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
     indices are the beats. SRS-024, SRS-025, SRS-026: and the heart rate events of those
     detections (:func:`~sinus_dsp.heart_rate.track_heart_rate`). SRS-027, SRS-028: and the
     signal quality index of every window (:func:`~sinus_dsp.quality.assess_quality`).
+    SRS-044: and, with ``display`` on, the display output: the binary64 output of the mains
+    stage filtered by the display low-pass (:func:`~sinus_dsp.display.apply_display_lowpass`),
+    a branch that detection does not read.
 
     The input and the mains setting are checked once, before any other computation; then the
     baseline filter, the mains filter and the detection on the mains output run in this
@@ -97,6 +107,8 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
         signal_mv: The raw ECG, in mV. It is not modified.
         fs_hz: Its sampling frequency, in Hz.
         mains_hz: The mains frequency, 50 or 60 Hz.
+        display: Whether to compute the display output. ``display_delay_samples`` and
+            ``display_taps`` of the result are filled either way.
 
     Returns:
         The checked input, the coefficients and the output of each conditioning stage, the
@@ -104,9 +116,13 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
 
     Raises:
         InvalidInputError: If the input is rejected by the input checks, or ``mains_hz`` is
-            neither 50 nor 60.
+            neither 50 nor 60, or ``display`` is not a ``bool``.
     """
+    if not isinstance(display, bool):
+        raise InvalidInputError(f"display is not a bool: {display!r}")
     conditioned = _condition(signal_mv, fs_hz, mains_hz)
+    taps = display_lowpass_taps(conditioned.fs_hz)
+    display_mv = apply_display_lowpass(taps, conditioned.mains_mv) if display else None
     trace = _trace(conditioned.mains_mv, conditioned.fs_hz)
     detections = trace.detections
     heart_rate = track_heart_rate(
@@ -127,6 +143,9 @@ def run_pipeline(signal_mv: npt.ArrayLike, fs_hz: float, mains_hz: int) -> Pipel
         detections=detections,
         heart_rate=heart_rate,
         quality=assess_quality(conditioned.input_mv, trace),
+        display_delay_samples=(taps.size - 1) // 2,
+        display_taps=taps,
+        display_mv=display_mv,
     )
 
 

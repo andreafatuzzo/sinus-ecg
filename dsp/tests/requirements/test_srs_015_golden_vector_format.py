@@ -1,9 +1,9 @@
 """Requirement tests of SRS-015: exact read-back and the documented file format (RC-012).
 
-SRS-015 (v0.7.2), on format version 2 (architecture, section 13.8; version 2 holds every item
-that SRS-015 lists and adds those of SRS-033): "The file format shall be documented in
-`architecture.md`. Numeric values shall be written so that reading them back gives exactly
-the values computed."
+SRS-015, on format version 3 (architecture, sections 13.8 and 16.5; version 3 holds every item
+that SRS-015 lists, those of SRS-033 and the display low-pass of SRS-044): "The file
+format shall be documented in `architecture.md`. Numeric values shall be written so that
+reading them back gives exactly the values computed."
 
 The format is architecture section 7.3: a float64 is written as Python's `repr()` of it (the
 shortest decimal string that converts back to the same value), with the syntax
@@ -24,7 +24,9 @@ file that is not what the writer wrote (truncated, altered, converted to CR LF l
 is refused rather than read as other values. Each case is checked with the reader of the
 software and with the test's own reader of section 7.3 (`read_golden_file`).
 
-The rules of version 2 for `[beats]` (mark, `reported_at`), `[heart_rates]` and
+The rules of version 3 for `display_delay_samples`, `[display_coefficients]` and the column
+`display_mv` are in `V3_CASES` (architecture, section 16.5). The rules of
+version 2 for `[beats]` (mark, `reported_at`), `[heart_rates]` and
 `[quality_windows]` are checked on a 40 s vector with a held stretch, which has detections of
 both marks, heart-rate events with and without a detection and windows of both marks.
 
@@ -41,6 +43,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from sinus_dsp.display import display_delay_samples, display_lowpass, display_lowpass_taps
 from sinus_dsp.errors import InvalidInputError, MalformedFileError, NonFiniteOutputError
 from sinus_dsp.golden import (
     golden_vector,
@@ -166,10 +169,18 @@ def test_values_read_back_exactly(
     assert golden.reference_beats.tolist() == reference
     assert golden.header["software_version"] == SOFTWARE.version
     assert golden.header["source_sha256"] == SOFTWARE.source_sha256
+    # Version 3 (architecture 16.5): the display items equal the reference functions, bit for bit.
+    assert golden.header["display_delay_samples"] == str(display_delay_samples(fs))
+    assert _same_float64(golden.display_taps, display_lowpass_taps(fs))
+    assert _same_float64(golden.display_mv, display_lowpass(expected.mains_mv, fs))
+    assert _same_float64(golden.display_mv, expected.display_mv)
 
     parsed = parse_golden_vector(text, "edge.golden.txt")
     assert parsed.fs_hz == fs
     assert _same_float64(parsed.input_mv, signal)
+    assert parsed.display_delay_samples == display_delay_samples(fs)
+    assert _same_float64(parsed.display_taps, display_lowpass_taps(fs))
+    assert _same_float64(parsed.display_mv, display_lowpass(expected.mains_mv, fs))
     for read, written in zip(parsed.stage_outputs_mv, stage_outputs, strict=True):
         assert _same_float64(read, written)
     for read, coefficients in zip(parsed.coefficients, expected.coefficients, strict=True):
@@ -331,6 +342,36 @@ V2_CASES = [
     "heart-rates-section-missing",
     "quality-windows-section-missing",
     "sections-heart-rates-and-windows-swapped",
+]
+
+# Cases of the rules that version 3 adds (architecture, section 16.5).
+V3_CASES = [
+    "display-delay-missing",
+    "display-delay-zero",
+    "display-delay-31",
+    "display-delay-not-an-integer",
+    "display-delay-with-leading-zero",
+    "display-delay-above-the-integer-limit",
+    "display-delay-larger-than-the-taps",
+    "display-delay-smaller-than-the-taps",
+    "display-coefficients-section-missing",
+    "display-coefficients-columns-in-another-order",
+    "display-coefficients-row-with-one-field",
+    "display-coefficients-row-with-three-fields",
+    "display-coefficients-tap-number-out-of-order",
+    "display-coefficients-tap-number-from-one",
+    "display-coefficient-nan",
+    "display-coefficient-1e-400",
+    "display-coefficient-uppercase-exponent",
+    "display-tap-row-missing",
+    "display-tap-row-added",
+    "display-coefficients-after-signals",
+    "signals-without-the-display-column",
+    "signals-display-column-first",
+    "signal-row-without-the-display-field",
+    "signal-row-with-an-extra-field",
+    "display-value-1e999",
+    "display-value-1e-400",
 ]
 
 
@@ -522,6 +563,10 @@ def _mutate(text: str, case: str) -> tuple[str, int | None]:
     n: int | None
     if case in V2_CASES:
         return _mutate_v2(text, case)
+    if case in V3_CASES:
+        return _mutate_v3(text, case)
+    coef = _line_of(lines, "[coefficients]")  # 0-based index of the column line
+    sig = _line_of(lines, "[signals]") - 1  # 0-based index of the line "[signals]"
     if case == "carriage-returns":
         return text.replace("\n", "\r\n"), 1
     if case == "no-final-line-feed":
@@ -533,7 +578,7 @@ def _mutate(text: str, case: str) -> tuple[str, int | None]:
     if case == "byte-order-mark":
         return "﻿" + text, 1
     if case == "space-in-a-row":
-        lines[21], n = lines[21].replace(",", ", ", 1), 22
+        lines[sig + 2], n = lines[sig + 2].replace(",", ", ", 1), sig + 3
     elif case == "tab-in-the-header":
         lines[2], n = lines[2] + "\t", 3
     elif case == "empty-line":
@@ -541,8 +586,10 @@ def _mutate(text: str, case: str) -> tuple[str, int | None]:
         n = 15
     elif case == "unknown-format":
         n = _set_header(lines, "format", "sinus-golden-vectors")
-    elif case == "version-3":
-        n = _set_header(lines, "format_version", "3")
+    elif case == "version-2":
+        n = _set_header(lines, "format_version", "2")
+    elif case == "version-4":
+        n = _set_header(lines, "format_version", "4")
     elif case == "unknown-version":
         n = _set_header(lines, "format_version", "1")
     elif case == "keys-out-of-order":
@@ -591,21 +638,21 @@ def _mutate(text: str, case: str) -> tuple[str, int | None]:
             "float-just-below-half-of-the-smallest-subnormal": "2.4703282292062327e-324",
             "float-minus-just-below-half-of-the-smallest-subnormal": "-2.4703282292062327e-324",
         }[case]
-        lines[22], n = _replace_field(lines[22], 0, token), 23
+        lines[sig + 3], n = _replace_field(lines[sig + 3], 0, token), sig + 4
     elif case == "coefficient-1e999":
-        lines[17], n = _replace_field(lines[17], 3, "1e999"), 18
+        lines[coef + 1], n = _replace_field(lines[coef + 1], 3, "1e999"), coef + 2
     elif case == "row-missing-a-field":
-        lines[23], n = lines[23].rsplit(",", 1)[0], 24
+        lines[sig + 4], n = lines[sig + 4].rsplit(",", 1)[0], sig + 5
     elif case == "row-with-an-extra-field":
-        lines[23], n = lines[23] + ",0.0", 24
+        lines[sig + 4], n = lines[sig + 4] + ",0.0", sig + 5
     elif case == "coefficient-row-of-another-stage":
-        lines[17], n = _replace_field(lines[17], 0, "mains"), 18
+        lines[coef + 1], n = _replace_field(lines[coef + 1], 0, "mains"), coef + 2
     elif case == "coefficient-section-from-1":
-        lines[17], n = _replace_field(lines[17], 1, "1"), 18
+        lines[coef + 1], n = _replace_field(lines[coef + 1], 1, "1"), coef + 2
     elif case == "coefficient-row-with-six-fields":
-        lines[18], n = lines[18].rsplit(",", 1)[0], 19
+        lines[coef + 2], n = lines[coef + 2].rsplit(",", 1)[0], coef + 3
     elif case == "signal-columns-in-another-order":
-        lines[20], n = "input_mv,mains_mv,baseline_mv", 21
+        lines[sig + 1], n = "input_mv,mains_mv,baseline_mv,display_mv", sig + 2
     elif case == "section-missing":
         n = _line_of(lines, "[beats]")
         del lines[n - 1]
@@ -644,13 +691,13 @@ def _mutate(text: str, case: str) -> tuple[str, int | None]:
         last = _line_of(lines, "[heart_rates]") - 1
         lines[last - 1], n = LIMIT_TOKENS["above"], last
     elif case == "coefficient-section-above-the-integer-limit":
-        lines[18], n = _replace_field(lines[18], 1, LIMIT_TOKENS["above"]), 19
+        lines[coef + 2], n = _replace_field(lines[coef + 2], 1, LIMIT_TOKENS["above"]), coef + 3
     elif case == "coefficient-1e-400":
-        lines[17], n = _replace_field(lines[17], 3, "1e-400"), 18
+        lines[coef + 1], n = _replace_field(lines[coef + 1], 3, "1e-400"), coef + 2
     elif case == "sampling-frequency-1e-400":
         n = _set_header(lines, "sampling_frequency_hz", "1e-400")
     elif case == "mains-output-1e-400":
-        lines[22], n = _replace_field(lines[22], 2, "1e-400"), 23
+        lines[sig + 3], n = _replace_field(lines[sig + 3], 2, "1e-400"), sig + 4
     else:
         raise AssertionError(case)
     return "\n".join(lines) + "\n", n
@@ -667,7 +714,8 @@ MALFORMED_CASES = [
     "empty-line",
     "unknown-format",
     "unknown-version",
-    "version-3",
+    "version-2",
+    "version-4",
     "keys-out-of-order",
     "key-missing",
     "key-twice",
@@ -717,6 +765,7 @@ MALFORMED_CASES = [
     "n-heart-rates-at-the-integer-limit",
     "n-quality-windows-at-the-integer-limit",
     *V2_CASES,
+    *V3_CASES,
     # Rule C3 (architecture v0.2.11): integers above 2**63 - 1, and the bound itself.
     "n-samples-above-the-integer-limit",
     "n-beats-above-the-integer-limit",
@@ -739,6 +788,96 @@ MALFORMED_CASES = [
     "coefficient-1e-400",
     "sampling-frequency-1e-400",
 ]
+
+
+def _mutate_v3(text: str, case: str) -> tuple[str, int]:
+    """The text of a case of ``V3_CASES`` and the line that must be named."""
+    lines = text.split("\n")[:-1]
+    dc = lines.index("[display_coefficients]")  # 0-based index of the section line
+    sig = lines.index("[signals]")
+    taps = list(range(dc + 2, sig))  # 0-based indices of the tap rows
+    delay_line = next(i for i, x in enumerate(lines) if x.startswith("display_delay_samples="))
+    n: int
+    delay_values = {
+        "display-delay-zero": "0",
+        "display-delay-31": "31",
+        "display-delay-not-an-integer": "1.5",
+        "display-delay-with-leading-zero": "011",
+        "display-delay-above-the-integer-limit": LIMIT_TOKENS["above"],
+    }
+    if case == "display-delay-missing":
+        del lines[delay_line]
+        n = delay_line + 1
+    elif case in delay_values:
+        n = _set_header(lines, "display_delay_samples", delay_values[case])
+    elif case == "display-delay-larger-than-the-taps":
+        # M = 12 asks for 25 rows; the 23 rows end at the next section.
+        _set_header(lines, "display_delay_samples", "12")
+        n = sig + 1
+    elif case == "display-delay-smaller-than-the-taps":
+        # M = 10 asks for 21 rows; the first row after them is the 22nd.
+        _set_header(lines, "display_delay_samples", "10")
+        n = taps[21] + 1
+    elif case == "display-coefficients-section-missing":
+        del lines[dc]
+        n = dc + 1
+    elif case == "display-coefficients-columns-in-another-order":
+        lines[dc + 1] = "h,tap"
+        n = dc + 2
+    elif case == "display-coefficients-row-with-one-field":
+        lines[taps[2]] = lines[taps[2]].split(",")[0]
+        n = taps[2] + 1
+    elif case == "display-coefficients-row-with-three-fields":
+        lines[taps[2]] += ",0.0"
+        n = taps[2] + 1
+    elif case == "display-coefficients-tap-number-out-of-order":
+        lines[taps[3]] = _replace_field(lines[taps[3]], 0, "5")
+        n = taps[3] + 1
+    elif case == "display-coefficients-tap-number-from-one":
+        lines[taps[0]] = _replace_field(lines[taps[0]], 0, "1")
+        n = taps[0] + 1
+    elif case == "display-coefficient-nan":
+        lines[taps[4]] = _replace_field(lines[taps[4]], 1, "nan")
+        n = taps[4] + 1
+    elif case == "display-coefficient-1e-400":
+        lines[taps[4]] = _replace_field(lines[taps[4]], 1, "1e-400")
+        n = taps[4] + 1
+    elif case == "display-coefficient-uppercase-exponent":
+        lines[taps[4]] = _replace_field(lines[taps[4]], 1, "1E-05")
+        n = taps[4] + 1
+    elif case == "display-tap-row-missing":
+        # The last tap row is deleted: found where the next row is expected, at the next section.
+        del lines[taps[-1]]
+        n = taps[-1] + 1
+    elif case == "display-tap-row-added":
+        # One row more than 2M + 1: the first row after the count.
+        lines.insert(sig, f"{len(taps)},0.0")
+        n = sig + 1
+    elif case == "display-coefficients-after-signals":
+        end = lines.index("[beats]")
+        lines = lines[:dc] + lines[sig:end] + lines[dc:sig] + lines[end:]
+        n = dc + 1
+    elif case == "signals-without-the-display-column":
+        lines[sig + 1] = "input_mv,baseline_mv,mains_mv"
+        n = sig + 2
+    elif case == "signals-display-column-first":
+        lines[sig + 1] = "display_mv,input_mv,baseline_mv,mains_mv"
+        n = sig + 2
+    elif case == "signal-row-without-the-display-field":
+        lines[sig + 3] = lines[sig + 3].rsplit(",", 1)[0]
+        n = sig + 4
+    elif case == "signal-row-with-an-extra-field":
+        lines[sig + 3] += ",0.0"
+        n = sig + 4
+    elif case == "display-value-1e999":
+        lines[sig + 3] = _replace_field(lines[sig + 3], 3, "1e999")
+        n = sig + 4
+    elif case == "display-value-1e-400":
+        lines[sig + 3] = _replace_field(lines[sig + 3], 3, "1e-400")
+        n = sig + 4
+    else:
+        raise AssertionError(case)
+    return "\n".join(lines) + "\n", n
 
 
 @pytest.mark.requirement("SRS-015")
@@ -773,8 +912,8 @@ def test_file_that_breaks_the_format_is_refused(
 
     Input: the text of the base vector changed in one way: CR LF line endings; no final line
     feed; text after `[end]`; cut after line 100; a byte-order mark; a space, a tab, an
-    empty line; an unknown format, a version 1 file (the readers accept version 2 only) or a
-    version 3; header keys out of order, missing or given twice; header values that break
+    empty line; an unknown format, a version 1 or version 2 file (the readers accept version 3
+    only) or a version 4; header keys out of order, missing or given twice; header values that break
     their rule (digest in uppercase, mains 55, sampling
     frequency 0.0 or 1e999, empty software version, `.` in the input identifier, a stage
     given twice, `n_beats` with a leading zero, `n_samples=0`); a float written `+1.0`,
@@ -790,7 +929,9 @@ def test_file_that_breaks_the_format_is_refused(
     coefficient section number of 9223372036854775808, and the bound itself, a header count
     of 9223372036854775807; rule C4: a float written `1e-400`, `-1e-400`, `0.5e-400`,
     `0.00001e-320`, `2.4703282292062327e-324` or `-2.4703282292062327e-324` (each converts to
-    zero) in the input, the mains output, a coefficient or the sampling frequency.
+    zero) in the input, the mains output, a coefficient or the sampling frequency; the rules of
+    version 3 listed in `V3_CASES` (the key `display_delay_samples`, the section
+    `[display_coefficients]`, the column `display_mv`).
     Expected: `parse_golden_vector(text, "case.golden.txt")` raises `MalformedFileError` with
     `path` "case.golden.txt" and the 1-based number of the first offending line (the last line
     for a text that ends too early); for a row count that differs from the header, the line
@@ -863,10 +1004,12 @@ def test_float_that_is_zero_or_does_not_convert_to_zero_is_accepted(
     bitwise.
     """
     lines = render_golden_vector(base_vector).split("\n")
+    coef = lines.index("[coefficients]") + 1
+    sig = lines.index("[signals]")
     if place == "coefficient":
-        lines[17] = _replace_field(lines[17], 3, token)
+        lines[coef + 1] = _replace_field(lines[coef + 1], 3, token)
     else:
-        lines[22] = _replace_field(lines[22], 0 if place == "input" else 2, token)
+        lines[sig + 3] = _replace_field(lines[sig + 3], 0 if place == "input" else 2, token)
     text = "\n".join(lines)
     path = tmp_path / "case.golden.txt"
     path.write_bytes(text.encode("utf-8"))
@@ -903,7 +1046,9 @@ def test_file_that_is_not_utf8_is_refused(base_vector: Any, tmp_path: Path) -> N
     reason `not UTF-8 text` (architecture, section 8.12).
     """
     data = render_golden_vector(base_vector).encode("utf-8")
-    position = data.index(b"[signals]") + len(b"[signals]\ninput_mv,baseline_mv,mains_mv\n")
+    position = data.index(b"[signals]") + len(
+        b"[signals]\ninput_mv,baseline_mv,mains_mv,display_mv\n"
+    )
     path = tmp_path / "bytes.golden.txt"
     path.write_bytes(data[:position] + b"\xff" + data[position + 1 :])
 
@@ -1028,3 +1173,129 @@ def test_render_refuses_a_vector_that_breaks_a_rule_of_version_2(
 
     with pytest.raises(InvalidInputError):
         render_golden_vector(vector)
+
+
+def _with_display_delay(text: str, delay: int) -> str:
+    """The text with ``display_delay_samples`` set to ``delay`` and 2 * delay + 1 tap rows
+    (the first taps of the file, then zeros, numbered from 0)."""
+    lines = text.split("\n")
+    dc = lines.index("[display_coefficients]")
+    sig = lines.index("[signals]")
+    taps = [row.split(",")[1] for row in lines[dc + 2 : sig]]
+    taps = (taps + ["0.0"] * (2 * delay + 1))[: 2 * delay + 1]
+    rows = [f"{k},{h}" for k, h in enumerate(taps)]
+    lines[dc + 2 : sig] = rows
+    _set_header(lines, "display_delay_samples", str(delay))
+    return "\n".join(lines)
+
+
+@pytest.mark.requirement("SRS-015")
+@pytest.mark.parametrize("delay", [1, 2, 30])
+def test_version_3_delay_limits_are_accepted(
+    delay: int,
+    base_vector: Any,
+    tmp_path: Path,
+    read_golden_file: Callable[[bytes], Any],
+) -> None:
+    """The display delay limits of version 3 (1 to 30 samples) are accepted and read back.
+
+    Input: the text of the base vector with `display_delay_samples` of 1, 2 or 30 and 3, 5 or 61
+    tap rows (the readers do not check that M fits the sampling frequency, architecture 16.5).
+    Expected: `parse_golden_vector`, `read_golden_vector` and the test's own reader accept the
+    text; the delay and the taps read back are those written; `display_mv` is that of the base
+    vector, bitwise.
+    """
+    text = _with_display_delay(render_golden_vector(base_vector), delay)
+    path = tmp_path / "case.golden.txt"
+    path.write_bytes(text.encode("utf-8"))
+    own = read_golden_file(text.encode("utf-8"))
+
+    assert own.header["display_delay_samples"] == str(delay)
+    assert own.display_taps.size == 2 * delay + 1
+    for vector in (parse_golden_vector(text, "case.golden.txt"), read_golden_vector(path)):
+        assert vector.display_delay_samples == delay
+        assert _same_float64(vector.display_taps, own.display_taps)
+        assert _same_float64(vector.display_mv, base_vector.display_mv)
+    assert _same_float64(own.display_mv, base_vector.display_mv)
+
+
+@pytest.mark.requirement("SRS-015")
+def test_version_3_vector_equals_the_pipeline_display(base_vector: Any) -> None:
+    """`golden_vector` takes the display items from the display stage of the pipeline.
+
+    Input: the base vector (40 s of synthetic ECG at 360 Hz, mains 60 Hz).
+    Expected: `display_delay_samples` is 11, `display_taps` has 23 taps, `display_mv` is as long
+    as the input, and all three equal bit for bit the reference functions called on the
+    `mains_mv` of `run_pipeline` for the same input (architecture 16.5, verification notes).
+    """
+    result = run_pipeline(base_vector.input_mv, 360.0, 60)
+
+    assert base_vector.display_delay_samples == display_delay_samples(360.0) == 11
+    assert base_vector.display_taps.size == 23
+    assert base_vector.display_mv.shape == base_vector.input_mv.shape
+    assert _same_float64(base_vector.display_taps, display_lowpass_taps(360.0))
+    assert _same_float64(base_vector.display_mv, display_lowpass(result.mains_mv, 360.0))
+
+
+@pytest.mark.requirement("SRS-015")
+@pytest.mark.parametrize(
+    "case",
+    [
+        "delay-zero",
+        "delay-31",
+        "delay-negative",
+        "taps-one-too-few",
+        "taps-one-too-many",
+        "taps-for-another-delay",
+        "display-shorter-than-the-input",
+        "display-longer-than-the-input",
+    ],
+)
+def test_render_refuses_a_vector_that_breaks_a_rule_of_version_3(
+    case: str, base_vector: Any
+) -> None:
+    """The writer does not produce a text that its own readers refuse (architecture 16.5).
+
+    Input: the base vector changed in one field: `display_delay_samples` of 0, 31 or -11;
+    22 or 24 taps with the delay 11; 21 taps; a `display_mv` one sample shorter or one sample
+    longer than the input.
+    Expected: `render_golden_vector` raises `InvalidInputError` and returns no text.
+    """
+    taps, display = base_vector.display_taps, base_vector.display_mv
+    changes: dict[str, Any] = {
+        "delay-zero": {"display_delay_samples": 0},
+        "delay-31": {"display_delay_samples": 31},
+        "delay-negative": {"display_delay_samples": -11},
+        "taps-one-too-few": {"display_taps": taps[:-1]},
+        "taps-one-too-many": {"display_taps": np.append(taps, 0.0)},
+        "taps-for-another-delay": {"display_taps": taps[:21]},
+        "display-shorter-than-the-input": {"display_mv": display[:-1]},
+        "display-longer-than-the-input": {"display_mv": np.append(display, 0.0)},
+    }
+    vector = dataclasses.replace(base_vector, **changes[case])
+
+    with pytest.raises(InvalidInputError):
+        render_golden_vector(vector)
+
+
+@pytest.mark.requirement("SRS-015")
+@pytest.mark.parametrize("place", ["display-value-nan", "display-value-inf", "display-tap-nan"])
+def test_non_finite_display_value_is_never_written(place: str, base_vector: Any) -> None:
+    """A display value or tap that is not finite is never written (architecture 16.5).
+
+    Input: the base vector with NaN or +inf in `display_mv` (sample 7), or NaN in a display tap.
+    Expected: `render_golden_vector` raises an error (`NonFiniteOutputError` naming the input
+    `syn-test`, or `InvalidInputError`) and returns no text.
+    """
+    changes: dict[str, Any] = {
+        "display-value-nan": {"display_mv": _with_value(base_vector.display_mv, 7, np.nan)},
+        "display-value-inf": {"display_mv": _with_value(base_vector.display_mv, 7, np.inf)},
+        "display-tap-nan": {"display_taps": _with_value(base_vector.display_taps, 3, np.nan)},
+    }
+    vector = dataclasses.replace(base_vector, **changes[place])
+
+    with pytest.raises((NonFiniteOutputError, InvalidInputError)) as excinfo:
+        render_golden_vector(vector)
+
+    if isinstance(excinfo.value, NonFiniteOutputError):
+        assert excinfo.value.input_id == "syn-test"

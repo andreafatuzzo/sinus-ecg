@@ -117,7 +117,7 @@ The same rules apply to work drafted with AI assistance (§5.3).
   - The C++ items follow the same version rule: one version per milestone for every software item. Each states it in a `VERSION` file equal to the version of `dsp`, which `traceability.py` checks, and identifies its code with a SHA-256 digest of its own sources computed at build time; for the library, `architecture.md` §14.15. The desktop application and the firmware apply the rule in their detailed design (Milestones 3 and 4).
 - **Dependencies**:
   - `dsp/uv.lock` pins every Python dependency to an exact version, and CI installs with `uv sync --locked`;
-  - for the C++ items, the versions of the SDKs and toolchains (ESP-IDF and its container image, Qt, CMake minimum version) are pinned in the item's build files; for the library (`architecture.md` §14.2, §14.13): CMake, Ninja, clang-format, clang-tidy and gcovr in the uv project `libs/sinus-dsp/tools` (`uv.lock`), GoogleTest by URL and SHA-256, the ESP-IDF image by tag and digest;
+  - for the C++ items, the versions of the SDKs and toolchains (ESP-IDF and its container image, Qt, CMake minimum version) are pinned in the item's build files; for the library (`architecture.md` §14.2, §14.13): CMake, Ninja, clang-format, clang-tidy and gcovr in the uv project `tools/cpp` (`uv.lock`), GoogleTest by URL and SHA-256, the ESP-IDF image by tag and digest;
   - runtime dependencies are SOUP and are listed in [`soup.md`](soup.md) (§7).
 - **Data**: reference databases are downloaded by script, verified by checksum and never committed. Golden vectors are regenerated, never committed ([`architecture.md`](architecture.md) §7.5).
 
@@ -137,7 +137,7 @@ The same rules apply to work drafted with AI assistance (§5.3).
 | SBOM | CycloneDX JSON of the `dsp` runtime environment, generated in CI with `cyclonedx-py` from the `cyclonedx-bom` package (a development tool), published as a build artifact ([`cybersecurity.md`](cybersecurity.md) §6) |
 | Vulnerability scan | OSV-Scanner on the CycloneDX SBOM of `dsp`, in the CI job `dsp` on every push and pull request; it fails on a known vulnerability that has not been triaged (`dsp/osv-scanner.toml`). Dependabot alerts on `main` between pushes ([`cybersecurity.md`](cybersecurity.md) §7) |
 | Dependency updates | Dependabot version updates for the workflow actions, into `develop` (`.github/dependabot.yml`); Python dependencies are updated deliberately ([`cybersecurity.md`](cybersecurity.md) §7.4) |
-| C++ build | CMake (4.4.4) with presets and Ninja (1.13.2), pinned in the uv project `libs/sinus-dsp/tools`; the C++ build is compiled with `-ffp-contract=off` ([ADR 0008](../adr/0008-arithmetic-of-the-real-time-library.md)) |
+| C++ build | CMake (4.4.4) with presets and Ninja (1.13.2), pinned in the uv project `tools/cpp`; the C++ build is compiled with `-ffp-contract=off` ([ADR 0008](../adr/0008-arithmetic-of-the-real-time-library.md)) |
 | C++ compilers | GCC 14 and Clang 18 on Linux in CI; LLVM-MinGW on the development computer; the ESP-IDF toolchain for the ESP32-S3 |
 | C++ formatting | clang-format (22.1.8, pinned in the tools project), run in CI with warnings as errors ([ADR 0007](../adr/0007-cpp-coding-standard-and-static-analysis.md)) |
 | C++ static analysis | clang-tidy (22.1.8, pinned in the tools project), run in CI; compiler warnings are errors; no cppcheck (ADR 0007) |

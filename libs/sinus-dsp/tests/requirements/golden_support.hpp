@@ -117,7 +117,8 @@ struct QVector {
   std::string id, version, digest;
   double fs = 0.0;
   int mains = 0;
-  std::vector<double> input, baseline, mains_out;
+  std::vector<double> input, baseline, mains_out, display;
+  std::uint32_t display_delay = 0;
   std::vector<QBeat> beats;
   std::vector<QRate> rates;
   std::vector<QWindow> windows;
@@ -155,6 +156,8 @@ inline QVector parse_vector(const std::string& text) {
         v.fs = std::strtod(value.c_str(), nullptr);
       } else if (key == "mains_frequency_hz") {
         v.mains = std::atoi(value.c_str());
+      } else if (key == "display_delay_samples") {
+        v.display_delay = static_cast<std::uint32_t>(std::strtoul(value.c_str(), nullptr, 10));
       }
       continue;
     }
@@ -167,6 +170,7 @@ inline QVector parse_vector(const std::string& text) {
       v.input.push_back(std::strtod(f[0].c_str(), nullptr));
       v.baseline.push_back(std::strtod(f[1].c_str(), nullptr));
       v.mains_out.push_back(std::strtod(f[2].c_str(), nullptr));
+      v.display.push_back(std::strtod(f[3].c_str(), nullptr));
     } else if (section == "[beats]") {
       v.beats.push_back({std::strtoull(f[0].c_str(), nullptr, 10), f[1] == "reliable",
                          std::strtoull(f[2].c_str(), nullptr, 10)});
@@ -208,7 +212,8 @@ inline const char* status_text(sinus::dsp::HeartRateStatus s) {
 
 struct QRun {
   bool ok = false;
-  std::vector<double> baseline, mains_out;
+  std::vector<double> baseline, mains_out, display;
+  std::uint32_t display_delay = 0;
   std::vector<QBeat> beats;
   std::vector<std::uint64_t> beat_call;  // the call (sample) at which each detection came out
   std::vector<QRate> rates;
@@ -227,6 +232,7 @@ inline QRun run_library_on(const QVector& v) {
   if (chain.configure(config) != Status::kOk) {
     return run;
   }
+  run.display_delay = chain.display_delay_samples();
   SampleOutput out;
   for (std::size_t i = 0; i < v.input.size(); ++i) {
     if (chain.process(static_cast<float>(v.input[i]), out) != Status::kOk) {
@@ -234,6 +240,7 @@ inline QRun run_library_on(const QVector& v) {
     }
     run.baseline.push_back(static_cast<double>(out.baseline_mv));
     run.mains_out.push_back(static_cast<double>(out.conditioned_mv));
+    run.display.push_back(static_cast<double>(out.display_mv));
     for (std::size_t k = 0; k < out.detection_count; ++k) {
       const Detection& d = out.detections[k];
       run.beats.push_back({d.index, d.mark == Mark::kReliable, d.reported_at});
@@ -294,11 +301,16 @@ inline QDiff compare_series(const char* name, const std::vector<double>& lib,
   return d;
 }
 
-// The six outputs in the order of the report.
+// The seven outputs in the order of the report (display_mv third; its delay is compared first).
 inline std::vector<QDiff> compare_run(const QVector& v, const QRun& run) {
   std::vector<QDiff> all;
   all.push_back(compare_series("baseline_mv", run.baseline, v.baseline));
   all.push_back(compare_series("mains_mv", run.mains_out, v.mains_out));
+  QDiff display = compare_series("display_mv", run.display, v.display);
+  if (run.display_delay != v.display_delay) {
+    display.structural = "delay";
+  }
+  all.push_back(display);
 
   QDiff beats;
   beats.output = "beats";
@@ -380,7 +392,7 @@ inline std::vector<QDiff> compare_run(const QVector& v, const QRun& run) {
 }
 
 inline double tolerance_of(const std::string& output) {
-  if (output == "baseline_mv" || output == "mains_mv") {
+  if (output == "baseline_mv" || output == "mains_mv" || output == "display_mv") {
     return kTolConditioning;
   }
   if (output == "heart_rates") {

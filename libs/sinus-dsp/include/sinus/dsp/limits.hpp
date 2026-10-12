@@ -1,9 +1,10 @@
 #pragma once
 
 // SRS-017, SRS-018, SRS-032: supported range of the sampling frequency and of the amplitude, and
-// the capacities of the library (architecture-m2.md 14.4, 14.10).
+// the capacities of the library (architecture-m2.md 14.4, 14.10; architecture-m3.md 16.6).
 
 #include <cstddef>
+#include <cstdint>
 
 namespace sinus::dsp {
 
@@ -23,6 +24,10 @@ inline constexpr std::size_t kDetectorDerivativeCapacity = 246;  // d: N + P + 1
 inline constexpr std::size_t kDetectorLearningCapacity = 2000;   // y and |b|: L
 inline constexpr std::size_t kDetectorPeakStoreCapacity = 1000;  // peaks: L / 2
 inline constexpr std::size_t kDetectorRrIntervalCapacity = 8;    // RR intervals of search-back
+// SRS-044: the display low-pass (architecture-m3.md 16.2, 16.6): M = round(30 ms * fs) is at
+// most 30 samples (at 1000 Hz), and the filter has 2M + 1 taps.
+inline constexpr std::uint32_t kDisplayMaxDelaySamples = 30;
+inline constexpr std::size_t kDisplayTapCapacity = (2 * std::size_t{kDisplayMaxDelaySamples}) + 1;
 // SRS-032: the most that one complete processing chain occupies.
 inline constexpr std::size_t kChainMemoryLimitBytes = 65536;
 

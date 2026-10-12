@@ -1,9 +1,9 @@
 #pragma once
 
-// SRS-034: the equivalence of the real-time library with the reference on the golden vectors
-// (architecture-m2.md 14.11, 14.12). A newly configured Chain is given the input of a vector one
-// sample at a time, and its outputs are compared with the file's, each with its largest difference,
-// the sample where it occurs and its tolerance.
+// SRS-034, SRS-044: the equivalence of the real-time library with the reference on the golden
+// vectors (architecture-m2.md 14.11, 14.12; architecture-m3.md 16.7). A newly configured Chain is
+// given the input of a vector one sample at a time, and its outputs are compared with the file's,
+// each with its largest difference, the sample where it occurs and its tolerance.
 
 #include <cstddef>
 #include <cstdint>
@@ -22,6 +22,8 @@ inline constexpr double kDetectionIndexToleranceSamples = 0.0;
 inline constexpr double kReportSampleToleranceSamples = 0.0;
 inline constexpr double kHeartRateToleranceBpm = 1e-4;
 inline constexpr double kQualityIndexTolerance = 0.01;
+// architecture-m3.md 16.7: the display output, the tolerance of the conditioning (SRS-044).
+inline constexpr double kDisplayToleranceMv = 2e-5;
 
 // What the library produced for the input of a vector.
 struct LibraryOutputs {
@@ -29,6 +31,8 @@ struct LibraryOutputs {
   std::uint64_t failed_at = 0;  // the sample where process failed
   std::vector<double> baseline_mv;
   std::vector<double> conditioned_mv;
+  std::uint32_t display_delay_samples = 0;  // Chain::display_delay_samples() (SRS-044)
+  std::vector<double> display_mv;
   std::vector<BeatRow> beats;
   std::vector<HeartRateRow> heart_rates;
   std::vector<WindowRow> windows;
@@ -45,9 +49,10 @@ void collect_events(const SampleOutput& out, LibraryOutputs& result);
 
 // One compared output of one file.
 struct OutputResult {
-  std::string output;      // baseline_mv, mains_mv, beats, beat_reported_at, heart_rates,
-                           // quality_windows
-  std::string difference;  // a structural difference ("count 74, file 73", "mark"); else empty
+  std::string output;      // baseline_mv, mains_mv, display_mv, beats, beat_reported_at,
+                           // heart_rates, quality_windows
+  std::string difference;  // a structural difference ("count 74, file 73", "mark",
+                           // "delay 11, file 12"); else empty
   double largest = 0.0;    // the largest difference, when `difference` is empty
   bool has_sample = false;
   std::uint64_t sample = 0;  // the first sample where the largest difference or the structural
@@ -56,8 +61,9 @@ struct OutputResult {
   bool pass = false;
 };
 
-// The six outputs, in the order of the report. A structural difference fails its output and is
-// reported at the first sample where it occurs, in place of a largest difference.
+// The seven outputs, in the order of the report. A structural difference fails its output and is
+// reported at the first sample where it occurs (no sample for the display delay), in place of a
+// largest difference.
 [[nodiscard]] std::vector<OutputResult> compare_outputs(const GoldenVector& vector,
                                                         const LibraryOutputs& library);
 
