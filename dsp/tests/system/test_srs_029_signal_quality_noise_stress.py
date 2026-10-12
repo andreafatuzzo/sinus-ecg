@@ -142,20 +142,18 @@ def test_window_counts_follow_from_the_requirement(results: Results) -> None:
 @pytest.mark.requirement("SRS-029")
 @pytest.mark.needs_data
 @pytest.mark.needs_nstdb
-def test_median_does_not_increase_from_one_snr_to_the_next_lower(results: Results) -> None:
-    medians = [results.by_snr[s].median for s in SNRS]
-    pairs = [(SNRS[i], SNRS[i + 1], medians[i], medians[i + 1]) for i in range(5)]
-    bad = [p for p in pairs if p[3] > p[2]]
-    assert not bad, (
-        f"median increases at (higher dB, lower dB, median, median): {bad}; all {medians}"
-    )
+def test_median_is_usable_at_24_db(results: Results) -> None:
+    m = results.by_snr[24].median
+    assert m >= USABLE_THRESHOLD, f"24 dB median {m} below threshold {USABLE_THRESHOLD}"
 
 
 @pytest.mark.requirement("SRS-029")
 @pytest.mark.needs_data
 @pytest.mark.needs_nstdb
-def test_median_lower_at_minus_6_db_than_at_24_db(results: Results) -> None:
-    assert results.by_snr[-6].median < results.by_snr[24].median
+@pytest.mark.parametrize("snr", [0, -6])
+def test_median_is_not_usable_at_0_db_and_minus_6_db(results: Results, snr: int) -> None:
+    m = results.by_snr[snr].median
+    assert m < USABLE_THRESHOLD, f"{snr} dB median {m} not below threshold {USABLE_THRESHOLD}"
 
 
 @pytest.mark.requirement("SRS-029")
