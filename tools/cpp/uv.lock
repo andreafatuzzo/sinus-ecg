@@ -8,8 +8,8 @@ resolution-markers = [
 
 [[package]]
 name = "aqtinstall"
-version = "3.3.0"
-source = { registry = "https://pypi.org/simple" }
+version = "3.3.1.dev166"
+source = { git = "https://github.com/miurahr/aqtinstall?rev=076e1659807d0b362a3ed684d54c2e9c775eb9c7#076e1659807d0b362a3ed684d54c2e9c775eb9c7" }
 dependencies = [
     { name = "bs4" },
     { name = "defusedxml" },
@@ -19,10 +19,6 @@ dependencies = [
     { name = "requests" },
     { name = "semantic-version" },
     { name = "texttable" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/76/19/24a588de6c25d43169d172dab47e63a63cd0d8f90e98cf86487acbf00ac7/aqtinstall-3.3.0.tar.gz", hash = "sha256:9c7d85fbe7258be2d7d23fda33f8aff2e8b7536817255eaeaaf4226da8546a31", size = 374818, upload-time = "2025-06-02T11:10:53.913Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/70/849fa1005fa197fc28a744fd69598ab9da883b737a1ab9461d88721ddd0b/aqtinstall-3.3.0-py3-none-any.whl", hash = "sha256:e88dbd87226f276fdd5d05347a44578d390d93a7f176e9476fbda0a7c9635f69", size = 71789, upload-time = "2025-06-02T11:10:51.994Z" },
 ]
 
 [[package]]
@@ -1216,7 +1212,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aqtinstall", specifier = "==3.3.0" },
+    { name = "aqtinstall", git = "https://github.com/miurahr/aqtinstall?rev=076e1659807d0b362a3ed684d54c2e9c775eb9c7" },
     { name = "clang-format", specifier = "==22.1.8" },
     { name = "clang-tidy", specifier = "==22.1.8" },
     { name = "cmake", specifier = "==4.4.4" },

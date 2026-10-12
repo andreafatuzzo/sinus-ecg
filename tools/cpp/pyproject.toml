@@ -9,8 +9,16 @@ dependencies = [
     "clang-format==22.1.8",
     "clang-tidy==22.1.8",
     "gcovr==8.6",
-    "aqtinstall==3.3.0",
+    # Pinned to a commit in [tool.uv.sources] below.
+    "aqtinstall",
 ]
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+# aqtinstall 3.3.0, the latest release, cannot install Qt 6.11 or later on Windows (the Qt
+# repository moved each Windows build into its own folder). The upstream fix (pull request 1000)
+# is on master but not released, so the tool is pinned to this master commit (version
+# 3.3.1.dev166). Return to a PyPI release with "==" once one includes the fix.
+aqtinstall = { git = "https://github.com/miurahr/aqtinstall", rev = "076e1659807d0b362a3ed684d54c2e9c775eb9c7" }
