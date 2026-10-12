@@ -33,10 +33,11 @@ using sinus::dsp::verification::WindowRow;
 
 constexpr std::size_t kBaseline = 0;
 constexpr std::size_t kMains = 1;
-constexpr std::size_t kBeats = 2;
-constexpr std::size_t kReported = 3;
-constexpr std::size_t kRates = 4;
-constexpr std::size_t kWindows = 5;
+constexpr std::size_t kDisplay = 2;
+constexpr std::size_t kBeats = 3;
+constexpr std::size_t kReported = 4;
+constexpr std::size_t kRates = 5;
+constexpr std::size_t kWindows = 6;
 
 // A file and a library output that agree exactly.
 struct Pair {
@@ -48,6 +49,8 @@ Pair agreeing() {
   Pair p;
   p.library.baseline_mv = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5};
   p.library.conditioned_mv = {0.0, -0.1, -0.2, -0.3, -0.4, -0.5};
+  p.library.display_delay_samples = 11;
+  p.library.display_mv = {0.0, 0.01, 0.02, 0.03, 0.04, 0.05};
   p.library.beats = {
       {10, Mark::kStartUp, 14}, {50, Mark::kReliable, 54}, {90, Mark::kReliable, 94}};
   p.library.heart_rates = {
@@ -57,6 +60,8 @@ Pair agreeing() {
   };
   p.library.windows = {{0, 99, 120, 0.75, true}, {10, 109, 130, 0.25, false}};
   p.file.stage_outputs_mv = {p.library.baseline_mv, p.library.conditioned_mv};
+  p.file.display_delay_samples = p.library.display_delay_samples;
+  p.file.display_mv = p.library.display_mv;
   p.file.beats = p.library.beats;
   p.file.heart_rates = p.library.heart_rates;
   p.file.windows = p.library.windows;
@@ -67,8 +72,8 @@ std::vector<OutputResult> compare(const Pair& p) { return compare_outputs(p.file
 
 TEST(Equivalence, AgreeingOutputsPassWithZeroDifference) {
   const auto results = compare(agreeing());
-  ASSERT_EQ(results.size(), 6U);
-  const char* names[] = {"baseline_mv",      "mains_mv",    "beats",
+  ASSERT_EQ(results.size(), 7U);
+  const char* names[] = {"baseline_mv",      "mains_mv",    "display_mv",     "beats",
                          "beat_reported_at", "heart_rates", "quality_windows"};
   for (std::size_t i = 0; i < results.size(); ++i) {
     EXPECT_EQ(results.at(i).output, names[i]);
@@ -82,6 +87,7 @@ TEST(Equivalence, TolerancesAreThoseOfTheDesign) {
   const auto results = compare(agreeing());
   EXPECT_EQ(results.at(kBaseline).tolerance, 2e-5);
   EXPECT_EQ(results.at(kMains).tolerance, 2e-5);
+  EXPECT_EQ(results.at(kDisplay).tolerance, 2e-5);
   EXPECT_EQ(results.at(kBeats).tolerance, 0.0);
   EXPECT_EQ(results.at(kReported).tolerance, 0.0);
   EXPECT_EQ(results.at(kRates).tolerance, 1e-4);
@@ -254,6 +260,8 @@ GoldenVector vector_of_library_run() {
   const LibraryOutputs run = sinus::dsp::verification::run_library(v);
   EXPECT_EQ(run.status, Status::kOk);
   v.stage_outputs_mv = {run.baseline_mv, run.conditioned_mv};
+  v.display_delay_samples = run.display_delay_samples;
+  v.display_mv = run.display_mv;
   v.beats = run.beats;
   v.heart_rates = run.heart_rates;
   v.windows = run.windows;
@@ -300,6 +308,7 @@ TEST(EquivalenceRun, ADisturbedOutputNamesTheFileTheOutputAndTheSample) {
   EXPECT_EQ(result.outputs.at(kBaseline).sample, 1234U);
   EXPECT_NEAR(result.outputs.at(kBaseline).largest, 3e-5, 1e-9);
   EXPECT_TRUE(result.outputs.at(kMains).pass);
+  EXPECT_TRUE(result.outputs.at(kDisplay).pass);
   EXPECT_FALSE(result.outputs.at(kBeats).pass);
   EXPECT_EQ(result.outputs.at(kBeats).sample, v.beats.at(4).index);
   EXPECT_FALSE(result.outputs.at(kRates).pass);
@@ -439,6 +448,76 @@ TEST(ReferenceIdentity, TheSameInEveryFileOrNot) {
   set.files = {a, b};
   EXPECT_EQ(sinus::dsp::verification::reference_identity(set).state,
             sinus::dsp::verification::ReferenceState::kMixed);
+}
+
+// --- the display output (architecture-m3.md 16.7) ----------------------------------------------
+
+TEST(EquivalenceDisplay, AtTheTolerancePassesAndJustAboveFails) {
+  Pair p = agreeing();
+  p.file.display_mv.at(4) = p.library.display_mv.at(4) + 2e-5;
+  const OutputResult at = compare(p).at(kDisplay);
+  EXPECT_EQ(at.output, "display_mv");
+  EXPECT_EQ(at.sample, 4U);
+  EXPECT_NEAR(at.largest, 2e-5, 1e-12);
+  p.file.display_mv.at(4) = 0.04 + 3e-5;
+  const OutputResult above = compare(p).at(kDisplay);
+  EXPECT_FALSE(above.pass);
+  EXPECT_TRUE(above.difference.empty());
+  EXPECT_TRUE(above.has_sample);
+  EXPECT_EQ(above.sample, 4U);
+  EXPECT_TRUE(compare(p).at(kMains).pass);
+}
+
+TEST(EquivalenceDisplay, ExactlyTheToleranceFromZeroPasses) {
+  Pair p = agreeing();
+  p.library.display_mv.at(3) = 0.0;
+  p.file.display_mv.at(3) = 2e-5;
+  EXPECT_TRUE(compare(p).at(kDisplay).pass);
+  p.file.display_mv.at(3) = std::nextafter(2e-5, 1.0);
+  EXPECT_FALSE(compare(p).at(kDisplay).pass);
+}
+
+TEST(EquivalenceDisplay, ADifferentDelayIsStructuralWithNoSample) {
+  Pair p = agreeing();
+  p.file.display_delay_samples = 12;
+  p.file.display_mv.at(2) += 1.0;  // the samples are not compared once the delay differs
+  const OutputResult r = compare(p).at(kDisplay);
+  EXPECT_FALSE(r.pass);
+  EXPECT_EQ(r.difference, "delay 11, file 12");
+  EXPECT_FALSE(r.has_sample);
+  EXPECT_EQ(r.tolerance, 2e-5);
+}
+
+TEST(EquivalenceDisplay, ANanLibraryValueFails) {
+  Pair p = agreeing();
+  p.library.display_mv.at(1) = std::numeric_limits<double>::quiet_NaN();
+  const OutputResult r = compare(p).at(kDisplay);
+  EXPECT_FALSE(r.pass);
+  EXPECT_EQ(r.sample, 1U);
+}
+
+TEST(EquivalenceDisplay, TheRunGivesTheDelayAndOneValuePerSample) {
+  const GoldenVector v = vector_of_library_run();
+  EXPECT_EQ(v.display_delay_samples, 8U);  // 250 Hz
+  EXPECT_EQ(v.display_mv.size(), v.input_mv.size());
+  EXPECT_EQ(v.display_mv.at(0), 0.0);
+}
+
+TEST(EquivalenceDisplay, ADisturbedDisplayValueOrDelayInTheFileFails) {
+  GoldenVector v = vector_of_library_run();
+  v.display_mv.at(2345) -= 2.5e-5;
+  FileResult result = sinus::dsp::verification::check_vector("unit", v);
+  EXPECT_FALSE(result.passed());
+  EXPECT_FALSE(result.outputs.at(kDisplay).pass);
+  EXPECT_EQ(result.outputs.at(kDisplay).sample, 2345U);
+  EXPECT_TRUE(result.outputs.at(kMains).pass);
+  EXPECT_TRUE(result.outputs.at(kBeats).pass);
+
+  v = vector_of_library_run();
+  v.display_delay_samples = 9;
+  result = sinus::dsp::verification::check_vector("unit", v);
+  EXPECT_FALSE(result.passed());
+  EXPECT_EQ(result.outputs.at(kDisplay).difference, "delay 8, file 9");
 }
 
 }  // namespace

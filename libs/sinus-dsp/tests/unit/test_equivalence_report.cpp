@@ -43,6 +43,7 @@ FileResult compared(const std::string& id) {
   f.outputs = {
       numeric("baseline_mv", 1.2383118956904582e-06, 1850, 2e-5, true),
       numeric("mains_mv", 0.0, 0, 2e-5, true),
+      numeric("display_mv", 1.7881393432617188e-06, 4321, 2e-5, true),
       numeric("beats", 0.0, 12, 0.0, true),
       numeric("beat_reported_at", 0.0, 12, 0.0, true),
       numeric("heart_rates", 7.4590110443750746e-06, 3531, 1e-4, true),
@@ -56,7 +57,7 @@ ReportInfo info() {
   i.build_target = "computer (x86_64, Linux, GNU 14.2.0)";
   i.library_version = "0.2.0.dev0";
   i.library_sha256 = std::string(64, 'c');
-  i.chain_bytes = 51600;
+  i.chain_bytes = 52600;
   i.chain_limit = 65536;
   return i;
 }
@@ -92,8 +93,8 @@ TEST(Report, HasTheLayoutOfTheDesign) {
       "| Reference | sinus-dsp 0.2.0.dev0, source SHA-256 " +
       std::string(64, 'b') +
       " |\n"
-      "| Golden vectors | 1 files of 32 expected, format version 2 |\n"
-      "| Chain size | 51600 bytes, limit 65536 |\n"
+      "| Golden vectors | 1 files of 32 expected, format version 3 |\n"
+      "| Chain size | 52600 bytes, limit 65536 |\n"
       "| Database notice | The files mitdb-100-first60s, mitdb-105-first60s, mitdb-108-first60s, "
       "mitdb-119-first60s, mitdb-203-first60s and mitdb-207-first60s contain extracts of the "
       "MIT-BIH Arrhythmia Database, version 1.0.0, made available by PhysioNet under the Open "
@@ -107,6 +108,7 @@ TEST(Report, HasTheLayoutOfTheDesign) {
       "|---|---|---:|---:|---:|---|\n"
       "| mitdb-100-first60s | baseline_mv | 1.2383118956904582e-06 | 1850 | 2e-05 | pass |\n"
       "| mitdb-100-first60s | mains_mv | 0 | 0 | 2e-05 | pass |\n"
+      "| mitdb-100-first60s | display_mv | 1.7881393432617188e-06 | 4321 | 2e-05 | pass |\n"
       "| mitdb-100-first60s | beats | 0 | 12 | 0 | pass |\n"
       "| mitdb-100-first60s | beat_reported_at | 0 | 12 | 0 | pass |\n"
       "| mitdb-100-first60s | heart_rates | 7.4590110443750746e-06 | 3531 | " +
@@ -140,13 +142,19 @@ TEST(Report, AStructuralDifferenceIsWrittenInTheDifferenceColumn) {
   SetResult set;
   set.folder_listed = true;
   FileResult f = compared("syn-fs250-hr075-clean");
-  f.outputs.at(2) = numeric("beats", 0.0, 90, 0.0, false);
-  f.outputs.at(2).difference = "count 74, file 73";
-  f.outputs.at(3).difference = "not compared, the counts differ";
-  f.outputs.at(3).has_sample = false;
-  f.outputs.at(3).pass = false;
+  f.outputs.at(3) = numeric("beats", 0.0, 90, 0.0, false);
+  f.outputs.at(3).difference = "count 74, file 73";
+  f.outputs.at(4).difference = "not compared, the counts differ";
+  f.outputs.at(4).has_sample = false;
+  f.outputs.at(4).pass = false;
+  f.outputs.at(2).difference = "delay 11, file 12";  // the display delay: no sample
+  f.outputs.at(2).has_sample = false;
+  f.outputs.at(2).pass = false;
   set.files = {f};
   const std::string text = render_equivalence_report(set, info());
+  EXPECT_NE(text.find("| syn-fs250-hr075-clean | display_mv | delay 11, file 12 | \xE2\x80\x94 | "
+                      "2e-05 | fail |\n"),
+            std::string::npos);
   EXPECT_NE(text.find("| syn-fs250-hr075-clean | beats | count 74, file 73 | 90 | 0 | fail |\n"),
             std::string::npos);
   EXPECT_NE(text.find("| syn-fs250-hr075-clean | beat_reported_at | not compared, the counts "
@@ -209,7 +217,7 @@ TEST(Report, ThePassOutcomeNeedsEveryFileToPass) {
   FileResult f = compared("syn-fs250-hr075-clean");
   set.files = {f};
   EXPECT_NE(render_equivalence_report(set, info()).find("| Outcome | pass |\n"), std::string::npos);
-  f.outputs.at(5).pass = false;
+  f.outputs.at(2).pass = false;  // the display output alone fails the outcome
   set.files = {f};
   EXPECT_NE(render_equivalence_report(set, info()).find("| Outcome | fail |\n"), std::string::npos);
 }

@@ -1,10 +1,10 @@
 #pragma once
 
-// SRS-034: the reader of the golden-vector files of the reference (architecture.md 7.3,
-// architecture-m2.md 13.8, 14.12). It reads format version 2 only and applies every reader rule of
-// those sections, naming the first offending line, as the Python reader
-// (dsp/sinus_dsp/golden.py, parse_golden_vector) does: the two reject the same texts at the same
-// line. The reason given with the line is free text and is not compared.
+// SRS-034, SRS-044: the reader of the golden-vector files of the reference (architecture.md 7.3,
+// architecture-m2.md 13.8, 14.12; architecture-m3.md 16.5). It reads format version 3 only and
+// applies every reader rule of those sections, naming the first offending line, as the Python
+// reader (dsp/sinus_dsp/golden.py, parse_golden_vector) does: the two reject the same texts at the
+// same line. The reason given with the line is free text and is not compared.
 
 #include <array>
 #include <cstdint>
@@ -17,7 +17,7 @@
 
 namespace sinus::dsp::verification {
 
-inline constexpr int kGoldenFormatVersion = 2;
+inline constexpr int kGoldenFormatVersion = 3;
 
 struct BeatRow {
   std::uint64_t index;
@@ -58,6 +58,10 @@ struct GoldenVector {
   std::vector<std::uint64_t> reference_beats;
   std::vector<HeartRateRow> heart_rates;
   std::vector<WindowRow> windows;
+  // SRS-044: the display low-pass (architecture-m3.md 16.5).
+  std::uint32_t display_delay_samples = 0;  // M, 1 to 30
+  std::vector<double> display_taps;         // the 2M + 1 taps
+  std::vector<double> display_mv;           // as long as input_mv, not shifted by M
 };
 
 struct ReadError {

@@ -15,7 +15,7 @@ verification has two parts:
 
 The judgement is written here, independently of ``emulator_log.py``: exactly one end line
 ``SINUS-EQUIVALENCE-END pass``; the target is the ESP32-S3; the library version and source digest
-are those computed here by the method of 14.15; all 32 files of the set with the 6 compared
+are those computed here by the method of 14.15; all 32 files of the set with the 7 compared
 outputs each; every largest difference within the tolerance of SRS-034 and every outcome pass.
 Standard library and pytest only.
 """
@@ -60,6 +60,7 @@ SET = tuple(
 TOLERANCES = {
     "baseline_mv": 2e-5,
     "mains_mv": 2e-5,
+    "display_mv": 2e-5,
     "beats": 0.0,
     "beat_reported_at": 0.0,
     "heart_rates": 1e-4,
@@ -68,6 +69,7 @@ TOLERANCES = {
 TOLERANCE_TEXT = {
     "baseline_mv": "2e-05",
     "mains_mv": "2e-05",
+    "display_mv": "2e-05",
     "beats": "0",
     "beat_reported_at": "0",
     "heart_rates": "1e-04",
@@ -154,7 +156,7 @@ def judge(directory: Path, golden_dir: Path | None = None) -> list[str]:
         problems.append(f"reference {reference!r}: not one reference software")
     elif golden_dir is not None and golden_identity(golden_dir) != {match.groups()}:
         problems.append(f"reference {reference!r} differs from the golden-vector files")
-    if rows.get("Golden vectors") != "32 files of 32 expected, format version 2":
+    if rows.get("Golden vectors") != "32 files of 32 expected, format version 3":
         problems.append(f"golden vectors row {rows.get('Golden vectors')!r}")
     size = re.fullmatch(r"(\d+) bytes, limit (\d+)", rows.get("Chain size", ""))
     if size is None or int(size.group(1)) > int(size.group(2)):
@@ -206,8 +208,8 @@ def synthetic_results(
         f"| Build target | {target} |",
         f"| Library | {library_text} |",
         f"| Reference | sinus-dsp {version}, source SHA-256 {'a' * 64} |",
-        "| Golden vectors | 32 files of 32 expected, format version 2 |",
-        "| Chain size | 51840 bytes, limit 65536 |",
+        "| Golden vectors | 32 files of 32 expected, format version 3 |",
+        "| Chain size | 52840 bytes, limit 65536 |",
         "| Outcome | pass |",
         "",
         "## Results per file",
@@ -306,12 +308,27 @@ def _drop_file(r: str) -> str:
     return "\n".join(x for x in r.splitlines() if "mitdb-207" not in x) + "\n"
 
 
+def _drop_display(r: str) -> str:
+    kept = [x for x in r.splitlines() if "| display_mv |" not in x]
+    return "\n".join(kept) + "\n"
+
+
 @pytest.mark.parametrize(
     ("mutate", "needle"),
     [
         (lambda r: r.replace("ESP32-S3 (emulator", "computer (x86"), "build target"),
         (lambda r: r.replace("source SHA-256 ", "source SHA-256 0", 1), "library"),
         (_drop_file, "missing"),
+        (
+            lambda r: r.replace(
+                "| display_mv | 0 | 1 | 2e-05 | pass |",
+                "| display_mv | 3e-05 | 1 | 2e-05 | fail |",
+                1,
+            ),
+            "display_mv: difference 3e-05 exceeds",
+        ),
+        (_drop_display, "display_mv: missing"),
+        (lambda r: r.replace("format version 3", "format version 2"), "golden vectors row"),
         (lambda r: r.replace("| beats | 0 | 1 |", "| beats | 1 | 1 |", 1), "exceeds"),
         (lambda r: r.replace("| 2e-05 |", "| 1e-03 |", 1), "tolerance"),
         (lambda r: r.replace("| 2e-05 | pass |", "| 2e-05 | fail |", 1), "outcome fail"),

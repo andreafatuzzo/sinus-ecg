@@ -2195,7 +2195,10 @@ GOLDEN_HEADER_KEYS = (
     "n_reference_beats",
     "n_heart_rates",
     "n_quality_windows",
+    "display_delay_samples",
 )
+# The largest display delay M a reader accepts (architecture, section 16.5): M at 1000 Hz.
+GOLDEN_DISPLAY_MAX_DELAY = 30
 # The usable threshold of the quality index (architecture, section 13.8).
 GOLDEN_USABLE_THRESHOLD = 0.5
 GOLDEN_STATUSES = ("valid", "not_enough_beats", "no_recent_beat", "out_of_range")
@@ -2227,8 +2230,9 @@ class GoldenFile:
 
     - ``header``: the value of each header key, in file order;
     - ``coefficients``: for each stage, one row ``(b0, b1, b2, a1, a2)`` per section, in order;
+    - ``display_taps``: the column ``h`` of ``[display_coefficients]``;
     - ``signals``: one row per sample, the columns ``input_mv`` then ``<stage>_mv`` for each
-      stage in the order of ``stages``;
+      stage in the order of ``stages``, then ``display_mv`` (the last column);
     - ``beats``, ``reference_beats``: the ``sample_index`` column of ``[beats]`` and
       ``[reference_beats]``; ``beat_startup`` and ``beat_reported_at``: the other columns of
       ``[beats]``;
@@ -2255,6 +2259,7 @@ class GoldenFile:
     window_reported_at: IndexArray
     window_index: FloatArray
     window_usable: BoolArray
+    display_taps: FloatArray
 
     @property
     def input_mv(self) -> FloatArray:
@@ -2264,9 +2269,14 @@ class GoldenFile:
         """The output of ``stage``, column ``<stage>_mv``."""
         return self.signals[:, 1 + self.stages.index(stage)]
 
+    @property
+    def display_mv(self) -> FloatArray:
+        """The column ``display_mv`` (not shifted by the display delay)."""
+        return self.signals[:, -1]
+
 
 def _read_golden_file(data: bytes) -> GoldenFile:
-    """Read a golden-vector file (format version 2): rules of architecture 7.3 and 13.8.
+    """Read a golden-vector file (format version 3): rules of architecture 7.3, 13.8 and 16.5.
 
     Written by the test from the documented format, independently of the readers of the
     software. Raises ``GoldenFormatError`` naming the first offending line: a file that is not
@@ -2353,7 +2363,7 @@ def _read_golden_file(data: bytes) -> GoldenFile:
         header[key], lines_of[key] = value, n
         if key == "format" and value != "sinus-golden-vector":
             raise GoldenFormatError(n, f"unknown format {value!r}")
-        if key == "format_version" and value != "2":
+        if key == "format_version" and value != "3":
             raise GoldenFormatError(n, f"unknown format version {value!r}")
         if key == "input_id" and not _GOLDEN_INPUT_ID.fullmatch(value):
             raise GoldenFormatError(n, f"invalid input identifier {value!r}")
@@ -2379,6 +2389,10 @@ def _read_golden_file(data: bytes) -> GoldenFile:
             count = as_integer(n, value)
             if key == "n_samples" and count < 1:
                 raise GoldenFormatError(n, "n_samples is 0")
+        if key == "display_delay_samples":
+            delay = as_integer(n, value)
+            if not 1 <= delay <= GOLDEN_DISPLAY_MAX_DELAY:
+                raise GoldenFormatError(n, f"display_delay_samples outside 1..30: {value!r}")
     stages = tuple(header["stages"].split(","))
     n_samples = int(header["n_samples"])
 
@@ -2408,16 +2422,35 @@ def _read_golden_file(data: bytes) -> GoldenFile:
     if stage_index != len(stages) - 1 or not rows[stages[-1]]:
         raise GoldenFormatError(position + 1, "a stage without coefficient rows")
 
+    expect("[display_coefficients]")
+    expect("tap,h")
+    display_taps: list[float] = []
+    n_taps = 2 * int(header["display_delay_samples"]) + 1
+    while True:
+        if position < len(lines) and lines[position].startswith("["):
+            break
+        n, line = next_line()
+        fields = line.split(",")
+        if len(fields) != 2:
+            raise GoldenFormatError(n, f"a display tap row with {len(fields)} fields, not 2")
+        if len(display_taps) >= n_taps:
+            raise GoldenFormatError(n, "more display tap rows than 2M + 1")
+        if fields[0] != str(len(display_taps)):
+            raise GoldenFormatError(n, f"display tap number out of order: {fields[0]!r}")
+        display_taps.append(as_float(n, fields[1]))
+    if len(display_taps) != n_taps:
+        raise GoldenFormatError(position + 1, "fewer display tap rows than 2M + 1")
+
     expect("[signals]")
-    expect(",".join(["input_mv", *(f"{stage}_mv" for stage in stages)]))
+    expect(",".join(["input_mv", *(f"{stage}_mv" for stage in stages), "display_mv"]))
     signal_rows: list[list[float]] = []
     for _ in range(n_samples):
         n, line = next_line()
         fields = line.split(",")
-        if len(fields) != 1 + len(stages):
+        if len(fields) != 2 + len(stages):
             raise GoldenFormatError(n, f"a signal row with {len(fields)} fields")
         signal_rows.append([as_float(n, token) for token in fields])
-    signals = np.asarray(signal_rows, dtype=np.float64).reshape(n_samples, 1 + len(stages))
+    signals = np.asarray(signal_rows, dtype=np.float64).reshape(n_samples, 2 + len(stages))
 
     def read_reference_beats(count: int) -> IndexArray:
         expect("[reference_beats]")
@@ -2545,6 +2578,7 @@ def _read_golden_file(data: bytes) -> GoldenFile:
         window_reported_at=np.asarray(w_reported, dtype=np.int64),
         window_index=np.asarray(w_index, dtype=np.float64),
         window_usable=np.asarray(w_usable, dtype=np.bool_),
+        display_taps=np.asarray(display_taps, dtype=np.float64),
     )
 
 

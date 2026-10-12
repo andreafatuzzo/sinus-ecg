@@ -147,41 +147,75 @@ TEST(GoldenReader, ReadsTheBaseVector) {
   EXPECT_EQ(v.windows.at(0).index, 0.75);
   EXPECT_TRUE(v.windows.at(0).usable);
   EXPECT_FALSE(v.windows.at(1).usable);
+  EXPECT_EQ(v.display_delay_samples, 1U);
+  ASSERT_EQ(v.display_taps.size(), 3U);
+  EXPECT_EQ(v.display_taps.at(0), 0.25);
+  EXPECT_EQ(v.display_taps.at(1), 0.5);
+  EXPECT_EQ(v.display_taps.at(2), 0.25);
+  ASSERT_EQ(v.display_mv.size(), 12U);
+  EXPECT_EQ(v.display_mv.at(0), 0.0);
+  EXPECT_EQ(v.display_mv.at(11), 0.11);
 }
 
 // Exact read-back (architecture.md 7.4): the value read has the bits of the value written.
 double signal_value(const std::string& text) {
-  std::vector<parity::Edit> edits{{parity::Op::kReplace, 28, text}};
+  std::vector<parity::Edit> edits{{parity::Op::kReplace, 34, text}};
   const ReadResult result = parse_golden_vector(build(edits));
   EXPECT_TRUE(result.ok) << text << ": " << result.error.reason;
   return result.ok ? result.vector.input_mv.at(5) : 0.0;
 }
 
 TEST(GoldenReaderReadBack, EdgeValuesAreExact) {
-  EXPECT_EQ(signal_value("5e-324,0.0,0.0"), 4.9406564584124654e-324);
-  EXPECT_EQ(signal_value("1.7976931348623157e+308,0.0,0.0"), 1.7976931348623157e308);
-  EXPECT_EQ(signal_value("-1.7976931348623157e+308,0.0,0.0"), -1.7976931348623157e308);
-  EXPECT_EQ(signal_value("0.30000000000000004,0.0,0.0"), 0.30000000000000004);
-  EXPECT_EQ(signal_value("0.1,0.0,0.0"), 0.1);
-  EXPECT_EQ(signal_value("-1.2345e-05,0.0,0.0"), -1.2345e-05);
-  EXPECT_EQ(signal_value("1e+16,0.0,0.0"), 1e16);
-  EXPECT_EQ(signal_value("0.0e-400,0.0,0.0"), 0.0);
-  EXPECT_EQ(signal_value("2.2250738585072014e-308,0.0,0.0"), 2.2250738585072014e-308);
-  EXPECT_EQ(signal_value("2.225073858507201e-308,0.0,0.0"), 2.225073858507201e-308);
+  EXPECT_EQ(signal_value("5e-324,0.0,0.0,0.0"), 4.9406564584124654e-324);
+  EXPECT_EQ(signal_value("1.7976931348623157e+308,0.0,0.0,0.0"), 1.7976931348623157e308);
+  EXPECT_EQ(signal_value("-1.7976931348623157e+308,0.0,0.0,0.0"), -1.7976931348623157e308);
+  EXPECT_EQ(signal_value("0.30000000000000004,0.0,0.0,0.0"), 0.30000000000000004);
+  EXPECT_EQ(signal_value("0.1,0.0,0.0,0.0"), 0.1);
+  EXPECT_EQ(signal_value("-1.2345e-05,0.0,0.0,0.0"), -1.2345e-05);
+  EXPECT_EQ(signal_value("1e+16,0.0,0.0,0.0"), 1e16);
+  EXPECT_EQ(signal_value("0.0e-400,0.0,0.0,0.0"), 0.0);
+  EXPECT_EQ(signal_value("2.2250738585072014e-308,0.0,0.0,0.0"), 2.2250738585072014e-308);
+  EXPECT_EQ(signal_value("2.225073858507201e-308,0.0,0.0,0.0"), 2.225073858507201e-308);
 }
 
 TEST(GoldenReaderReadBack, NegativeZeroKeepsItsSign) {
-  EXPECT_TRUE(std::signbit(signal_value("-0.0,0.0,0.0")));
-  EXPECT_FALSE(std::signbit(signal_value("0.0,0.0,0.0")));
-  EXPECT_TRUE(std::signbit(signal_value("-0.0e-400,0.0,0.0")));
+  EXPECT_TRUE(std::signbit(signal_value("-0.0,0.0,0.0,0.0")));
+  EXPECT_FALSE(std::signbit(signal_value("0.0,0.0,0.0,0.0")));
+  EXPECT_TRUE(std::signbit(signal_value("-0.0e-400,0.0,0.0,0.0")));
 }
 
 TEST(GoldenReaderReadBack, LargestIntegerIsExact) {
-  std::vector<parity::Edit> edits{{parity::Op::kReplace, 37, "9,reliable,9223372036854775807"}};
+  std::vector<parity::Edit> edits{{parity::Op::kReplace, 43, "9,reliable,9223372036854775807"}};
   const ReadResult result = parse_golden_vector(build(edits));
   EXPECT_FALSE(result.ok);  // the integer is read (2^63 - 1), then found beyond the signal
-  EXPECT_EQ(result.error.line, 37U);
+  EXPECT_EQ(result.error.line, 43U);
   EXPECT_NE(result.error.reason.find("outside"), std::string::npos);
+}
+
+TEST(GoldenReader, AVersion2FileIsRejectedForItsVersion) {
+  // A file of version 2: no display_delay_samples, no [display_coefficients], no display_mv.
+  std::vector<parity::Edit> edits{{parity::Op::kReplace, 2, "format_version=2"},
+                                  {parity::Op::kDelete, 16, ""},
+                                  {parity::Op::kDelete, 21, ""},
+                                  {parity::Op::kDelete, 21, ""},
+                                  {parity::Op::kDelete, 21, ""},
+                                  {parity::Op::kDelete, 21, ""},
+                                  {parity::Op::kDelete, 21, ""}};
+  const ReadResult result = parse_golden_vector(build(edits));
+  EXPECT_FALSE(result.ok);
+  EXPECT_EQ(result.error.line, 2U);
+  EXPECT_NE(result.error.reason.find("version"), std::string::npos);
+  EXPECT_EQ(sinus::dsp::verification::kGoldenFormatVersion, 3);
+}
+
+TEST(GoldenReaderReadBack, DisplayValuesAndTapsAreExact) {
+  std::vector<parity::Edit> edits{{parity::Op::kReplace, 25, "1,0.30000000000000004"},
+                                  {parity::Op::kReplace, 34, "0.5,0.25,-0.125,-1.2345e-05"}};
+  const ReadResult result = parse_golden_vector(build(edits));
+  ASSERT_TRUE(result.ok) << result.error.reason;
+  EXPECT_EQ(result.vector.display_taps.at(1), 0.30000000000000004);
+  EXPECT_EQ(result.vector.display_mv.at(5), -1.2345e-05);
+  EXPECT_EQ(result.vector.stage_outputs_mv.at(1).at(5), -0.125);
 }
 
 TEST(GoldenReader, NotUtf8HasNoLine) {

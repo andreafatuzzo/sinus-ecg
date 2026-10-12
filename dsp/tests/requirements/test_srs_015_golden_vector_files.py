@@ -1,6 +1,6 @@
 """Requirement tests of SRS-015: the golden-vector files of the export (RC-012).
 
-SRS-015 (v0.7.2), on golden-vector format version 2 (architecture, section 13.8): one
+SRS-015, on golden-vector format version 3 (architecture, sections 13.8 and 16.5): one
 golden-vector file for each synthetic input (2 sampling frequencies x 3 heart rates x 3
 variants, and the 8 event inputs of SRS-033) and for the first 60 s of each record of the
 subset of SRS-016 (first stored signal), "if the files of all these records are available and
@@ -54,6 +54,7 @@ import pytest
 
 from sinus_dsp.data.physionet import Database, DatabaseLicence
 from sinus_dsp.data.records import load_record
+from sinus_dsp.display import display_delay_samples, display_lowpass, display_lowpass_taps
 from sinus_dsp.errors import InvalidInputError
 from sinus_dsp.filters import (
     baseline_sos,
@@ -303,14 +304,14 @@ def test_file_follows_the_documented_format(
     two_exports: tuple[Export, Export],
     read_golden_file: Callable[[bytes], Any],
 ) -> None:
-    """Each file follows the documented format, version 2 (architecture, sections 7.3 and 13.8).
+    """Each file follows the documented format, version 3 (architecture, sections 7.3, 13.8, 16.5).
 
     Input: the file of the input, as written by the export.
-    Expected: the test's own reader of version 2 accepts it (UTF-8, line feeds, no space,
-    tab, carriage return or empty line, the 15 header keys in order with valid values, the
-    sections `[coefficients]`, `[signals]`, `[beats]`, `[reference_beats]`, `[heart_rates]`,
-    `[quality_windows]`, `[end]` in order with their column lines, row counts as in the header,
-    the documented number syntax,
+    Expected: the test's own reader of version 3 accepts it (UTF-8, line feeds, no space,
+    tab, carriage return or empty line, the 16 header keys in order with valid values, the
+    sections `[coefficients]`, `[display_coefficients]`, `[signals]`, `[beats]`,
+    `[reference_beats]`, `[heart_rates]`, `[quality_windows]`, `[end]` in order with their
+    column lines, row counts as in the header, the documented number syntax,
     finite floats, beats in range and in order, one line feed after `[end]` and nothing
     after it); no byte-order mark; every float is written as Python's `repr()` of its value
     (the shortest form that reads back exactly).
@@ -330,7 +331,7 @@ def test_file_contains_each_listed_item(input_id: str, parsed: dict[str, Any]) -
 
     Input: the file of the input, read by the test.
     Expected:
-    - format `sinus-golden-vector`, version 2;
+    - format `sinus-golden-vector`, version 3;
     - identifier of the input: `input_id` is the identifier of the file; `input_source` is
       `synthetic` or `mitdb`; `input_parameters` gives the generator parameters
       (`duration_s=30;heart_rate_bpm=...;...`) or
@@ -341,12 +342,14 @@ def test_file_contains_each_listed_item(input_id: str, parsed: dict[str, Any]) -
     - the software version and the source identifier (keys present; their values are
       checked in `test_file_states_the_software_under_test`);
     - the stages `baseline,mains` (SRS-004, then SRS-005, the order applied) with one
-      coefficient row each and the columns `input_mv,baseline_mv,mains_mv`;
+      coefficient row each and the columns `input_mv,baseline_mv,mains_mv,display_mv`;
     - the input samples: 30 s (7500 or 10800 rows) or 60 s (21600 rows);
     - the detected QRS indices (`[beats]`, at least one beat) and the reference beats;
     - the new items of SRS-033: the mark and report sample of each detection, and header
       counts `n_heart_rates` and `n_quality_windows` equal to the rows of the two sections
-      (at least one heart-rate event and at least one window).
+      (at least one heart-rate event and at least one window);
+    - the display low-pass (SRS-044): the header key `display_delay_samples` (11 at 360 Hz, 8
+      at 250 Hz) and `2M + 1` rows in `[display_coefficients]` (23 or 17).
     The event inputs (`syn-fs<fs>-event-<event>`) have `input_source` `synthetic`, mains 50 Hz,
     the `input_parameters` of architecture section 13.9, and 30..44 s of samples.
     """
@@ -354,7 +357,7 @@ def test_file_contains_each_listed_item(input_id: str, parsed: dict[str, Any]) -
     header = golden.header
 
     assert header["format"] == "sinus-golden-vector"
-    assert header["format_version"] == "2"
+    assert header["format_version"] == "3"
     assert header["input_id"] == input_id
     if input_id in EVENT_IDS:
         fs = int(input_id.split("-")[1].removeprefix("fs"))
@@ -383,7 +386,9 @@ def test_file_contains_each_listed_item(input_id: str, parsed: dict[str, Any]) -
     assert header["stages"] == "baseline,mains"
     assert golden.stages == ("baseline", "mains")
     assert [rows.shape for rows in golden.coefficients.values()] == [(1, 5), (1, 5)]
-    assert golden.signals.shape == (n_samples, 3)
+    assert golden.signals.shape == (n_samples, 4)
+    assert header["display_delay_samples"] == str({360: 11, 250: 8}[int(fs)])
+    assert golden.display_taps.size == 2 * int(header["display_delay_samples"]) + 1
     assert header["n_samples"] == str(n_samples)
     assert golden.beats.size > 0
     assert header["n_beats"] == str(golden.beats.size)
@@ -431,6 +436,10 @@ def _check_read_back(golden: Any) -> list[str]:
     beats = detect_qrs(conditioned, fs)
     pipeline = run_pipeline(signal, fs, mains)
     problems = []
+    if golden.header["display_delay_samples"] != str(display_delay_samples(fs)):
+        problems.append("display_delay_samples differs from display_delay_samples(fs)")
+    if not _same_float64(golden.display_taps, display_lowpass_taps(fs)):
+        problems.append("display taps differ from display_lowpass_taps(fs)")
     for stage, sos in (("baseline", baseline_sos(fs)), ("mains", mains_sos(fs, mains))):
         if not np.all(sos[:, 3] == 1.0):
             problems.append(f"{stage}: designed a0 is not 1")
@@ -448,6 +457,11 @@ def _check_read_back(golden: Any) -> list[str]:
         ),
         "mains_mv = run_pipeline(input).mains_mv": (golden.stage_mv("mains"), pipeline.mains_mv),
         "input_mv = run_pipeline(input).input_mv": (golden.input_mv, pipeline.input_mv),
+        "display_mv = display_lowpass(mains_mv)": (
+            golden.display_mv,
+            display_lowpass(pipeline.mains_mv, fs),
+        ),
+        "display_mv = run_pipeline(input).display_mv": (golden.display_mv, pipeline.display_mv),
     }
     problems += [
         name for name, (read, computed) in checks.items() if not _same_float64(read, computed)
@@ -499,7 +513,10 @@ def test_values_read_back_equal_the_functions_called_directly(
     `baseline_mv` = `remove_baseline_wander(input_mv)`; `mains_mv` =
     `remove_mains_interference(baseline_mv)`; `[beats]` = `detect_qrs(mains_mv)`; the same
     values from `run_pipeline(input_mv)` and `detect_beats(input_mv)`; the `[coefficients]`
-    rows equal `baseline_sos(fs)` and `mains_sos(fs, mains)` without a0, whose a0 is 1.
+    rows equal `baseline_sos(fs)` and `mains_sos(fs, mains)` without a0, whose a0 is 1; the
+    display items (architecture 16.5): `display_delay_samples` = `display_delay_samples(fs)`,
+    `[display_coefficients]` = `display_lowpass_taps(fs)`, `display_mv` =
+    `display_lowpass(mains_mv, fs)` and `run_pipeline(input).display_mv`, bitwise.
     """
     assert _check_read_back(parsed[input_id]) == []
 
@@ -561,7 +578,8 @@ def test_reader_of_the_software_reads_back_the_same_values(
     Input: `read_golden_vector(<path of the file>)`.
     Expected: every field equals what the test's own reader reads from the same file: the
     header values, `fs_hz` as a float, `mains_hz`, `stages`, the coefficient matrices with
-    a0 = 1, the input, the two stage outputs (bitwise), the beats and the reference beats,
+    a0 = 1, the input, the two stage outputs and the display output (bitwise), the display
+    delay and taps, the beats and the reference beats,
     the marks and report samples, the heart-rate
     events and the quality windows.
     """
@@ -588,6 +606,9 @@ def test_reader_of_the_software_reads_back_the_same_values(
     assert _same_float64(vector.input_mv, golden.input_mv)
     for stage, output in zip(golden.stages, vector.stage_outputs_mv, strict=True):
         assert _same_float64(output, golden.stage_mv(stage))
+    assert vector.display_delay_samples == int(header["display_delay_samples"])
+    assert _same_float64(vector.display_taps, golden.display_taps)
+    assert _same_float64(vector.display_mv, golden.display_mv)
     assert np.asarray(vector.beats).tolist() == golden.beats.tolist()
     assert np.asarray(vector.reference_beats).tolist() == golden.reference_beats.tolist()
     assert np.asarray(vector.beat_startup).tolist() == golden.beat_startup.tolist()

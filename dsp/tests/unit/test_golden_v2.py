@@ -61,6 +61,9 @@ def base_vector(**changes: Any) -> GoldenVector:
         window_reported_at=np.array([22, 32, 39], dtype=np.int64),
         window_index=np.array([0.9, 0.25, 0.5]),
         window_usable=np.array([True, False, True]),
+        display_delay_samples=1,
+        display_taps=np.array([0.25, 0.5, 0.25]),
+        display_mv=np.linspace(0.0, 0.5, N),
     )
     return dataclasses.replace(vector, **changes)
 
@@ -103,7 +106,7 @@ def assert_same(actual: GoldenVector, expected: GoldenVector) -> None:
 
 
 def test_the_text_of_the_new_sections() -> None:
-    assert "n_heart_rates=3\nn_quality_windows=3\n[coefficients]\n" in TEXT
+    assert "n_heart_rates=3\nn_quality_windows=3\ndisplay_delay_samples=1\n[coefficients]\n" in TEXT
     assert TEXT.endswith(
         "[beats]\nsample_index,mark,reported_at\n5,startup,8\n20,reliable,24\n30,reliable,33\n"
         "[reference_beats]\nsample_index\n5\n20\n30\n"
@@ -180,7 +183,7 @@ def test_a_version_1_file_is_rejected_for_its_version() -> None:
         parse_golden_vector(v1 + "\n", "old.golden.txt")
     assert caught.value.line == 2
     assert "unknown format version 1" in caught.value.reason
-    assert "only version 2 is read" in caught.value.reason
+    assert "only version 3 is read" in caught.value.reason
 
 
 def test_the_new_header_keys_come_last_and_in_order() -> None:

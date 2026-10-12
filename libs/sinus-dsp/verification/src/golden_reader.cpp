@@ -1,6 +1,7 @@
-// SRS-034: reader of the golden-vector files (architecture.md 7.3, architecture-m2.md 13.8, 14.12).
-// It follows dsp/sinus_dsp/golden.py (parse_golden_vector, read_golden_vector) rule by rule and in
-// the same order, so that both readers reject the same texts at the same line.
+// SRS-034, SRS-044: reader of the golden-vector files, format version 3 (architecture.md 7.3,
+// architecture-m2.md 13.8, 14.12; architecture-m3.md 16.5). It follows dsp/sinus_dsp/golden.py
+// (parse_golden_vector, read_golden_vector) rule by rule and in the same order, so that both
+// readers reject the same texts at the same line.
 #include "sinus/dsp/verification/golden_reader.hpp"
 
 #include <algorithm>
@@ -17,6 +18,7 @@
 #include <vector>
 
 #include "sinus/dsp/heart_rate.hpp"
+#include "sinus/dsp/limits.hpp"
 #include "sinus/dsp/qrs_detector.hpp"
 #include "sinus/dsp/signal_quality.hpp"
 
@@ -24,7 +26,7 @@ namespace sinus::dsp::verification {
 
 namespace {
 
-constexpr std::size_t kHeaderKeyCount = 15;
+constexpr std::size_t kHeaderKeyCount = 16;
 constexpr std::array<std::string_view, kHeaderKeyCount> kHeaderKeys{"format",
                                                                     "format_version",
                                                                     "input_id",
@@ -39,7 +41,8 @@ constexpr std::array<std::string_view, kHeaderKeyCount> kHeaderKeys{"format",
                                                                     "n_beats",
                                                                     "n_reference_beats",
                                                                     "n_heart_rates",
-                                                                    "n_quality_windows"};
+                                                                    "n_quality_windows",
+                                                                    "display_delay_samples"};
 constexpr std::size_t kKeyFormat = 0;
 constexpr std::size_t kKeyVersion = 1;
 constexpr std::size_t kKeyInputId = 2;
@@ -52,11 +55,15 @@ constexpr std::size_t kKeyBeats = 11;
 constexpr std::size_t kKeyReferenceBeats = 12;
 constexpr std::size_t kKeyHeartRates = 13;
 constexpr std::size_t kKeyWindows = 14;
+constexpr std::size_t kKeyDisplayDelay = 15;
 
 constexpr std::string_view kFormatName = "sinus-golden-vector";
 constexpr std::string_view kCoefficients = "[coefficients]";
 constexpr std::string_view kCoefficientColumns = "stage,section,b0,b1,b2,a1,a2";
+constexpr std::string_view kDisplayCoefficients = "[display_coefficients]";
+constexpr std::string_view kDisplayColumns = "tap,h";
 constexpr std::string_view kSignals = "[signals]";
+constexpr std::string_view kDisplayColumn = "display_mv";
 constexpr std::string_view kBeats = "[beats]";
 constexpr std::string_view kBeatColumns = "sample_index,mark,reported_at";
 constexpr std::string_view kReferenceBeats = "[reference_beats]";
@@ -309,6 +316,10 @@ std::string count_problem(std::size_t key, std::string_view value) {
   if (key == kKeySamples && count < 1) {
     return "n_samples is not at least 1";
   }
+  if (key == kKeyDisplayDelay && (count < 1 || count > kDisplayMaxDelaySamples)) {
+    return "display_delay_samples is outside 1 to " + std::to_string(kDisplayMaxDelaySamples) +
+           ": " + shown(value);  // SRS-044
+  }
   return {};
 }
 
@@ -318,7 +329,7 @@ std::string header_value_problem(std::size_t key, std::string_view value) {
     case kKeyFormat:
       return value == kFormatName ? std::string() : "unknown format " + shown(value);
     case kKeyVersion:
-      return value == "2" ? std::string() : "unknown format version " + shown(value);
+      return value == "3" ? std::string() : "unknown format version " + shown(value);
     case kKeyInputId:
       return is_input_id(value) ? std::string() : "input_id does not match [A-Za-z0-9_-]+";
     case kKeySamplingFrequency:
@@ -338,6 +349,7 @@ std::string header_value_problem(std::size_t key, std::string_view value) {
     case kKeyReferenceBeats:
     case kKeyHeartRates:
     case kKeyWindows:
+    case kKeyDisplayDelay:
       return count_problem(key, value);
     default:  // input_source, input_parameters, software_version
       return value.empty() ? std::string(kHeaderKeys.at(key)) + " is empty" : std::string();
@@ -385,6 +397,8 @@ class Parser {
   void store_header();
   bool read_coefficients();
   bool read_coefficient_row(std::uint64_t number, const Fields& fields, std::size_t& current);
+  bool read_display_taps();
+  bool read_tap_row(std::uint64_t number, const Fields& fields);
   bool read_signals();
   bool read_signal_row(std::uint64_t number, const Fields& fields);
   bool read_beat_row(std::uint64_t number, const Fields& fields);
@@ -407,6 +421,7 @@ class Parser {
   std::uint64_t n_reference_beats_ = 0;
   std::uint64_t n_heart_rates_ = 0;
   std::uint64_t n_windows_ = 0;
+  std::uint64_t display_delay_ = 0;
   std::vector<std::pair<std::uint64_t, std::uint64_t>> reliable_;  // index, reported_at
   std::size_t named_ = 0;
 };
@@ -549,6 +564,8 @@ void Parser::store_header() {
   n_reference_beats_ = count(kKeyReferenceBeats);
   n_heart_rates_ = count(kKeyHeartRates);
   n_windows_ = count(kKeyWindows);
+  display_delay_ = count(kKeyDisplayDelay);  // 1 to 30, checked
+  v_.display_delay_samples = static_cast<std::uint32_t>(display_delay_);
 }
 
 std::string Parser::signal_columns() const {
@@ -556,6 +573,8 @@ std::string Parser::signal_columns() const {
   for (const std::string& stage : v_.stages) {
     columns += "," + stage + "_mv";
   }
+  columns += ",";
+  columns += kDisplayColumn;  // SRS-044
   return columns;
 }
 
@@ -593,19 +612,19 @@ bool Parser::read_coefficient_row(std::uint64_t number, const Fields& fields,
   return true;
 }
 
-// The rows of [coefficients] and the line [signals] that ends them.
+// The rows of [coefficients] and the line [display_coefficients] that ends them.
 bool Parser::read_coefficients() {
   v_.coefficients.resize(v_.stages.size());
   std::size_t current = 0;
   while (true) {
     std::uint64_t number = 0;
     std::string_view line;
-    if (!take(kSignals, number, line)) {
+    if (!take(kDisplayCoefficients, number, line)) {
       return false;
     }
     if (starts_with(line, "[")) {
-      if (line != kSignals) {
-        return fail(number, "expected [signals], found " + shown(line));
+      if (line != kDisplayCoefficients) {
+        return fail(number, "expected [display_coefficients], found " + shown(line));
       }
       for (std::size_t i = 0; i < v_.stages.size(); ++i) {
         if (v_.coefficients.at(i).empty()) {
@@ -630,14 +649,43 @@ bool Parser::read_signal_row(std::uint64_t number, const Fields& fields) {
     if (!get_real(number, fields.at(k), value)) {
       return false;
     }
-    v_.stage_outputs_mv.at(k - 1).push_back(value);
+    if (k <= v_.stages.size()) {
+      v_.stage_outputs_mv.at(k - 1).push_back(value);
+    } else {
+      v_.display_mv.push_back(value);  // SRS-044: the last column
+    }
   }
+  return true;
+}
+
+// SRS-044: the 2M + 1 rows of [display_coefficients] after its column line, then [signals]; a
+// different count is named at the line found where the next row, or [signals], is expected.
+bool Parser::read_display_taps() {
+  const std::uint64_t count = (2 * display_delay_) + 1;
+  return read_rows(kDisplayCoefficients, count, 2, &Parser::read_tap_row) && expect(kSignals);
+}
+
+bool Parser::read_tap_row(std::uint64_t number, const Fields& fields) {
+  std::uint64_t tap = 0;
+  if (!get_uint(number, fields.at(0), tap)) {
+    return false;
+  }
+  if (tap != v_.display_taps.size()) {
+    return fail(number, "tap " + std::to_string(tap) + ", expected tap " +
+                            std::to_string(v_.display_taps.size()));
+  }
+  double value = 0.0;
+  if (!get_real(number, fields.at(1), value)) {
+    return false;
+  }
+  v_.display_taps.push_back(value);
   return true;
 }
 
 bool Parser::read_signals() {
   v_.stage_outputs_mv.resize(v_.stages.size());
-  return read_rows(kSignals, n_samples_, v_.stages.size() + 1, &Parser::read_signal_row);
+  // input_mv, one column per stage, display_mv (SRS-044).
+  return read_rows(kSignals, n_samples_, v_.stages.size() + 2, &Parser::read_signal_row);
 }
 
 bool Parser::read_beat_row(std::uint64_t number, const Fields& fields) {
@@ -824,9 +872,10 @@ bool Parser::read_window_row(std::uint64_t number, const Fields& fields) {
 
 bool Parser::parse() {
   return read_header() && expect(kCoefficients) && expect(kCoefficientColumns) &&
-         read_coefficients() && expect(signal_columns()) && read_signals() && expect(kBeats) &&
-         expect(kBeatColumns) && read_rows(kBeats, n_beats_, 3, &Parser::read_beat_row) &&
-         expect(kReferenceBeats) && expect(kIndexColumn) &&
+         read_coefficients() && expect(kDisplayColumns) && read_display_taps() &&
+         expect(signal_columns()) && read_signals() && expect(kBeats) && expect(kBeatColumns) &&
+         read_rows(kBeats, n_beats_, 3, &Parser::read_beat_row) && expect(kReferenceBeats) &&
+         expect(kIndexColumn) &&
          read_rows(kReferenceBeats, n_reference_beats_, 1, &Parser::read_reference_row) &&
          expect(kHeartRates) && expect(kHeartRateColumns) && read_heart_rates() &&
          expect(kWindows) && expect(kWindowColumns) &&
