@@ -354,7 +354,8 @@ TEST(GoldenPackDisplay, ADifferentDelayIsAStructuralDifference) {
   set.at(1).display_taps.assign(19, 0.0);
   const PackCheck result = check(pack_of(set));
   ASSERT_TRUE(result.outcome.ok) << result.outcome.error;
-  const OutputResult& display = output_of(result.set.files.at(1), "display_mv");
+  const std::string name = "display_mv";
+  const OutputResult& display = output_of(result.set.files.at(1), name);
   EXPECT_FALSE(display.pass);
   EXPECT_EQ(display.difference, "delay 8, file 9");
   EXPECT_FALSE(display.has_sample);
